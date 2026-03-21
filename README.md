@@ -85,18 +85,112 @@ All config files live in `~/.koe/` and are auto-generated on first launch:
 
 ### config.yaml
 
+Below is the full configuration with explanations for every field.
+
+#### ASR (Speech Recognition)
+
+Koe uses Doubao (豆包) ASR 2.0 by ByteDance/Volcengine for streaming speech recognition.
+
 ```yaml
 asr:
-  app_key: ""              # Volcengine App ID
-  access_key: ""           # Volcengine Access Token
+  # WebSocket endpoint. Default uses ASR 2.0 optimized bidirectional streaming.
+  # Do not change unless you know what you're doing.
+  url: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
 
-llm:
-  base_url: ""             # OpenAI-compatible endpoint
-  api_key: ""              # API key (supports ${ENV_VAR} syntax)
-  model: ""                # e.g. "gpt-4o-mini"
+  # Volcengine credentials — get these from the 火山引擎 console.
+  # Go to: https://console.volcengine.com/speech/app → create an app → copy App ID and Access Token.
+  app_key: ""          # X-Api-App-Key (火山引擎 App ID)
+  access_key: ""       # X-Api-Access-Key (火山引擎 Access Token)
+
+  # Resource ID for billing. Default is the standard duration-based billing plan.
+  resource_id: "volc.seedasr.sauc.duration"
+
+  # Connection timeout in milliseconds. Increase if you have slow network.
+  connect_timeout_ms: 3000
+
+  # How long to wait for the final ASR result after you stop speaking (ms).
+  # If ASR doesn't return a final result within this time, the best available result is used.
+  final_wait_timeout_ms: 5000
+
+  # Disfluency removal (语义顺滑). Removes spoken repetitions and filler words like 嗯, 那个.
+  # Recommended: true. Set to false if you want raw transcription.
+  enable_ddc: true
+
+  # Inverse text normalization (文本规范化). Converts spoken numbers, dates, etc.
+  # e.g., "二零二四年" → "2024年", "百分之五十" → "50%"
+  # Recommended: true.
+  enable_itn: true
+
+  # Automatic punctuation. Inserts commas, periods, question marks, etc.
+  # Recommended: true.
+  enable_punc: true
+
+  # Two-pass recognition (二遍识别). First pass gives fast streaming results,
+  # second pass re-recognizes with higher accuracy. Slight latency increase (~200ms)
+  # but significantly better accuracy, especially for technical terms.
+  # Recommended: true.
+  enable_nonstream: true
 ```
 
-See the generated `config.yaml` for all available options.
+#### LLM (Text Correction)
+
+After ASR, the transcript is sent to an LLM for correction (capitalization, spacing, terminology, filler word removal). Any OpenAI-compatible API works.
+
+```yaml
+llm:
+  # OpenAI-compatible API endpoint.
+  # Examples:
+  #   OpenAI:    "https://api.openai.com/v1"
+  #   Anthropic: "https://api.anthropic.com/v1"  (needs compatible proxy)
+  #   Local:     "http://localhost:8080/v1"
+  base_url: ""
+
+  # API key. Supports environment variable substitution with ${VAR_NAME} syntax.
+  # Examples:
+  #   Direct:  "sk-xxxxxxxx"
+  #   Env var: "${LLM_API_KEY}"
+  api_key: ""
+
+  # Model name. Use a fast, cheap model — latency matters here.
+  # Recommended: "gpt-4o-mini" or any similar fast model.
+  model: ""
+
+  # LLM sampling parameters. temperature: 0 = deterministic, best for correction tasks.
+  temperature: 0
+  top_p: 1
+
+  # LLM request timeout in milliseconds.
+  timeout_ms: 8000
+
+  # Max tokens in LLM response. 1024 is plenty for voice input correction.
+  max_output_tokens: 1024
+
+  # How many dictionary entries to include in the LLM prompt.
+  # 0 = send all entries (recommended for dictionaries under ~500 entries).
+  # Set a limit if your dictionary is very large and you want to reduce prompt size.
+  dictionary_max_candidates: 0
+
+  # Paths to prompt files, relative to ~/.koe/.
+  # Edit these files to customize how the LLM corrects text.
+  system_prompt_path: "system_prompt.txt"
+  user_prompt_path: "user_prompt.txt"
+```
+
+#### Feedback (Sound Effects)
+
+```yaml
+feedback:
+  start_sound: true    # Play sound when recording starts
+  stop_sound: true     # Play sound when recording stops
+  error_sound: true    # Play sound on errors
+```
+
+#### Dictionary
+
+```yaml
+dictionary:
+  path: "dictionary.txt"  # Relative to ~/.koe/
+```
 
 ### Dictionary
 
@@ -138,10 +232,18 @@ Since the dictionary is just a text file, you can version-control it, share it a
 
 ### Prompts
 
-The LLM correction behavior is fully customizable via:
+The LLM correction behavior is fully customizable via two prompt files:
 
-- `~/.koe/system_prompt.txt` — defines the correction rules
-- `~/.koe/user_prompt.txt` — template with `{{asr_text}}` and `{{dictionary_entries}}` placeholders
+- **`~/.koe/system_prompt.txt`** — defines the correction rules (capitalization, spacing, punctuation, filler word removal, etc.)
+- **`~/.koe/user_prompt.txt`** — template that assembles the ASR output, interim history, and dictionary into the final LLM request
+
+Available template placeholders in `user_prompt.txt`:
+
+| Placeholder | Description |
+|---|---|
+| `{{asr_text}}` | The final ASR transcript text |
+| `{{interim_history}}` | ASR interim revision history — shows how the transcript changed over time, helping the LLM identify uncertain words |
+| `{{dictionary_entries}}` | Filtered dictionary entries for LLM context |
 
 The default prompts are tuned for software developers working in mixed Chinese-English, but you can adapt them for any language or domain.
 
@@ -183,32 +285,51 @@ You can also build your own dashboard or visualization on top of this database �
 
 Koe is built as a native macOS app with two layers:
 
-- **Objective-C shell** — handles macOS integration: hotkey detection, audio capture, clipboard management, paste simulation, and the menu bar icon
-- **Rust core library** — handles all network operations: ASR WebSocket streaming, LLM API calls, config management, and session orchestration
+- **Objective-C shell** — handles macOS integration: hotkey detection, audio capture, clipboard management, paste simulation, menu bar UI, and usage statistics (SQLite)
+- **Rust core library** — handles all network operations: ASR 2.0 WebSocket streaming with two-pass recognition, LLM API calls, config management, transcript aggregation, and session orchestration
 
 The two layers communicate via C FFI (Foreign Function Interface). The Rust core is compiled as a static library (`libkoe_core.a`) and linked into the Xcode project.
 
 ```
-┌─────────────────────────────────────────────┐
-│  macOS (Objective-C)                        │
-│  ┌──────────┐ ┌──────────┐ ┌─────────────┐ │
-│  │ Hotkey   │ │ Audio    │ │ Clipboard   │ │
-│  │ Monitor  │ │ Capture  │ │ + Paste     │ │
-│  └────┬─────┘ └────┬─────┘ └──────▲──────┘ │
-│       │             │              │        │
-│  ┌────▼─────────────▼──────────────┴──────┐ │
-│  │         SPRustBridge (FFI)             │ │
-│  └────────────────┬───────────────────────┘ │
-└───────────────────┼─────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  macOS (Objective-C)                             │
+│  ┌──────────┐ ┌──────────┐ ┌───────────────────┐│
+│  │ Hotkey   │ │ Audio    │ │ Clipboard + Paste ││
+│  │ Monitor  │ │ Capture  │ │                   ││
+│  └────┬─────┘ └────┬─────┘ └────────▲──────────┘│
+│       │             │                │           │
+│  ┌────▼─────────────▼────────────────┴─────────┐ │
+│  │           SPRustBridge (FFI)                 │ │
+│  └────────────────┬────────────────────────────┘ │
+│                   │                              │
+│  ┌────────────────┴───────┐  ┌────────────────┐  │
+│  │ Menu Bar + Status Bar  │  │ History Store  │  │
+│  │ (SPStatusBarManager)   │  │ (SQLite)       │  │
+│  └────────────────────────┘  └────────────────┘  │
+└───────────────────┼──────────────────────────────┘
                     │ C ABI
-┌───────────────────▼─────────────────────────┐
-│  Rust Core (libkoe_core.a)                  │
-│  ┌──────────┐ ┌──────────┐ ┌─────────────┐ │
-│  │ ASR      │ │ LLM      │ │ Config      │ │
-│  │ (WS)     │ │ (HTTP)   │ │ + Dict      │ │
-│  └──────────┘ └──────────┘ └─────────────┘ │
-└─────────────────────────────────────────────┘
+┌───────────────────▼──────────────────────────────┐
+│  Rust Core (libkoe_core.a)                       │
+│  ┌──────────────┐ ┌────────┐ ┌────────────────┐  │
+│  │ ASR 2.0      │ │ LLM    │ │ Config + Dict  │  │
+│  │ (WebSocket)  │ │ (HTTP) │ │ + Prompts      │  │
+│  │ Two-pass     │ │        │ │                │  │
+│  └──────┬───────┘ └───▲────┘ └────────────────┘  │
+│         │             │                          │
+│  ┌──────▼─────────────┴──────────────────────┐   │
+│  │ TranscriptAggregator                      │   │
+│  │ (interim → definite → final + history)    │   │
+│  └───────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────┘
 ```
+
+### ASR Pipeline
+
+1. Audio streams to Doubao ASR 2.0 via WebSocket (binary protocol with gzip compression)
+2. First-pass streaming results arrive in real-time (`Interim` events)
+3. Second-pass re-recognition confirms segments with higher accuracy (`Definite` events)
+4. `TranscriptAggregator` merges all results and tracks interim revision history
+5. Final transcript + interim history + dictionary are sent to the LLM for correction
 
 ## License
 

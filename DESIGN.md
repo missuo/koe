@@ -34,9 +34,9 @@ Recommended form:
 - No main window
 - No menu bar UI dependency
 - All configuration maintained through local files
-- Optionally provide a command-line tool `speechpastectl` for diagnostics, configuration reloading, and checking permission status
+- Menu bar status icon with dropdown showing permission status and usage statistics
 
-From the user's perspective, this is equivalent to "no GUI."
+From the user's perspective, this is equivalent to "no GUI" — there are no windows, just a small status icon.
 
 ### 2.2 Not Recommended as a Bare Binary
 
@@ -94,7 +94,7 @@ Reasons:
 
 ### 4.1 Runtime Form
 
-The application name can tentatively be `SpeechPaste.app`, but the name does not affect the design itself.
+The application name can tentatively be `Koe.app`, but the name does not affect the design itself.
 
 Runtime behavior:
 
@@ -104,22 +104,15 @@ Runtime behavior:
 - No main window is created
 - The user is not required to open any interface
 
-### 4.2 Recommended Auxiliary Commands
+### 4.2 Menu Bar UI
 
-Although the product itself has no GUI, it is strongly recommended to additionally provide a CLI:
+Instead of a CLI tool, the app provides a menu bar dropdown with:
 
-- `speechpastectl doctor`
-- `speechpastectl reload`
-- `speechpastectl status`
-- `speechpastectl permissions`
+- **Statistics section**: total characters, words, recording time, session count, and input speed
+- **Permissions section**: shows granted/missing status for Microphone, Accessibility, and Input Monitoring
+- **Quit option**
 
-CLI purposes:
-
-- Provide users with an operable entry point without a settings interface
-- Output missing permissions, configuration errors, network exceptions, and dictionary loading status
-- Allow hot-reloading of configuration
-
-The CLI is not the main product; it is only an operations and diagnostics tool.
+Section headers use custom `NSView` with bold labels (not selectable, not grayed out). The idle icon is a 5-bar audio waveform for easy recognition.
 
 ## 5. Required Permissions
 
@@ -373,7 +366,7 @@ Then this application may not be able to reliably receive press and release even
 
 ### 8.1 First Installation and Setup
 
-1. The user installs `SpeechPaste.app`
+1. The user installs `Koe.app`
 2. The user launches the application for the first time
 3. The application checks whether the configuration file exists
 4. If it does not exist, it generates a default configuration file and default dictionary file under `Application Support`
@@ -480,6 +473,8 @@ Cue sounds can be configured off, but it is recommended to enable them by defaul
 │ - Audio capture (AVFoundation)                          │
 │ - Accessibility / paste                                 │
 │ - Clipboard backup / restore                            │
+│ - Menu bar UI + status icon                             │
+│ - Usage statistics (SQLite history.db)                  │
 │ - Rust FFI bridge                                       │
 └─────────────────────────────────────────────────────────┘
                           │
@@ -491,12 +486,12 @@ Cue sounds can be configured off, but it is recommended to enable them by defaul
 │ - Config loader                                         │
 │ - Dictionary loader                                     │
 │ - Session state machine                                 │
-│ - Streaming ASR client                                  │
-│ - Transcript aggregator                                 │
-│ - LLM corrector                                         │
+│ - Streaming ASR 2.0 client (two-pass recognition)      │
+│ - Transcript aggregator (interim → definite → final)   │
+│ - LLM corrector (with interim history context)          │
 │ - Prompt builder                                        │
 │ - Error model                                           │
-│ - Logging / metrics                                     │
+│ - Logging                                               │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -538,6 +533,8 @@ Suggested modules:
 - `SPClipboardManager`
 - `SPRustBridge`
 - `SPCuePlayer`
+- `SPStatusBarManager` — menu bar icon and dropdown with stats/permissions
+- `SPHistoryManager` — SQLite usage statistics storage
 
 ### 11.2 Rust Modules
 
@@ -600,21 +597,17 @@ Reasons:
 
 All user-editable files should be placed in:
 
-`~/Library/Application Support/SpeechPaste/`
+`~/.koe/`
 
 Directory structure:
 
 ```text
-~/Library/Application Support/SpeechPaste/
-├── config.yaml
-├── dictionary.txt
-├── prompts/
-│   ├── system.txt
-│   └── user_template.txt
-├── cache/
-│   └── session/
-└── logs/
-    └── app.log
+~/.koe/
+├── config.yaml          # Main configuration
+├── dictionary.txt       # User dictionary (hotwords + LLM correction)
+├── system_prompt.txt    # LLM system prompt (customizable)
+├── user_prompt.txt      # LLM user prompt template
+└── history.db           # Usage statistics (SQLite, auto-created)
 ```
 
 ### 13.2 Why YAML for Configuration and TXT for Dictionary
@@ -685,15 +678,17 @@ Conclusion:
 
 ```yaml
 asr:
-  url: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel"
+  # Doubao ASR 2.0 (优化版双向流式)
+  url: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
   app_key: ""              # Volcengine App ID
   access_key: ""           # Volcengine Access Token
-  resource_id: "volc.bigasr.sauc.duration"
+  resource_id: "volc.seedasr.sauc.duration"
   connect_timeout_ms: 3000
   final_wait_timeout_ms: 5000
-  enable_ddc: true         # 语义顺滑
-  enable_itn: true         # 文本规范化
+  enable_ddc: true         # 语义顺滑 (disfluency removal)
+  enable_itn: true         # 文本规范化 (inverse text normalization)
   enable_punc: true        # 自动标点
+  enable_nonstream: true   # 二遍识别 (two-pass: streaming + re-recognition)
 
 llm:
   base_url: ""             # OpenAI-compatible endpoint
@@ -703,7 +698,7 @@ llm:
   top_p: 1
   timeout_ms: 8000
   max_output_tokens: 1024
-  dictionary_max_candidates: 200
+  dictionary_max_candidates: 0  # 0 = send all entries to LLM
   system_prompt_path: "system_prompt.txt"
   user_prompt_path: "user_prompt.txt"
 
@@ -854,9 +849,9 @@ The correction prompt must explicitly state:
 
 LLM input includes:
 
-- ASR final text
+- ASR final text (best available from TranscriptAggregator)
+- ASR interim revision history (last 10 unique interim texts, showing how the transcript evolved — helps LLM identify uncertain/misrecognized words)
 - User dictionary candidate entries
-- Whether to remove filler words
 - Language and style constraints
 
 ### 17.2 Output
@@ -891,25 +886,23 @@ Rules:
 ### 17.5 User Prompt Template
 
 ```text
-ASR original text:
+ASR transcript:
 {{asr_text}}
+
+ASR interim revisions (earlier drafts, may reveal uncertain words):
+{{interim_history}}
 
 User dictionary:
 {{dictionary_entries}}
 
-Please output the corrected final text.
+Output the corrected text only.
 ```
 
 ### 17.6 Dictionary Candidate Trimming
 
-When the dictionary is large, all entries should not be blindly stuffed into the prompt.
+By default (`dictionary_max_candidates: 0`), all dictionary entries are sent to the LLM. This works well for dictionaries under ~500 entries.
 
-Recommended strategy:
-
-- If the total number of dictionary lines is small, e.g., fewer than 500 lines, pass all of them
-- If the dictionary is large, Rust first filters candidate entries
-
-Candidate filtering can use the following simple rules:
+When a limit is set (`dictionary_max_candidates: N` where N > 0), Rust filters candidate entries:
 
 - Entries with character overlap with the ASR text are prioritized
 - English words use case-insensitive matching
@@ -922,15 +915,40 @@ This step does not alter dictionary content; it only reduces prompt size.
 
 ### 18.1 ASR Provider
 
-This design uses a "configurable WebSocket streaming ASR" as the unified interface. The preferred target can be Doubao streaming ASR, but the implementation does not hardcode the vendor into the code structure.
+This design uses Doubao (豆包) ASR 2.0 via the `bigmodel_async` endpoint (optimized bidirectional streaming). The implementation uses a trait-based abstraction to allow future provider additions.
 
-Rust should define a unified abstraction:
+Rust defines a unified `AsrProvider` trait:
 
-- `connect()`
-- `send_audio_frame()`
-- `finish_input()`
-- `next_event()`
-- `close()`
+- `connect(config)` — establish WebSocket connection with auth headers
+- `send_audio(frame)` — send gzip-compressed PCM audio frame
+- `finish_input()` — send last-packet flag to signal end of audio
+- `next_event()` — receive next event: `Interim`, `Definite`, `Final`, `Closed`, or `Error`
+- `close()` — close WebSocket connection
+
+### 18.1.1 Two-Pass Recognition
+
+When `enable_nonstream: true`, the ASR performs two-pass recognition:
+
+1. **First pass (streaming)**: fast real-time results as `Interim` events
+2. **Second pass (non-streaming)**: re-recognizes confirmed segments with higher accuracy, emitted as `Definite` events (utterances with `definite: true`)
+
+The `TranscriptAggregator` merges these with priority: `Final` > `Definite` > `Interim`.
+
+### 18.1.2 Binary Protocol
+
+The Doubao WebSocket uses a custom binary framing protocol:
+
+- 4-byte header: version, message type, serialization format, compression
+- Payload: gzip-compressed JSON (for requests/responses) or PCM audio
+- Message types: full client request (0x1), audio-only (0x2), server response (0x9), error (0xF)
+
+### 18.1.3 Hotwords
+
+Dictionary entries are sent to ASR as hotwords via the `corpus.context` field in the full client request. The format is a JSON string containing a hotwords array:
+
+```json
+{"corpus": {"context": "{\"hotwords\": [{\"word\": \"Cloudflare\"}, {\"word\": \"PostgreSQL\"}]}"}}
+```
 
 ### 18.2 ASR Lifecycle of a Single Session
 
@@ -1188,10 +1206,11 @@ When the system confirms this is a tap:
 
 ### 20.9 LLM Correction Phase
 
-1. Rust reads the ASR final text
-2. Rust selects candidate entries from the dictionary
-3. Rust constructs the correction prompt
-4. Rust calls the LLM API
+1. Rust reads the best available text from TranscriptAggregator (final > definite > interim)
+2. Rust collects the interim revision history (last 10 unique interim texts)
+3. Rust selects candidate entries from the dictionary
+4. Rust constructs the correction prompt (ASR text + interim history + dictionary)
+5. Rust calls the LLM API
 5. LLM returns the corrected final text
 6. Rust performs basic output sanitization, such as removing extra quotation marks and trimming leading/trailing whitespace
 7. If the LLM call fails, decide based on configuration:
@@ -1394,7 +1413,7 @@ Not recommended for hot reload mid-session:
 Recommended:
 
 - File change monitoring
-- Or explicit CLI invocation via `speechpastectl reload`
+- Or app restart (config is re-read at each session start)
 
 Hot reload effective timing:
 
@@ -1427,7 +1446,7 @@ Hot reload effective timing:
 
 Recommended:
 
-`~/Library/Application Support/SpeechPaste/logs/app.log`
+Rust core uses `env_logger` which outputs to stderr. To view logs, run the app from terminal with `RUST_LOG=info`.
 
 ## 26. Startup and Persistent Residence Strategy
 
@@ -1559,4 +1578,4 @@ The final recommended implementation approach is as follows:
 
 ## 30. One-Sentence Summary
 
-This project is entirely feasible, but its correct engineering form is not "a pure Rust command-line tool," but rather "an Objective-C windowless macOS Agent App + Rust core library + YAML configuration + TXT dictionary + a background voice input pipeline where a single `Fn` key supports both hold and tap-to-toggle modes."
+This project is an Objective-C windowless macOS Agent App + Rust core library + YAML configuration + TXT dictionary + SQLite usage statistics + a background voice input pipeline where a single `Fn` key supports both hold and tap-to-toggle modes. It uses Doubao ASR 2.0 with two-pass recognition for accuracy and passes interim revision history to the LLM for better correction.
