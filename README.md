@@ -36,7 +36,7 @@ Koe takes a different approach:
 ### Build
 
 ```bash
-git clone https://github.com/user/koe.git
+git clone https://github.com/missuo/koe.git
 cd koe
 
 # Generate Xcode project
