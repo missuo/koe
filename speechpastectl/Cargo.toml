@@ -1,7 +1,0 @@
-[package]
-name = "speechpastectl"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-# Phase 2: clap, serde_yaml, etc.
