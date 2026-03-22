@@ -16,6 +16,10 @@ Koe takes a different approach:
 - **All configuration lives in plain text files** under `~/.koe/`. Edit them with any text editor, vim, or even a script.
 - **Dictionary is a plain `.txt` file.** No need to open an app and add words one by one through a GUI. Just edit `~/.koe/dictionary.txt` — one term per line. You can even use Claude Code or other AI tools to bulk-generate domain-specific terms.
 - **Changes take effect immediately.** Edit any config file and the next time you press the hotkey, the new settings are used. No restart, no reload button.
+- **Tiny footprint.** Even after installation, Koe stays **under 15 MB**, and its memory usage is typically **around 20 MB**. It launches fast, wastes almost no disk space, and stays out of your way.
+- **Built with native macOS technologies.** Objective-C handles hotkeys, audio capture, clipboard access, permissions, and paste automation directly through Apple's own APIs.
+- **Rust does the heavy lifting.** The performance-critical core runs in Rust, which gives Koe low overhead, fast execution, and strong memory safety guarantees.
+- **No Chromium tax.** Many comparable Electron-based apps ship at **200+ MB** and carry the overhead of an embedded Chromium runtime. Koe avoids that entire stack, which helps keep memory usage low and the app feeling lightweight.
 
 ## How It Works
 
@@ -23,6 +27,12 @@ Koe takes a different approach:
 2. Audio streams in real-time to a cloud ASR service (Doubao/豆包 by ByteDance)
 3. The ASR transcript is corrected by an LLM (any OpenAI-compatible API) — fixing capitalization, punctuation, spacing, and terminology
 4. The corrected text is automatically pasted into the active input field
+
+Current provider support is intentionally narrow:
+
+- **ASR**: currently supports **Doubao ASR only**
+- **LLM**: currently supports **OpenAI-compatible APIs only**
+- **Planned**: future ASR support may include the **OpenAI Transcriptions API**
 
 ## Installation
 
@@ -109,7 +119,9 @@ Below is the full configuration with explanations for every field.
 
 #### ASR (Speech Recognition)
 
-Koe uses Doubao (豆包) ASR 2.0 by ByteDance/Volcengine for streaming speech recognition.
+Koe currently supports **Doubao (豆包) ASR 2.0 only** for streaming speech recognition.
+Support for additional ASR providers is not available yet. We may add support for
+the **OpenAI Transcriptions API** in the future.
 
 ```yaml
 asr:
@@ -154,7 +166,10 @@ asr:
 
 #### LLM (Text Correction)
 
-After ASR, the transcript is sent to an LLM for correction (capitalization, spacing, terminology, filler word removal). Any OpenAI-compatible API works.
+After ASR, the transcript is sent to an LLM for correction (capitalization,
+spacing, terminology, filler word removal). Koe currently supports
+**OpenAI-compatible APIs only** for this step. Native provider-specific APIs that
+are not OpenAI-compatible are not supported directly.
 
 ```yaml
 llm:
