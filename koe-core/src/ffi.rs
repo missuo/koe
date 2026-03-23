@@ -27,6 +27,9 @@ pub struct SPCallbacks {
     /// Called when a session encounters an error
     /// message is a UTF-8 C string, caller must NOT free it
     pub on_session_error: Option<extern "C" fn(message: *const c_char)>,
+    /// Called for non-fatal warnings that should be shown to the user
+    /// message is a UTF-8 C string, caller must NOT free it
+    pub on_session_warning: Option<extern "C" fn(message: *const c_char)>,
     /// Called when the final corrected text is ready
     /// text is a UTF-8 C string, caller must NOT free it
     pub on_final_text_ready: Option<extern "C" fn(text: *const c_char)>,
@@ -58,6 +61,16 @@ pub fn invoke_session_error(message: &str) {
     let cb = CALLBACKS.lock().unwrap();
     if let Some(ref cbs) = *cb {
         if let Some(f) = cbs.on_session_error {
+            let c_msg = CString::new(message).unwrap_or_default();
+            f(c_msg.as_ptr());
+        }
+    }
+}
+
+pub fn invoke_session_warning(message: &str) {
+    let cb = CALLBACKS.lock().unwrap();
+    if let Some(ref cbs) = *cb {
+        if let Some(f) = cbs.on_session_warning {
             let c_msg = CString::new(message).unwrap_or_default();
             f(c_msg.as_ptr());
         }

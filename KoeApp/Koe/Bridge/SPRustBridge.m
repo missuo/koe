@@ -25,6 +25,16 @@ static void bridge_on_session_error(const char *message) {
     }
 }
 
+static void bridge_on_session_warning(const char *message) {
+    NSString *msg = message ? [NSString stringWithUTF8String:message] : @"unknown warning";
+    id<SPRustBridgeDelegate> delegate = _bridgeDelegate;
+    if (delegate) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [delegate rustBridgeDidReceiveWarning:msg];
+        });
+    }
+}
+
 static void bridge_on_final_text_ready(const char *text) {
     NSString *txt = text ? [NSString stringWithUTF8String:text] : @"";
     id<SPRustBridgeDelegate> delegate = _bridgeDelegate;
@@ -79,6 +89,7 @@ static void bridge_on_state_changed(const char *state) {
     struct SPCallbacks callbacks = {
         .on_session_ready = bridge_on_session_ready,
         .on_session_error = bridge_on_session_error,
+        .on_session_warning = bridge_on_session_warning,
         .on_final_text_ready = bridge_on_final_text_ready,
         .on_log_event = bridge_on_log_event,
         .on_state_changed = bridge_on_state_changed,

@@ -15,7 +15,7 @@ use crate::asr::{AsrConfig, AsrEvent, AsrProvider};
 use crate::config::Config;
 use crate::ffi::{
     cstr_to_str, invoke_final_text_ready, invoke_session_error, invoke_session_ready,
-    invoke_state_changed, SPCallbacks, SPFeedbackConfig, SPHotkeyConfig, SPSessionContext,
+    invoke_session_warning, invoke_state_changed, SPCallbacks, SPFeedbackConfig, SPHotkeyConfig, SPSessionContext,
     SPSessionMode,
 };
 use crate::llm::openai_compatible::OpenAiCompatibleProvider;
@@ -519,6 +519,7 @@ async fn run_session(
             }
             Err(e) => {
                 log::warn!("[{session_id}] LLM failed, falling back to ASR text: {e}");
+                invoke_session_warning(&format!("LLM correction failed: {e}"));
                 asr_text
             }
         }

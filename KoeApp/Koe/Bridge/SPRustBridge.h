@@ -10,6 +10,7 @@ typedef NS_ENUM(NSInteger, SPSessionModeObjC) {
 - (void)rustBridgeDidBecomeReady;
 - (void)rustBridgeDidReceiveFinalText:(NSString *)text;
 - (void)rustBridgeDidEncounterError:(NSString *)message;
+- (void)rustBridgeDidReceiveWarning:(NSString *)message;
 - (void)rustBridgeDidChangeState:(NSString *)state;
 @end
 

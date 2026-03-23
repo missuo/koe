@@ -262,6 +262,25 @@
     });
 }
 
+- (void)sendWarningNotification:(NSString *)message {
+    UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+    content.title = @"Koe Warning";
+    content.body = message;
+    content.sound = nil;
+
+    NSString *identifier = [NSString stringWithFormat:@"koe-warning-%f",
+                            [[NSDate date] timeIntervalSince1970]];
+    UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:identifier
+                                                                          content:content
+                                                                          trigger:nil];
+    [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:request
+                                                           withCompletionHandler:^(NSError * _Nullable error) {
+        if (error) {
+            NSLog(@"[Koe] Failed to deliver warning notification: %@", error.localizedDescription);
+        }
+    }];
+}
+
 - (void)sendErrorNotification:(NSString *)message {
     UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
     content.title = @"Koe Error";
@@ -279,6 +298,11 @@
             NSLog(@"[Koe] Failed to deliver error notification: %@", error.localizedDescription);
         }
     }];
+}
+
+- (void)rustBridgeDidReceiveWarning:(NSString *)message {
+    NSLog(@"[Koe] Session warning: %@", message);
+    [self sendWarningNotification:message];
 }
 
 - (void)rustBridgeDidChangeState:(NSString *)state {
