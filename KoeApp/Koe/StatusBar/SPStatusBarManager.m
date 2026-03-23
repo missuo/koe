@@ -3,6 +3,7 @@
 #import "SPHistoryManager.h"
 #import <Cocoa/Cocoa.h>
 #import <ServiceManagement/ServiceManagement.h>
+#import <UserNotifications/UserNotifications.h>
 
 // Icon size for menu bar (points)
 static const CGFloat kIconSize = 18.0;
@@ -16,6 +17,7 @@ static const CGFloat kIconSize = 18.0;
 @property (nonatomic, strong) NSMenuItem *micPermissionItem;
 @property (nonatomic, strong) NSMenuItem *accessibilityPermissionItem;
 @property (nonatomic, strong) NSMenuItem *inputMonitoringPermissionItem;
+@property (nonatomic, strong) NSMenuItem *notificationPermissionItem;
 @property (nonatomic, strong) NSMenuItem *statsCountItem;
 @property (nonatomic, strong) NSMenuItem *statsTimeItem;
 @property (nonatomic, strong) NSMenuItem *statsSpeedItem;
@@ -107,6 +109,12 @@ static const CGFloat kIconSize = 18.0;
     self.inputMonitoringPermissionItem.enabled = NO;
     [menu addItem:self.inputMonitoringPermissionItem];
 
+    self.notificationPermissionItem = [[NSMenuItem alloc] initWithTitle:@"  Notifications: Checking..."
+                                                                action:nil
+                                                         keyEquivalent:@""];
+    self.notificationPermissionItem.enabled = NO;
+    [menu addItem:self.notificationPermissionItem];
+
     [menu addItem:[NSMenuItem separatorItem]];
 
     NSMenuItem *openConfig = [[NSMenuItem alloc] initWithTitle:@"Open Config Folder..."
@@ -156,6 +164,11 @@ static const CGFloat kIconSize = 18.0;
                                               accessibility ? @"Granted" : @"Not Granted"];
     self.inputMonitoringPermissionItem.title = [NSString stringWithFormat:@"  Input Monitoring: %@",
                                                 inputMonitoring ? @"Granted" : @"Not Granted"];
+
+    [self.permissionManager checkNotificationPermissionWithCompletion:^(BOOL granted) {
+        self.notificationPermissionItem.title = [NSString stringWithFormat:@"  Notifications: %@",
+                                                  granted ? @"Granted" : @"Not Granted"];
+    }];
 }
 
 - (void)refreshStats {

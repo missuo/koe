@@ -1,6 +1,7 @@
 #import "SPPermissionManager.h"
 #import <AVFoundation/AVFoundation.h>
 #import <ApplicationServices/ApplicationServices.h>
+#import <UserNotifications/UserNotifications.h>
 
 @implementation SPPermissionManager
 
@@ -61,6 +62,28 @@ static CGEventRef inputMonitoringProbeCallback(CGEventTapProxy proxy,
         return YES;
     }
     return NO;
+}
+
+- (void)requestNotificationPermission {
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
+                          completionHandler:^(BOOL granted, NSError * _Nullable error) {
+        if (error) {
+            NSLog(@"[Koe] Notification permission request error: %@", error.localizedDescription);
+        } else {
+            NSLog(@"[Koe] Notification permission %@", granted ? @"granted" : @"denied");
+        }
+    }];
+}
+
+- (void)checkNotificationPermissionWithCompletion:(void (^)(BOOL granted))completion {
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings * _Nonnull settings) {
+        BOOL granted = (settings.authorizationStatus == UNAuthorizationStatusAuthorized);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(granted);
+        });
+    }];
 }
 
 @end

@@ -37,6 +37,7 @@ targets:
           - "-lresolv"
           - "-framework Security"
           - "-framework CoreFoundation"
+          - "-framework UserNotifications"
         ENABLE_APP_SANDBOX: NO
         CLANG_ENABLE_OBJC_ARC: YES
     dependencies: []
@@ -53,4 +54,5 @@ targets:
       - Carbon
       - AudioToolbox
       - ServiceManagement
+      - UserNotifications
       - sdk: libsqlite3.tbd

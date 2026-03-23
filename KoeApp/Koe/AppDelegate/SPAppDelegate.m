@@ -11,6 +11,7 @@
 #import "SPHistoryManager.h"
 #import "koe_core.h"
 #import <sys/stat.h>
+#import <UserNotifications/UserNotifications.h>
 
 @interface SPAppDelegate ()
 @property (nonatomic, strong) NSDate *recordingStartTime;
@@ -39,6 +40,9 @@
 
     // Initialize floating overlay
     self.overlayPanel = [[SPOverlayPanel alloc] init];
+
+    // Request notification permission
+    [self.permissionManager requestNotificationPermission];
 
     // Check permissions
     [self.permissionManager checkAllPermissionsWithCompletion:^(BOOL micGranted, BOOL accessibilityGranted, BOOL inputMonitoringGranted) {
@@ -247,12 +251,34 @@
     [self.statusBarManager updateState:@"error"];
     [self.overlayPanel updateState:@"error"];
 
+    // Send system notification with error details
+    [self sendErrorNotification:message];
+
     // Brief error display, then back to idle
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         [self.statusBarManager updateState:@"idle"];
         [self.overlayPanel updateState:@"idle"];
     });
+}
+
+- (void)sendErrorNotification:(NSString *)message {
+    UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+    content.title = @"Koe Error";
+    content.body = message;
+    content.sound = nil; // Already playing error cue
+
+    NSString *identifier = [NSString stringWithFormat:@"koe-error-%f",
+                            [[NSDate date] timeIntervalSince1970]];
+    UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:identifier
+                                                                          content:content
+                                                                          trigger:nil];
+    [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:request
+                                                           withCompletionHandler:^(NSError * _Nullable error) {
+        if (error) {
+            NSLog(@"[Koe] Failed to deliver error notification: %@", error.localizedDescription);
+        }
+    }];
 }
 
 - (void)rustBridgeDidChangeState:(NSString *)state {
