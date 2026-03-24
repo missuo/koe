@@ -30,6 +30,7 @@ public:
     uint16_t targetKeyCode = 0xA3;  // VK_RCONTROL default
     double holdThresholdMs = 180.0;
     bool suspended = false;
+    bool consumeKey = true;  // Swallow target key events when active
 
     // Called from WndProc on main thread
     void handleKeyDown();

@@ -52,6 +52,9 @@ LRESULT CALLBACK HotkeyMonitor::keyboardProc(int nCode, WPARAM wParam, LPARAM lP
             } else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
                 PostMessageW(g_hotkeyMonitor->m_hwnd, WM_HOTKEY_KEYUP, 0, 0);
             }
+            if (g_hotkeyMonitor->consumeKey) {
+                return 1;  // Consume the key — do not pass to other apps
+            }
         }
     }
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
