@@ -23,6 +23,13 @@ NS_ASSUME_NONNULL_BEGIN
 /// The currently selected device UID, or nil for system default.
 @property (nonatomic, copy, nullable) NSString *selectedDeviceUID;
 
+/// The display name of the currently selected device, or nil.
+/// Persisted alongside the UID so the name can be shown even when the device is disconnected.
+@property (nonatomic, readonly, nullable) NSString *selectedDeviceName;
+
+/// Sets the selected device UID and name together. Pass nil for both to revert to system default.
+- (void)selectDevice:(nullable NSString *)uid name:(nullable NSString *)name;
+
 /// Resolves the selected UID to an AudioDeviceID.
 /// Returns the system default input device if the stored UID is nil or no longer available.
 - (AudioDeviceID)resolvedDeviceID;

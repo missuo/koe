@@ -254,7 +254,7 @@ static const CGFloat kIconSize = 18.0;
     NSString *selectedUID = self.audioDeviceManager.selectedDeviceUID;
     NSArray<SPAudioInputDevice *> *devices = [self.audioDeviceManager availableInputDevices];
 
-    // Check if selected device still exists
+    // Check if selected device is currently available
     BOOL selectedFound = NO;
     if (selectedUID) {
         for (SPAudioInputDevice *device in devices) {
@@ -262,11 +262,6 @@ static const CGFloat kIconSize = 18.0;
                 selectedFound = YES;
                 break;
             }
-        }
-        if (!selectedFound) {
-            NSLog(@"[Koe] Previously selected device %@ no longer available, reverting to System Default", selectedUID);
-            self.audioDeviceManager.selectedDeviceUID = nil;
-            selectedUID = nil;
         }
     }
 
@@ -284,6 +279,9 @@ static const CGFloat kIconSize = 18.0;
     }
 
     // Available input devices
+    // NOTE: Only device.name is shown. If the user has multiple devices with identical
+    // names (e.g. two identical USB mics), they cannot be distinguished visually.
+    // A future improvement could append a disambiguator (manufacturer, UID suffix, etc.).
     for (SPAudioInputDevice *device in devices) {
         NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:device.name
                                                       action:@selector(selectAudioDevice:)
@@ -293,11 +291,24 @@ static const CGFloat kIconSize = 18.0;
         item.state = [device.uid isEqualToString:selectedUID] ? NSControlStateValueOn : NSControlStateValueOff;
         [submenu addItem:item];
     }
+
+    // Show disconnected but still-selected device as a greyed-out item
+    if (selectedUID && !selectedFound) {
+        NSString *deviceName = self.audioDeviceManager.selectedDeviceName ?: selectedUID;
+        [submenu addItem:[NSMenuItem separatorItem]];
+        NSMenuItem *unavailableItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"%@ (Unavailable)", deviceName]
+                                                                action:nil
+                                                         keyEquivalent:@""];
+        unavailableItem.state = NSControlStateValueOn;
+        unavailableItem.enabled = NO;
+        [submenu addItem:unavailableItem];
+    }
 }
 
 - (void)selectAudioDevice:(NSMenuItem *)sender {
     NSString *uid = sender.representedObject;
-    self.audioDeviceManager.selectedDeviceUID = uid;
+    NSString *name = uid ? sender.title : nil;
+    [self.audioDeviceManager selectDevice:uid name:name];
     NSLog(@"[Koe] Audio device selected: %@", uid ?: @"System Default");
 
     if ([self.delegate respondsToSelector:@selector(statusBarDidSelectAudioDeviceWithUID:)]) {

@@ -2,6 +2,7 @@
 #import <CoreAudio/CoreAudio.h>
 
 static NSString *const kSelectedDeviceUIDKey = @"SPSelectedAudioDeviceUID";
+static NSString *const kSelectedDeviceNameKey = @"SPSelectedAudioDeviceName";
 
 #pragma mark - SPAudioInputDevice
 
@@ -52,7 +53,11 @@ static NSString *const kSelectedDeviceUIDKey = @"SPSelectedAudioDeviceUID";
     for (UInt32 i = 0; i < deviceCount; i++) {
         AudioDeviceID deviceID = deviceIDs[i];
 
-        // Skip aggregate devices (internal system devices, e.g. CADefaultDeviceAggregate)
+        // Skip aggregate devices (internal system devices, e.g. CADefaultDeviceAggregate).
+        // NOTE: This also filters out user-created aggregate devices from Audio MIDI Setup.
+        // This is a deliberate trade-off to keep the list clean for the common case.
+        // If user-created aggregates need to be supported in the future, switch to a
+        // name-based blocklist (e.g. skip only devices whose name starts with "CADefault").
         AudioObjectPropertyAddress transportAddress = {
             .mSelector = kAudioDevicePropertyTransportType,
             .mScope = kAudioObjectPropertyScopeGlobal,
@@ -146,6 +151,23 @@ static NSString *const kSelectedDeviceUIDKey = @"SPSelectedAudioDeviceUID";
         [[NSUserDefaults standardUserDefaults] setObject:selectedDeviceUID forKey:kSelectedDeviceUIDKey];
     } else {
         [[NSUserDefaults standardUserDefaults] removeObjectForKey:kSelectedDeviceUIDKey];
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:kSelectedDeviceNameKey];
+    }
+}
+
+- (NSString *)selectedDeviceName {
+    return [[NSUserDefaults standardUserDefaults] stringForKey:kSelectedDeviceNameKey];
+}
+
+- (void)selectDevice:(NSString *)uid name:(NSString *)name {
+    if (uid) {
+        [[NSUserDefaults standardUserDefaults] setObject:uid forKey:kSelectedDeviceUIDKey];
+        if (name) {
+            [[NSUserDefaults standardUserDefaults] setObject:name forKey:kSelectedDeviceNameKey];
+        }
+    } else {
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:kSelectedDeviceUIDKey];
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:kSelectedDeviceNameKey];
     }
 }
 

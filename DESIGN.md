@@ -598,8 +598,8 @@ Input device selection is handled entirely in the Objective-C layer:
 - `SPAudioDeviceManager` enumerates available input devices via CoreAudio (`AudioObjectGetPropertyData` with `kAudioHardwarePropertyDevices`)
 - The selected device UID is persisted in `NSUserDefaults`, not in `config.yaml`, because Rust has no need to know which physical device is in use
 - Before each capture session, `SPAudioCaptureManager` applies the selected device by calling `AudioUnitSetProperty` with `kAudioOutputUnitProperty_CurrentDevice` on the input node's AudioUnit — this must happen before querying the hardware format
-- Aggregate devices (transport type `kAudioDeviceTransportTypeAggregate`) are filtered out of the device list — these are internal system devices (e.g., `CADefaultDeviceAggregate`) created by macOS for virtual audio routing and should not be shown to the user
-- If the previously selected device is no longer available, the system falls back to the macOS default input device
+- Aggregate devices (transport type `kAudioDeviceTransportTypeAggregate`) are filtered out of the device list — these are internal system devices (e.g., `CADefaultDeviceAggregate`) created by macOS for virtual audio routing and should not be shown to the user; note that this also filters user-created aggregate devices from Audio MIDI Setup, which is a deliberate trade-off for simplicity
+- The selected device UID and display name are both persisted so the UI can show the device name even when it is disconnected; the preference is never cleared by a menu refresh — if the device is temporarily unavailable, it appears as a greyed-out "(Unavailable)" item, and `resolvedDeviceID` silently falls back to the macOS default input device at recording time
 
 ## 13. File and Directory Layout
 
