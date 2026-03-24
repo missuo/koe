@@ -38,6 +38,14 @@ struct Core {
 
 static CORE: Mutex<Option<Core>> = Mutex::new(None);
 
+fn has_active_session(core: &Core) -> bool {
+    if core.audio_tx.is_some() {
+        return true;
+    }
+
+    core.session.lock().unwrap().is_some()
+}
+
 // ─── FFI Entry Points ───────────────────────────────────────────────
 
 /// Initialize the core. Must be called once before any other function.
@@ -176,6 +184,11 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
             return -1;
         }
     };
+
+    if has_active_session(core) {
+        log::warn!("session already active, ignoring duplicate session_begin");
+        return 0;
+    }
 
     // Hot-reload: re-read config, dictionary, and prompts at session start
     // Files are tiny so overhead is negligible — no need to manually Reload Config
@@ -590,4 +603,70 @@ async fn wait_for_final(
 fn cleanup_session(session_arc: &Arc<Mutex<Option<Session>>>) {
     let mut s = session_arc.lock().unwrap();
     *s = None;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::runtime::Builder;
+
+    #[test]
+    fn session_begin_is_idempotent_when_session_exists() {
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("failed to create runtime");
+
+        let session_arc = Arc::new(Mutex::new(Some(Session::new(
+            SPSessionMode::Hold,
+            None,
+            0,
+        ))));
+        let existing_id = session_arc
+            .lock()
+            .unwrap()
+            .as_ref()
+            .expect("session should exist")
+            .id
+            .clone();
+
+        let core = Core {
+            runtime,
+            audio_tx: None,
+            session: session_arc,
+            config: Config::default(),
+            dictionary: vec![],
+            system_prompt: String::new(),
+            user_prompt_template: String::new(),
+        };
+
+        {
+            let mut global = CORE.lock().unwrap();
+            *global = Some(core);
+        }
+
+        let context = SPSessionContext {
+            mode: SPSessionMode::Toggle,
+            frontmost_bundle_id: std::ptr::null(),
+            frontmost_pid: 0,
+        };
+
+        let rc = sp_core_session_begin(context);
+        assert_eq!(rc, 0);
+
+        let current_id = {
+            let global = CORE.lock().unwrap();
+            let core = global.as_ref().expect("core should exist");
+            let guard = core.session.lock().unwrap();
+            guard
+                .as_ref()
+                .expect("session should still exist")
+                .id
+                .clone()
+        };
+
+        assert_eq!(current_id, existing_id);
+
+        sp_core_destroy();
+    }
 }
