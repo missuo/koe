@@ -1,0 +1,172 @@
+#import "SPAudioDeviceManager.h"
+#import <CoreAudio/CoreAudio.h>
+
+static NSString *const kSelectedDeviceUIDKey = @"SPSelectedAudioDeviceUID";
+
+#pragma mark - SPAudioInputDevice
+
+@implementation SPAudioInputDevice
+
+- (instancetype)initWithUID:(NSString *)uid name:(NSString *)name deviceID:(AudioDeviceID)deviceID {
+    self = [super init];
+    if (self) {
+        _uid = [uid copy];
+        _name = [name copy];
+        _deviceID = deviceID;
+    }
+    return self;
+}
+
+@end
+
+#pragma mark - SPAudioDeviceManager
+
+@implementation SPAudioDeviceManager
+
+- (NSArray<SPAudioInputDevice *> *)availableInputDevices {
+    // Get all audio devices
+    AudioObjectPropertyAddress devicesAddress = {
+        .mSelector = kAudioHardwarePropertyDevices,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain
+    };
+
+    UInt32 dataSize = 0;
+    OSStatus status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &devicesAddress, 0, NULL, &dataSize);
+    if (status != noErr || dataSize == 0) {
+        NSLog(@"[Koe] Failed to get audio device list size: %d", (int)status);
+        return @[];
+    }
+
+    UInt32 deviceCount = dataSize / sizeof(AudioDeviceID);
+    AudioDeviceID *deviceIDs = (AudioDeviceID *)malloc(dataSize);
+    status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &devicesAddress, 0, NULL, &dataSize, deviceIDs);
+    if (status != noErr) {
+        NSLog(@"[Koe] Failed to get audio device list: %d", (int)status);
+        free(deviceIDs);
+        return @[];
+    }
+
+    NSMutableArray<SPAudioInputDevice *> *inputDevices = [NSMutableArray array];
+
+    for (UInt32 i = 0; i < deviceCount; i++) {
+        AudioDeviceID deviceID = deviceIDs[i];
+
+        // Check if this device has input channels
+        AudioObjectPropertyAddress streamConfigAddress = {
+            .mSelector = kAudioDevicePropertyStreamConfiguration,
+            .mScope = kAudioObjectPropertyScopeInput,
+            .mElement = kAudioObjectPropertyElementMain
+        };
+
+        UInt32 configSize = 0;
+        status = AudioObjectGetPropertyDataSize(deviceID, &streamConfigAddress, 0, NULL, &configSize);
+        if (status != noErr || configSize == 0) continue;
+
+        AudioBufferList *bufferList = (AudioBufferList *)malloc(configSize);
+        status = AudioObjectGetPropertyData(deviceID, &streamConfigAddress, 0, NULL, &configSize, bufferList);
+        if (status != noErr) {
+            free(bufferList);
+            continue;
+        }
+
+        // Count input channels
+        UInt32 inputChannels = 0;
+        for (UInt32 j = 0; j < bufferList->mNumberBuffers; j++) {
+            inputChannels += bufferList->mBuffers[j].mNumberChannels;
+        }
+        free(bufferList);
+
+        if (inputChannels == 0) continue;
+
+        // Get device UID
+        AudioObjectPropertyAddress uidAddress = {
+            .mSelector = kAudioDevicePropertyDeviceUID,
+            .mScope = kAudioObjectPropertyScopeGlobal,
+            .mElement = kAudioObjectPropertyElementMain
+        };
+
+        CFStringRef deviceUID = NULL;
+        UInt32 uidSize = sizeof(CFStringRef);
+        status = AudioObjectGetPropertyData(deviceID, &uidAddress, 0, NULL, &uidSize, &deviceUID);
+        if (status != noErr || !deviceUID) continue;
+
+        // Get device name
+        AudioObjectPropertyAddress nameAddress = {
+            .mSelector = kAudioObjectPropertyName,
+            .mScope = kAudioObjectPropertyScopeGlobal,
+            .mElement = kAudioObjectPropertyElementMain
+        };
+
+        CFStringRef deviceName = NULL;
+        UInt32 nameSize = sizeof(CFStringRef);
+        status = AudioObjectGetPropertyData(deviceID, &nameAddress, 0, NULL, &nameSize, &deviceName);
+        if (status != noErr || !deviceName) {
+            CFRelease(deviceUID);
+            continue;
+        }
+
+        SPAudioInputDevice *device = [[SPAudioInputDevice alloc] initWithUID:(__bridge NSString *)deviceUID
+                                                                        name:(__bridge NSString *)deviceName
+                                                                    deviceID:deviceID];
+        [inputDevices addObject:device];
+
+        CFRelease(deviceUID);
+        CFRelease(deviceName);
+    }
+
+    free(deviceIDs);
+
+    // Sort by name
+    [inputDevices sortUsingComparator:^NSComparisonResult(SPAudioInputDevice *a, SPAudioInputDevice *b) {
+        return [a.name localizedCaseInsensitiveCompare:b.name];
+    }];
+
+    return [inputDevices copy];
+}
+
+- (NSString *)selectedDeviceUID {
+    return [[NSUserDefaults standardUserDefaults] stringForKey:kSelectedDeviceUIDKey];
+}
+
+- (void)setSelectedDeviceUID:(NSString *)selectedDeviceUID {
+    if (selectedDeviceUID) {
+        [[NSUserDefaults standardUserDefaults] setObject:selectedDeviceUID forKey:kSelectedDeviceUIDKey];
+    } else {
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:kSelectedDeviceUIDKey];
+    }
+}
+
+- (AudioDeviceID)resolvedDeviceID {
+    NSString *selectedUID = self.selectedDeviceUID;
+
+    if (selectedUID) {
+        // Try to find the selected device
+        NSArray<SPAudioInputDevice *> *devices = [self availableInputDevices];
+        for (SPAudioInputDevice *device in devices) {
+            if ([device.uid isEqualToString:selectedUID]) {
+                return device.deviceID;
+            }
+        }
+        NSLog(@"[Koe] Selected audio device %@ not found, falling back to system default", selectedUID);
+    }
+
+    // Return system default input device
+    AudioObjectPropertyAddress defaultAddress = {
+        .mSelector = kAudioHardwarePropertyDefaultInputDevice,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain
+    };
+
+    AudioDeviceID defaultDevice = kAudioObjectUnknown;
+    UInt32 size = sizeof(AudioDeviceID);
+    OSStatus status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &defaultAddress, 0, NULL, &size, &defaultDevice);
+    if (status != noErr) {
+        NSLog(@"[Koe] Failed to get default input device: %d", (int)status);
+        return kAudioObjectUnknown;
+    }
+
+    return defaultDevice;
+}
+
+@end

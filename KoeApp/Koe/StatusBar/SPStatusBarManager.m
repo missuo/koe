@@ -1,5 +1,6 @@
 #import "SPStatusBarManager.h"
 #import "SPPermissionManager.h"
+#import "SPAudioDeviceManager.h"
 #import "SPHistoryManager.h"
 #import <Cocoa/Cocoa.h>
 #import <ServiceManagement/ServiceManagement.h>
@@ -12,6 +13,7 @@ static const CGFloat kIconSize = 18.0;
 
 @property (nonatomic, weak) id<SPStatusBarDelegate> delegate;
 @property (nonatomic, strong) SPPermissionManager *permissionManager;
+@property (nonatomic, strong) SPAudioDeviceManager *audioDeviceManager;
 @property (nonatomic, strong) NSStatusItem *statusItem;
 @property (nonatomic, strong) NSMenuItem *statusMenuItem;
 @property (nonatomic, strong) NSMenuItem *micPermissionItem;
@@ -30,11 +32,13 @@ static const CGFloat kIconSize = 18.0;
 @implementation SPStatusBarManager
 
 - (instancetype)initWithDelegate:(id<SPStatusBarDelegate>)delegate
-               permissionManager:(SPPermissionManager *)permissionManager {
+               permissionManager:(SPPermissionManager *)permissionManager
+              audioDeviceManager:(SPAudioDeviceManager *)audioDeviceManager {
     self = [super init];
     if (self) {
         _delegate = delegate;
         _permissionManager = permissionManager;
+        _audioDeviceManager = audioDeviceManager;
         _currentState = @"idle";
         _animationFrame = 0;
         [self setupStatusBar];
@@ -117,6 +121,16 @@ static const CGFloat kIconSize = 18.0;
 
     [menu addItem:[NSMenuItem separatorItem]];
 
+    // Microphone selection submenu
+    NSMenuItem *microphoneItem = [[NSMenuItem alloc] initWithTitle:@"Microphone"
+                                                           action:nil
+                                                    keyEquivalent:@""];
+    NSMenu *micSubmenu = [[NSMenu alloc] initWithTitle:@"Microphone"];
+    microphoneItem.submenu = micSubmenu;
+    [menu addItem:microphoneItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
     NSMenuItem *openConfig = [[NSMenuItem alloc] initWithTitle:@"Open Config Folder..."
                                                        action:@selector(openConfigFolder:)
                                                 keyEquivalent:@""];
@@ -151,6 +165,7 @@ static const CGFloat kIconSize = 18.0;
 - (void)menuWillOpen:(NSMenu *)menu {
     [self refreshPermissionStatus];
     [self refreshStats];
+    [self refreshMicrophoneSubmenu:menu];
     if ([self.delegate respondsToSelector:@selector(statusBarMenuDidOpen)]) {
         [self.delegate statusBarMenuDidOpen];
     }
@@ -223,6 +238,70 @@ static const CGFloat kIconSize = 18.0;
         }
     } else {
         self.statsSpeedItem.title = @"  Speed: --";
+    }
+}
+
+#pragma mark - Microphone Selection
+
+- (void)refreshMicrophoneSubmenu:(NSMenu *)menu {
+    // Find the Microphone menu item
+    NSInteger micIndex = [menu indexOfItemWithTitle:@"Microphone"];
+    if (micIndex == -1) return;
+
+    NSMenu *submenu = [menu itemAtIndex:micIndex].submenu;
+    [submenu removeAllItems];
+
+    NSString *selectedUID = self.audioDeviceManager.selectedDeviceUID;
+    NSArray<SPAudioInputDevice *> *devices = [self.audioDeviceManager availableInputDevices];
+
+    // Check if selected device still exists
+    BOOL selectedFound = NO;
+    if (selectedUID) {
+        for (SPAudioInputDevice *device in devices) {
+            if ([device.uid isEqualToString:selectedUID]) {
+                selectedFound = YES;
+                break;
+            }
+        }
+        if (!selectedFound) {
+            NSLog(@"[Koe] Previously selected device %@ no longer available, reverting to System Default", selectedUID);
+            self.audioDeviceManager.selectedDeviceUID = nil;
+            selectedUID = nil;
+        }
+    }
+
+    // "System Default" option
+    NSMenuItem *defaultItem = [[NSMenuItem alloc] initWithTitle:@"System Default"
+                                                        action:@selector(selectAudioDevice:)
+                                                 keyEquivalent:@""];
+    defaultItem.target = self;
+    defaultItem.representedObject = nil;
+    defaultItem.state = (selectedUID == nil) ? NSControlStateValueOn : NSControlStateValueOff;
+    [submenu addItem:defaultItem];
+
+    if (devices.count > 0) {
+        [submenu addItem:[NSMenuItem separatorItem]];
+    }
+
+    // Available input devices
+    for (SPAudioInputDevice *device in devices) {
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:device.name
+                                                      action:@selector(selectAudioDevice:)
+                                               keyEquivalent:@""];
+        item.target = self;
+        item.representedObject = device.uid;
+        item.state = [device.uid isEqualToString:selectedUID] ? NSControlStateValueOn : NSControlStateValueOff;
+        [submenu addItem:item];
+    }
+}
+
+- (void)selectAudioDevice:(NSMenuItem *)sender {
+    NSString *uid = sender.representedObject;
+    self.audioDeviceManager.selectedDeviceUID = uid;
+    NSLog(@"[Koe] Audio device selected: %@", uid ?: @"System Default");
+
+    if ([self.delegate respondsToSelector:@selector(statusBarDidSelectAudioDeviceWithUID:)]) {
+        [self.delegate statusBarDidSelectAudioDeviceWithUID:uid];
     }
 }
 

@@ -1,5 +1,6 @@
 #import "SPAudioCaptureManager.h"
 #import <AVFoundation/AVFoundation.h>
+#import <AudioToolbox/AudioToolbox.h>
 
 // ASR recommends 200ms frames for best performance with bigmodel
 static const NSUInteger kTargetSampleRate = 16000;
@@ -11,6 +12,7 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
 @property (nonatomic, copy) SPAudioFrameCallback audioCallback;
 @property (nonatomic, readwrite) BOOL isCapturing;
 @property (nonatomic, strong) NSMutableData *accumBuffer;
+@property (nonatomic, assign) AudioDeviceID pendingDeviceID;
 
 @end
 
@@ -33,6 +35,21 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
     [self.accumBuffer setLength:0];
 
     AVAudioInputNode *inputNode = self.audioEngine.inputNode;
+
+    // Set input device if specified (must be before querying hardware format)
+    if (self.pendingDeviceID != kAudioObjectUnknown) {
+        AudioDeviceID deviceID = self.pendingDeviceID;
+        OSStatus osStatus = AudioUnitSetProperty(inputNode.audioUnit,
+                                                  kAudioOutputUnitProperty_CurrentDevice,
+                                                  kAudioUnitScope_Global, 0,
+                                                  &deviceID, sizeof(deviceID));
+        if (osStatus != noErr) {
+            NSLog(@"[Koe] Failed to set input device (ID %u): %d, using default",
+                  (unsigned)deviceID, (int)osStatus);
+        } else {
+            NSLog(@"[Koe] Input device set to ID %u", (unsigned)deviceID);
+        }
+    }
 
     // Use the hardware's native format for the tap — cannot request a different sample rate
     AVAudioFormat *hardwareFormat = [inputNode outputFormatForBus:0];
@@ -126,6 +143,10 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
 
     self.isCapturing = YES;
     NSLog(@"[Koe] Audio capture started (hardware -> 16kHz mono, 200ms frames)");
+}
+
+- (void)setInputDeviceID:(AudioDeviceID)deviceID {
+    self.pendingDeviceID = deviceID;
 }
 
 - (void)stopCapture {

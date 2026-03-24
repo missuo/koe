@@ -52,6 +52,7 @@ targets:
       - AppKit
       - ApplicationServices
       - Carbon
+      - CoreAudio
       - AudioToolbox
       - ServiceManagement
       - UserNotifications

@@ -2,6 +2,7 @@
 #import "SPPermissionManager.h"
 #import "SPHotkeyMonitor.h"
 #import "SPAudioCaptureManager.h"
+#import "SPAudioDeviceManager.h"
 #import "SPRustBridge.h"
 #import "SPClipboardManager.h"
 #import "SPPasteManager.h"
@@ -28,6 +29,7 @@
     self.clipboardManager = [[SPClipboardManager alloc] init];
     self.pasteManager = [[SPPasteManager alloc] init];
     self.audioCaptureManager = [[SPAudioCaptureManager alloc] init];
+    self.audioDeviceManager = [[SPAudioDeviceManager alloc] init];
     self.permissionManager = [[SPPermissionManager alloc] init];
 
     // Initialize Rust bridge (must be before hotkey monitor)
@@ -36,7 +38,8 @@
 
     // Initialize status bar
     self.statusBarManager = [[SPStatusBarManager alloc] initWithDelegate:self
-                                                       permissionManager:self.permissionManager];
+                                                       permissionManager:self.permissionManager
+                                                      audioDeviceManager:self.audioDeviceManager];
 
     // Initialize floating overlay
     self.overlayPanel = [[SPOverlayPanel alloc] init];
@@ -161,6 +164,7 @@
 
     // Start audio capture + Rust session
     [self.rustBridge beginSessionWithMode:SPSessionModeHold];
+    [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
     [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
         [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
     }];
@@ -188,6 +192,7 @@
     [self.overlayPanel updateState:@"recording"];
 
     [self.rustBridge beginSessionWithMode:SPSessionModeToggle];
+    [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
     [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
         [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
     }];
@@ -323,6 +328,10 @@
 - (void)statusBarDidSelectQuit {
     [self.hotkeyMonitor stop];
     [NSApp terminate:nil];
+}
+
+- (void)statusBarDidSelectAudioDeviceWithUID:(NSString *)uid {
+    NSLog(@"[Koe] Audio input device changed: %@", uid ?: @"System Default");
 }
 
 @end

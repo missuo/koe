@@ -3,6 +3,7 @@
 @class SPPermissionManager;
 @class SPHotkeyMonitor;
 @class SPAudioCaptureManager;
+@class SPAudioDeviceManager;
 @class SPRustBridge;
 @class SPClipboardManager;
 @class SPPasteManager;
@@ -16,6 +17,7 @@
 @property (nonatomic, strong) SPPermissionManager *permissionManager;
 @property (nonatomic, strong) SPHotkeyMonitor *hotkeyMonitor;
 @property (nonatomic, strong) SPAudioCaptureManager *audioCaptureManager;
+@property (nonatomic, strong) SPAudioDeviceManager *audioDeviceManager;
 @property (nonatomic, strong) SPRustBridge *rustBridge;
 @property (nonatomic, strong) SPClipboardManager *clipboardManager;
 @property (nonatomic, strong) SPPasteManager *pasteManager;
