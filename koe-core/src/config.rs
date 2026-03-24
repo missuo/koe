@@ -105,6 +105,35 @@ pub struct HotkeyParams {
 
 impl HotkeySection {
     /// Resolve the trigger_key string into concrete key codes and modifier flags.
+    #[cfg(target_os = "windows")]
+    pub fn resolve(&self) -> HotkeyParams {
+        match self.trigger_key.as_str() {
+            "left_ctrl" => HotkeyParams {
+                key_code: 0xA2,     // VK_LCONTROL
+                alt_key_code: 0,
+                modifier_flag: 0,
+            },
+            "caps_lock" => HotkeyParams {
+                key_code: 0x14,     // VK_CAPITAL
+                alt_key_code: 0,
+                modifier_flag: 0,
+            },
+            "scroll_lock" => HotkeyParams {
+                key_code: 0x91,     // VK_SCROLL
+                alt_key_code: 0,
+                modifier_flag: 0,
+            },
+            // "right_ctrl", "fn", or anything else defaults to Right Ctrl
+            _ => HotkeyParams {
+                key_code: 0xA3,     // VK_RCONTROL
+                alt_key_code: 0,
+                modifier_flag: 0,
+            },
+        }
+    }
+
+    /// Resolve the trigger_key string into concrete key codes and modifier flags.
+    #[cfg(not(target_os = "windows"))]
     pub fn resolve(&self) -> HotkeyParams {
         match self.trigger_key.as_str() {
             "left_option" => HotkeyParams {
@@ -212,10 +241,20 @@ impl Default for HotkeySection {
 
 // ─── Config Directory ───────────────────────────────────────────────
 
-/// Returns ~/.koe/
+/// Returns the platform-specific config directory.
+/// macOS: ~/.koe/
+/// Windows: %APPDATA%\koe\
 pub fn config_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    PathBuf::from(home).join(".koe")
+    #[cfg(target_os = "windows")]
+    {
+        let appdata = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".into());
+        PathBuf::from(appdata).join("koe")
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+        PathBuf::from(home).join(".koe")
+    }
 }
 
 /// Returns ~/.koe/config.yaml
@@ -370,7 +409,8 @@ dictionary:
   path: "dictionary.txt"  # relative to ~/.koe/
 
 hotkey:
-  # 触发键：fn | left_option | right_option | left_command | right_command
+  # macOS: fn | left_option | right_option | left_command | right_command
+  # Windows: right_ctrl | left_ctrl | caps_lock | scroll_lock
   trigger_key: "fn"
 "#;
 

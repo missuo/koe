@@ -10,7 +10,7 @@ style = "both"
 parse_deps = false
 
 [export]
-include = ["SPSessionMode", "SPSessionContext", "SPCallbacks", "SPFeedbackConfig"]
+include = ["SPSessionMode", "SPSessionContext", "SPCallbacks", "SPFeedbackConfig", "SPHotkeyConfig"]
 exclude = []
 
 [export.rename]

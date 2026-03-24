@@ -1,0 +1,3 @@
+# CMake build dirs
+build-arm64/
+build-x64/

@@ -316,11 +316,22 @@ pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
             modifier_flag: params.modifier_flag,
         }
     } else {
-        // Default to Fn key
-        SPHotkeyConfig {
-            key_code: 63,
-            alt_key_code: 179,
-            modifier_flag: 0x00800000,
+        // Default: Fn key on macOS, Right Ctrl on Windows
+        #[cfg(target_os = "windows")]
+        {
+            SPHotkeyConfig {
+                key_code: 0xA3,       // VK_RCONTROL
+                alt_key_code: 0,
+                modifier_flag: 0,
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            SPHotkeyConfig {
+                key_code: 63,
+                alt_key_code: 179,
+                modifier_flag: 0x00800000,
+            }
         }
     }
 }
