@@ -2,8 +2,9 @@ cmake_minimum_required(VERSION 3.20)
 project(Koe LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 17)
 
-# Determine Rust target from MSVC architecture
-if(CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64")
+# Determine Rust target from the -A flag (CMAKE_GENERATOR_PLATFORM)
+# CMAKE_SYSTEM_PROCESSOR always reflects the host, not the target
+if(CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64")
     set(RUST_TARGET "aarch64-pc-windows-msvc")
 else()
     set(RUST_TARGET "x86_64-pc-windows-msvc")

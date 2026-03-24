@@ -21,4 +21,5 @@ build-cmake-x64:
 	cmake --build build-x64 --config Release
 
 clean:
-	rm -rf build-arm64 build-x64
+	if exist build-arm64 rmdir /s /q build-arm64
+	if exist build-x64 rmdir /s /q build-x64
