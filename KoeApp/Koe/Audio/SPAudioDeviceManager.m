@@ -52,6 +52,18 @@ static NSString *const kSelectedDeviceUIDKey = @"SPSelectedAudioDeviceUID";
     for (UInt32 i = 0; i < deviceCount; i++) {
         AudioDeviceID deviceID = deviceIDs[i];
 
+        // Skip aggregate devices (internal system devices, e.g. CADefaultDeviceAggregate)
+        AudioObjectPropertyAddress transportAddress = {
+            .mSelector = kAudioDevicePropertyTransportType,
+            .mScope = kAudioObjectPropertyScopeGlobal,
+            .mElement = kAudioObjectPropertyElementMain
+        };
+
+        UInt32 transportType = 0;
+        UInt32 transportSize = sizeof(UInt32);
+        status = AudioObjectGetPropertyData(deviceID, &transportAddress, 0, NULL, &transportSize, &transportType);
+        if (status == noErr && transportType == kAudioDeviceTransportTypeAggregate) continue;
+
         // Check if this device has input channels
         AudioObjectPropertyAddress streamConfigAddress = {
             .mSelector = kAudioDevicePropertyStreamConfiguration,
