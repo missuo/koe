@@ -110,6 +110,7 @@ Instead of a CLI tool, the app provides a menu bar dropdown with:
 
 - **Statistics section**: total characters, words, recording time, session count, and input speed
 - **Permissions section**: shows granted/missing status for Microphone, Accessibility, and Input Monitoring
+- **Microphone section**: a submenu listing all available audio input devices; "System Default" is always present as the first option; the currently selected device is indicated with a checkmark; selection persists across app restarts via `NSUserDefaults`
 - **Quit option**
 
 Section headers use custom `NSView` with bold labels (not selectable, not grayed out). The idle icon is a 5-bar audio waveform for easy recognition.
@@ -533,6 +534,7 @@ Suggested modules:
 - `SPClipboardManager`
 - `SPRustBridge`
 - `SPCuePlayer`
+- `SPAudioDeviceManager` — CoreAudio input device enumeration and selection persistence
 - `SPStatusBarManager` — menu bar icon and dropdown with stats/permissions
 - `SPHistoryManager` — SQLite usage statistics storage
 
@@ -583,13 +585,21 @@ Rust calls back to Objective-C:
 
 ### 12.3 Audio Capture Boundary
 
-Audio capture is recommended to be done directly by Objective-C; Rust should not directly drive the microphone.
+Audio capture is done directly by Objective-C; Rust does not drive the microphone.
 
 Reasons:
 
 - `AVAudioEngine` and `AVAudioSession` style capabilities are more natural in the Objective-C layer
 - Permission requests and device switching are also more convenient in Objective-C
 - Rust only needs to process PCM frames; it does not need to understand the AppKit runtime
+
+Input device selection is handled entirely in the Objective-C layer:
+
+- `SPAudioDeviceManager` enumerates available input devices via CoreAudio (`AudioObjectGetPropertyData` with `kAudioHardwarePropertyDevices`)
+- The selected device UID is persisted in `NSUserDefaults`, not in `config.yaml`, because Rust has no need to know which physical device is in use
+- Before each capture session, `SPAudioCaptureManager` applies the selected device by calling `AudioUnitSetProperty` with `kAudioOutputUnitProperty_CurrentDevice` on the input node's AudioUnit — this must happen before querying the hardware format
+- Aggregate devices (transport type `kAudioDeviceTransportTypeAggregate`) are filtered out of the device list — these are internal system devices (e.g., `CADefaultDeviceAggregate`) created by macOS for virtual audio routing and should not be shown to the user
+- If the previously selected device is no longer available, the system falls back to the macOS default input device
 
 ## 13. File and Directory Layout
 
