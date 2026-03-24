@@ -1,5 +1,7 @@
 # Koe (声)
 
+[English](./README.md) | [简体中文](./README.zh-CN.md)
+
 A zero-GUI macOS voice input tool. Press a hotkey, speak, and the corrected text is pasted into whatever app you're using.
 
 For more information, visit the documentation at **[koe.li](https://koe.li)**.
