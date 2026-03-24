@@ -66,7 +66,15 @@ void AudioCapture::captureLoop() {
     }
 
     IMMDevice* device = nullptr;
-    hr = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &device);
+    if (!m_deviceId.empty()) {
+        hr = enumerator->GetDevice(m_deviceId.c_str(), &device);
+        if (FAILED(hr)) {
+            OutputDebugStringA("[Koe] Selected device not found, falling back to default\n");
+            hr = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &device);
+        }
+    } else {
+        hr = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &device);
+    }
     enumerator->Release();
     if (FAILED(hr)) {
         OutputDebugStringA("[Koe] No capture device found\n");

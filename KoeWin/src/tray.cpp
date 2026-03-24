@@ -1,9 +1,11 @@
 #include "tray.h"
+#include "audio_device.h"
 #include <objidl.h>
 #include <gdiplus.h>
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 #pragma comment(lib, "gdiplus.lib")
 
@@ -20,10 +22,12 @@ enum {
     IDM_OPEN_CONFIG,
     IDM_LAUNCH_AT_LOGIN,
     IDM_QUIT,
+    IDM_MIC_DEFAULT = 1100,
+    IDM_MIC_DEVICE  = 1200,  // 1200 + index for each device
 };
 
-TrayManager::TrayManager(HWND messageWindow, TrayDelegate* delegate)
-    : m_hwnd(messageWindow), m_delegate(delegate) {}
+TrayManager::TrayManager(HWND messageWindow, TrayDelegate* delegate, AudioDeviceManager* audioDeviceManager)
+    : m_hwnd(messageWindow), m_delegate(delegate), m_audioDeviceManager(audioDeviceManager) {}
 
 TrayManager::~TrayManager() {
     destroy();
@@ -175,6 +179,32 @@ void TrayManager::showContextMenu() {
     AppendMenuW(menu, MF_STRING | MF_DISABLED, IDM_STATS_SPEED, buf);
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
 
+    // Microphone submenu
+    std::vector<AudioInputDevice> micDevices;
+    std::wstring selectedMicId;
+    HMENU micMenu = CreatePopupMenu();
+    if (m_audioDeviceManager) {
+        micDevices = m_audioDeviceManager->availableInputDevices();
+        selectedMicId = m_audioDeviceManager->selectedDeviceId();
+    }
+
+    // "System Default" always first
+    AppendMenuW(micMenu, MF_STRING | (selectedMicId.empty() ? MF_CHECKED : 0),
+                IDM_MIC_DEFAULT, L"System Default");
+
+    if (!micDevices.empty()) {
+        AppendMenuW(micMenu, MF_SEPARATOR, 0, nullptr);
+        for (size_t i = 0; i < micDevices.size() && i < 100; i++) {
+            UINT flags = MF_STRING;
+            if (micDevices[i].id == selectedMicId) flags |= MF_CHECKED;
+            AppendMenuW(micMenu, flags, IDM_MIC_DEVICE + static_cast<UINT>(i),
+                        micDevices[i].name.c_str());
+        }
+    }
+
+    AppendMenuW(menu, MF_STRING | MF_POPUP, reinterpret_cast<UINT_PTR>(micMenu), L"Microphone");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+
     // Open Config Folder
     AppendMenuW(menu, MF_STRING, IDM_OPEN_CONFIG, L"Open Config Folder...");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -236,6 +266,19 @@ void TrayManager::showContextMenu() {
     }
     case IDM_QUIT:
         if (m_delegate) m_delegate->trayDidSelectQuit();
+        break;
+    case IDM_MIC_DEFAULT:
+        if (m_audioDeviceManager) m_audioDeviceManager->setSelectedDeviceId(nullptr);
+        if (m_delegate) m_delegate->trayDidSelectAudioDevice(nullptr);
+        break;
+    default:
+        if (cmd >= IDM_MIC_DEVICE && cmd < IDM_MIC_DEVICE + 100) {
+            size_t idx = cmd - IDM_MIC_DEVICE;
+            if (idx < micDevices.size()) {
+                if (m_audioDeviceManager) m_audioDeviceManager->setSelectedDeviceId(micDevices[idx].id.c_str());
+                if (m_delegate) m_delegate->trayDidSelectAudioDevice(micDevices[idx].id.c_str());
+            }
+        }
         break;
     }
 }

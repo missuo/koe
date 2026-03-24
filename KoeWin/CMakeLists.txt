@@ -23,6 +23,7 @@ add_executable(Koe WIN32
     src/app.cpp
     src/bridge.cpp
     src/audio.cpp
+    src/audio_device.cpp
     src/hotkey.cpp
     src/clipboard.cpp
     src/paste.cpp

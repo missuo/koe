@@ -7,6 +7,7 @@
 #include "tray.h"
 #include "overlay.h"
 #include "history.h"
+#include "audio_device.h"
 #include <cstdio>
 #include <string>
 
@@ -24,6 +25,7 @@ App::~App() {
     delete m_overlay;
     delete m_tray;
     delete m_history;
+    delete m_audioDeviceManager;
     delete m_cue;
     delete m_paste;
     delete m_clipboard;
@@ -41,11 +43,13 @@ void App::initialize() {
     m_audio = new AudioCapture();
     m_history = new HistoryManager();
 
+    m_audioDeviceManager = new AudioDeviceManager();
+
     m_bridge = new RustBridge(m_hwnd);
     m_bridge->initialize();
 
     // System tray
-    m_tray = new TrayManager(m_hwnd, this);
+    m_tray = new TrayManager(m_hwnd, this, m_audioDeviceManager);
     m_tray->create();
 
     // Floating overlay
@@ -159,6 +163,11 @@ void App::beginRecording(int mode) {
 
     QueryPerformanceCounter(&m_recordingStartTime);
 
+    // Apply selected microphone device
+    if (m_audioDeviceManager) {
+        m_audio->setDeviceId(m_audioDeviceManager->resolvedDeviceId());
+    }
+
     m_bridge->beginSession(mode);
     m_audio->start([this](const uint8_t* buffer, uint32_t length, uint64_t timestamp) {
         m_bridge->pushAudio(buffer, length, timestamp);
@@ -190,6 +199,16 @@ void App::trayMenuDidClose() {
 
 void App::trayDidSelectQuit() {
     PostMessageW(m_hwnd, WM_DESTROY, 0, 0);
+}
+
+void App::trayDidSelectAudioDevice(const wchar_t* id) {
+    if (id) {
+        OutputDebugStringW(L"[Koe] Audio device selected: ");
+        OutputDebugStringW(id);
+        OutputDebugStringW(L"\n");
+    } else {
+        OutputDebugStringA("[Koe] Audio device selected: System Default\n");
+    }
 }
 
 // ── Timer handler ───────────────────────────────────────

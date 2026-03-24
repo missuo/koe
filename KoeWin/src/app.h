@@ -13,6 +13,7 @@ class PasteManager;
 class CuePlayer;
 class OverlayPanel;
 class HistoryManager;
+class AudioDeviceManager;
 
 // Timer IDs
 #define TIMER_CLIPBOARD_RESTORE 2001
@@ -58,6 +59,7 @@ public:
     void trayMenuDidOpen() override;
     void trayMenuDidClose() override;
     void trayDidSelectQuit() override;
+    void trayDidSelectAudioDevice(const wchar_t* id) override;
 
 private:
     void beginRecording(int mode);
@@ -75,6 +77,7 @@ private:
     TrayManager* m_tray = nullptr;
     OverlayPanel* m_overlay = nullptr;
     HistoryManager* m_history = nullptr;
+    AudioDeviceManager* m_audioDeviceManager = nullptr;
 
     LARGE_INTEGER m_recordingStartTime = {};
     LARGE_INTEGER m_perfFreq = {};

@@ -9,8 +9,9 @@
 #define WM_TRAY_ICON    (WM_APP + 20)
 #define TIMER_TRAY_ANIM 3001
 
-// Forward declaration
+// Forward declarations
 struct HistoryStats;
+class AudioDeviceManager;
 
 class TrayDelegate {
 public:
@@ -18,11 +19,12 @@ public:
     virtual void trayMenuDidOpen() = 0;
     virtual void trayMenuDidClose() = 0;
     virtual void trayDidSelectQuit() = 0;
+    virtual void trayDidSelectAudioDevice(const wchar_t* id) = 0;
 };
 
 class TrayManager {
 public:
-    TrayManager(HWND messageWindow, TrayDelegate* delegate);
+    TrayManager(HWND messageWindow, TrayDelegate* delegate, AudioDeviceManager* audioDeviceManager);
     ~TrayManager();
 
     void create();
@@ -51,6 +53,7 @@ private:
 
     HWND m_hwnd;
     TrayDelegate* m_delegate;
+    AudioDeviceManager* m_audioDeviceManager;
     NOTIFYICONDATAW m_nid = {};
     bool m_created = false;
 
