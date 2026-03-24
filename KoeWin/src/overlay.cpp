@@ -58,8 +58,9 @@ void OverlayPanel::createWindow(HINSTANCE hInstance) {
         nullptr, nullptr, hInstance, nullptr
     );
 
-    // Start fully transparent
-    SetLayeredWindowAttributes(m_hwnd, 0, 0, LWA_ALPHA);
+    // Do NOT call SetLayeredWindowAttributes here — it makes subsequent
+    // UpdateLayeredWindow calls fail.  Alpha is controlled exclusively
+    // via UpdateLayeredWindow in render().
 }
 
 void OverlayPanel::updateState(const char* state) {
@@ -122,15 +123,15 @@ void OverlayPanel::onAnimationTimer() {
             m_visible = false;
             ShowWindow(m_hwnd, SW_HIDE);
             KillTimer(m_hwnd, TIMER_OVERLAY_ANIM);
+            return;
         }
-        SetLayeredWindowAttributes(m_hwnd, 0, static_cast<BYTE>(m_alpha * 255), LWA_ALPHA);
+        render();
         return;
     }
 
     if (m_visible && m_alpha < 1.0f) {
         m_alpha += 1.0f / kFadeInFrames;
         if (m_alpha > 1.0f) m_alpha = 1.0f;
-        SetLayeredWindowAttributes(m_hwnd, 0, static_cast<BYTE>(m_alpha * 255), LWA_ALPHA);
     }
 
     render();
@@ -141,7 +142,6 @@ void OverlayPanel::show() {
     m_visible = true;
     if (m_alpha < 0.01f) m_alpha = 0.01f;
     ShowWindow(m_hwnd, SW_SHOWNOACTIVATE);
-    SetLayeredWindowAttributes(m_hwnd, 0, static_cast<BYTE>(m_alpha * 255), LWA_ALPHA);
 }
 
 void OverlayPanel::hide() {
