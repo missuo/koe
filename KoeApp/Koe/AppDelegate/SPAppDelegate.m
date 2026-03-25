@@ -15,7 +15,7 @@
 #import <sys/stat.h>
 #import <UserNotifications/UserNotifications.h>
 
-@interface SPAppDelegate ()
+@interface SPAppDelegate () <SPAudioDeviceManagerDelegate>
 @property (nonatomic, strong) NSDate *recordingStartTime;
 @property (nonatomic, assign) time_t lastConfigModTime;
 @end
@@ -34,6 +34,8 @@
     self.pasteManager = [[SPPasteManager alloc] init];
     self.audioCaptureManager = [[SPAudioCaptureManager alloc] init];
     self.audioDeviceManager = [[SPAudioDeviceManager alloc] init];
+    self.audioDeviceManager.delegate = self;
+    [self.audioDeviceManager startListening];
     self.permissionManager = [[SPPermissionManager alloc] init];
 
     // Initialize Rust bridge (must be before hotkey monitor)
@@ -89,6 +91,7 @@
         dispatch_source_cancel(self.configWatcher);
         self.configWatcher = nil;
     }
+    [self.audioDeviceManager stopListening];
     [self.hotkeyMonitor stop];
     [self.rustBridge destroyCore];
 }
@@ -345,6 +348,36 @@
 - (void)rustBridgeDidChangeState:(NSString *)state {
     [self.statusBarManager updateState:state];
     [self.overlayPanel updateState:state];
+}
+
+#pragma mark - Audio Error Recovery
+
+- (void)handleAudioCaptureError:(NSString *)reason {
+    NSLog(@"[Koe] Audio capture error: %@", reason);
+    [self.cuePlayer playError];
+    [self.rustBridge endSession];
+    [self.statusBarManager updateState:@"error"];
+    [self.overlayPanel updateState:@"error"];
+    [self sendErrorNotification:reason];
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        [self.statusBarManager updateState:@"idle"];
+        [self.overlayPanel updateState:@"idle"];
+    });
+}
+
+#pragma mark - SPAudioDeviceManagerDelegate
+
+- (void)audioDeviceManagerDeviceListDidChange {
+    if (!self.audioCaptureManager.isCapturing) return;
+
+    // If the selected device disappeared mid-recording, stop gracefully
+    if (![self.audioDeviceManager isSelectedDeviceAvailable]) {
+        NSLog(@"[Koe] Selected audio device disappeared during recording");
+        [self.audioCaptureManager stopCapture];
+        [self handleAudioCaptureError:@"Audio device disconnected"];
+    }
 }
 
 #pragma mark - SPStatusBarDelegate (menu)

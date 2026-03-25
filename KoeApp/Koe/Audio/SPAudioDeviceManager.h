@@ -3,6 +3,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@protocol SPAudioDeviceManagerDelegate <NSObject>
+@optional
+/// Called on the main thread when the system audio device list changes (device added/removed).
+- (void)audioDeviceManagerDeviceListDidChange;
+@end
+
 /// Represents a single audio input device.
 @interface SPAudioInputDevice : NSObject
 
@@ -33,6 +39,18 @@ NS_ASSUME_NONNULL_BEGIN
 /// Resolves the selected UID to an AudioDeviceID.
 /// Returns the system default input device if the stored UID is nil or no longer available.
 - (AudioDeviceID)resolvedDeviceID;
+
+/// Whether the currently selected device (by UID) is present in the system.
+/// Returns YES if no specific device is selected (system default).
+- (BOOL)isSelectedDeviceAvailable;
+
+/// Start listening for system audio device changes via CoreAudio.
+- (void)startListening;
+
+/// Stop listening for device changes.
+- (void)stopListening;
+
+@property (nonatomic, weak, nullable) id<SPAudioDeviceManagerDelegate> delegate;
 
 @end
 
