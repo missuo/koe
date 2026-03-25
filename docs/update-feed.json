@@ -1,7 +1,7 @@
 {
   "version": "1.0.9",
   "build": 10,
-  "published_at": "2026-03-25T16:52:01Z",
+  "published_at": "2026-03-25T17:30:40Z",
   "minimum_system_version": "13.0",
   "download_url": "https://github.com/missuo/koe/releases/download/v1.0.9/Koe-macOS-arm64.zip",
   "release_notes_url": "https://github.com/missuo/koe/releases/tag/v1.0.9",
@@ -9,8 +9,8 @@
     "Add built-in app update checks and a manual Check for Updates action in the menu bar.",
     "Show the current version and build number directly in the menu bar status UI.",
     "Handle microphone disconnects during recording and recover gracefully.",
-    "Add a configurable session cancel hotkey and migrate ASR config to the provider-based v2 format.",
+    "Migrate ASR settings to the provider-based v2 format and add an ASR provider selector, defaulting to Doubao.",
     "Improve the interim transcription overlay with auto-wrapping and less layout jitter.",
-    "Add an ASR provider selector in Settings, defaulting to Doubao."
+    "Add a configurable cancel hotkey separate from the trigger key, and persist valid hotkey defaults into config.yaml."
   ]
 }
