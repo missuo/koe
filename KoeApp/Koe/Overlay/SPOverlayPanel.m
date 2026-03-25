@@ -4,10 +4,12 @@
 // ── Geometry ──────────────────────────────────────────────
 static const CGFloat kPillHeight       = 36.0;
 static const CGFloat kPillCornerRadius = 18.0;
-static const CGFloat kBottomMargin     = 8.0;
+static const CGFloat kBottomMargin     = 10.0;
 static const CGFloat kHorizontalPad    = 14.0;
 static const CGFloat kIconAreaWidth    = 28.0;
 static const CGFloat kIconTextGap      = 6.0;
+static const CGFloat kMaxWidth         = 600.0;
+static const CGFloat kMaxHeight        = 300.0;
 
 // Waveform bars
 static const NSInteger kBarCount   = 5;
@@ -23,7 +25,6 @@ static const CGFloat   kDotSpacing    = 8.0;
 
 // Interim text
 static const CGFloat kScreenHorizontalMargin = 32.0;
-static const CGFloat kFadeGradientWidth      = 30.0;
 
 // Animation
 static const NSTimeInterval kAnimInterval      = 1.0 / 30.0;
@@ -103,30 +104,12 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         NSAttributedString *str = [[NSAttributedString alloc] initWithString:displayText
                                                                   attributes:attrs];
         CGFloat textX = kHorizontalPad + kIconAreaWidth + kIconTextGap;
-        CGFloat textY = (bounds.size.height - str.size.height) / 2.0;
-        CGFloat textAreaW = bounds.size.width - textX - kHorizontalPad;
-        CGFloat textW = str.size.width;
-
-        if (self.interimText.length > 0 && textW > textAreaW) {
-            // Clip to text area and draw right-aligned (show trailing portion)
-            [NSGraphicsContext saveGraphicsState];
-            NSRect textClip = NSMakeRect(textX, 0, textAreaW, bounds.size.height);
-            [NSBezierPath clipRect:textClip];
-
-            CGFloat drawX = textX + textAreaW - textW;
-            [str drawAtPoint:NSMakePoint(drawX, textY)];
-
-            // Left-edge fade gradient (re-draw background to cover text)
-            NSGradient *fade = [[NSGradient alloc]
-                initWithStartingColor:[NSColor colorWithWhite:0.0 alpha:0.70]
-                          endingColor:[NSColor colorWithWhite:0.0 alpha:0.0]];
-            NSRect fadeRect = NSMakeRect(textX, 0, kFadeGradientWidth, bounds.size.height);
-            [fade drawInRect:fadeRect angle:0];
-
-            [NSGraphicsContext restoreGraphicsState];
-        } else {
-            [str drawAtPoint:NSMakePoint(textX, textY)];
-        }
+        CGFloat textMaxW = bounds.size.width - textX - kHorizontalPad;
+        NSRect textRect = [str boundingRectWithSize:NSMakeSize(textMaxW, CGFLOAT_MAX)
+                                            options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingTruncatesLastVisibleLine];
+        CGFloat textY = (bounds.size.height - textRect.size.height) / 2.0;
+        [str drawWithRect:NSMakeRect(textX, textY, textMaxW, textRect.size.height)
+                  options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingTruncatesLastVisibleLine];
     }
 }
 
@@ -256,9 +239,9 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     NSRect rect = NSMakeRect(0, 0, 180, kPillHeight);
 
     NSPanel *panel = [[NSPanel alloc] initWithContentRect:rect
-                                                styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
-                                                  backing:NSBackingStoreBuffered
-                                                    defer:YES];
+                                                 styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
+                                                   backing:NSBackingStoreBuffered
+                                                     defer:YES];
     panel.level = NSStatusWindowLevel;
     panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
                                NSWindowCollectionBehaviorStationary |
@@ -302,11 +285,11 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         text   = @"Listening…";
         accent = [NSColor colorWithRed:1.0 green:0.32 blue:0.32 alpha:1.0];
         mode   = SPOverlayModeWaveform;
-    } else if ([state isEqualToString:@"connecting_asr"]) {
+    } else if ([state hasPrefix:@"connecting_asr"]) {
         text   = @"Connecting…";
         accent = [NSColor colorWithRed:1.0 green:0.78 blue:0.28 alpha:1.0];
         mode   = SPOverlayModeProcessing;
-    } else if ([state isEqualToString:@"finalizing_asr"]) {
+    } else if ([state hasPrefix:@"finalizing_asr"]) {
         text   = @"Recognizing…";
         accent = [NSColor colorWithRed:0.35 green:0.78 blue:1.0 alpha:1.0];
         mode   = SPOverlayModeProcessing;
@@ -354,8 +337,23 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     NSString *displayText = (self.contentView.interimText.length > 0)
                             ? self.contentView.interimText
                             : self.contentView.statusText;
-    CGFloat textW = [displayText sizeWithAttributes:attrs].width;
-    CGFloat pillW = kHorizontalPad + kIconAreaWidth + kIconTextGap + textW + kHorizontalPad;
+    NSAttributedString *str = [[NSAttributedString alloc] initWithString:displayText ?: @"" attributes:attrs];
+    
+    // First try a single line width
+    CGFloat textW = [str size].width;
+    CGFloat iconSpace = kHorizontalPad + kIconAreaWidth + kIconTextGap;
+    CGFloat desiredW = iconSpace + textW + kHorizontalPad;
+    
+    CGFloat pillW = desiredW;
+    CGFloat pillH = kPillHeight;
+    
+    if (desiredW > kMaxWidth) {
+        pillW = kMaxWidth;
+        CGFloat textMaxW = pillW - iconSpace - kHorizontalPad;
+        NSRect textRect = [str boundingRectWithSize:NSMakeSize(textMaxW, kMaxHeight)
+                                            options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingTruncatesLastVisibleLine];
+        pillH = fmax(kPillHeight, textRect.size.height + 20.0); // 10pt top/bottom padding
+    }
 
     NSScreen *screen = [NSScreen mainScreen];
     NSRect visible = screen.visibleFrame;
@@ -374,7 +372,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
     CGFloat x = NSMidX(visible) - pillW / 2.0;
     CGFloat y = NSMinY(visible) + kBottomMargin;
-    NSRect newFrame = NSMakeRect(x, y, pillW, kPillHeight);
+    NSRect newFrame = NSMakeRect(x, y, pillW, pillH);
 
     if (animated) {
         [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
@@ -385,6 +383,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     } else {
         [self.panel setFrame:newFrame display:YES];
     }
+    self.contentView.frame = NSMakeRect(0, 0, pillW, pillH);
 }
 
 #pragma mark - Show / Hide

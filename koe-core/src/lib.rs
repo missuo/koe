@@ -400,12 +400,11 @@ async fn run_session(
                     }
                     Ok(AsrEvent::Definite(text)) => {
                         aggregator.update_definite(&text);
-                        if !text.is_empty() {
-                            invoke_interim_text(&text);
-                        }
+                        invoke_interim_text(&aggregator.best_text());
                     }
                     Ok(AsrEvent::Final(text)) => {
                         aggregator.update_final(&text);
+                        invoke_interim_text(&text);
                     }
                     Ok(AsrEvent::Closed) => {
                         asr_done = true;
@@ -576,6 +575,7 @@ async fn wait_for_final(
         match asr.next_event().await {
             Ok(AsrEvent::Final(text)) => {
                 aggregator.update_final(&text);
+                invoke_interim_text(&text);
                 return;
             }
             Ok(AsrEvent::Interim(text)) => {
@@ -586,6 +586,7 @@ async fn wait_for_final(
             }
             Ok(AsrEvent::Definite(text)) => {
                 aggregator.update_definite(&text);
+                invoke_interim_text(&aggregator.best_text());
             }
             Ok(AsrEvent::Closed) => return,
             Ok(_) => {}
