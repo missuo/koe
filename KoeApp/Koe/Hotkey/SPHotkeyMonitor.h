@@ -29,4 +29,8 @@
 /// Temporarily suppress hotkey detection (e.g. while a menu is open).
 @property (nonatomic, assign) BOOL suspended;
 
+/// Reset the state machine to idle. Call when an external event (e.g. audio error)
+/// terminates a recording session outside the normal hotkey flow.
+- (void)resetToIdle;
+
 @end

@@ -284,6 +284,7 @@
     NSLog(@"[Koe] Session error: %@", message);
     [self.cuePlayer playError];
     [self.audioCaptureManager stopCapture];
+    [self.hotkeyMonitor resetToIdle];
     [self.statusBarManager updateState:@"error"];
     [self.overlayPanel updateState:@"error"];
 
@@ -356,6 +357,7 @@
     NSLog(@"[Koe] Audio capture error: %@", reason);
     [self.cuePlayer playError];
     [self.rustBridge endSession];
+    [self.hotkeyMonitor resetToIdle];
     [self.statusBarManager updateState:@"error"];
     [self.overlayPanel updateState:@"error"];
     [self sendErrorNotification:reason];
