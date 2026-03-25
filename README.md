@@ -14,7 +14,7 @@ I tried nearly every voice input app on the market. They were either paid, ugly,
 
 Koe takes a different approach:
 
-- **No GUI at all.** The only visual element is a tiny icon in the menu bar.
+- **Minimal GUI.** The only visual elements are a menu bar icon and a small floating status pill that shows the current state and real-time speech recognition text during recording.
 - **All configuration lives in plain text files** under `~/.koe/`. Edit them with any text editor, vim, or even a script.
 - **Dictionary is a plain `.txt` file.** No need to open an app and add words one by one through a GUI. Just edit `~/.koe/dictionary.txt` — one term per line. You can even use Claude Code or other AI tools to bulk-generate domain-specific terms.
 - **Changes take effect immediately.** Edit any config file and the new settings are used automatically. ASR, LLM, dictionary, and prompt changes apply on the next hotkey press. Hotkey changes are detected within a few seconds. No restart, no reload button.
@@ -27,8 +27,9 @@ Koe takes a different approach:
 
 1. Press and hold the trigger key (default: **Fn**, configurable) — Koe starts listening
 2. Audio streams in real-time to a cloud ASR service (Doubao/豆包 by ByteDance)
-3. The ASR transcript is corrected by an LLM (any OpenAI-compatible API) — fixing capitalization, punctuation, spacing, and terminology
-4. The corrected text is automatically pasted into the active input field
+3. A floating status pill shows real-time interim recognition text as you speak
+4. The ASR transcript is corrected by an LLM (any OpenAI-compatible API) — fixing capitalization, punctuation, spacing, and terminology
+5. The corrected text is automatically pasted into the active input field
 
 Current provider support is intentionally narrow:
 
@@ -406,7 +407,7 @@ The two layers communicate via C FFI (Foreign Function Interface). The Rust core
 ### ASR Pipeline
 
 1. Audio streams to Doubao ASR 2.0 via WebSocket (binary protocol with gzip compression)
-2. First-pass streaming results arrive in real-time (`Interim` events)
+2. First-pass streaming results arrive in real-time (`Interim` events) and are displayed in the overlay
 3. Second-pass re-recognition confirms segments with higher accuracy (`Definite` events)
 4. `TranscriptAggregator` merges all results and tracks interim revision history
 5. Final transcript + interim history + dictionary are sent to the LLM for correction

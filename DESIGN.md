@@ -71,7 +71,7 @@ Reasons:
 
 ### 3.1 Goals
 
-- No visible GUI throughout
+- Minimal visible GUI (menu bar icon and floating status overlay only)
 - Support hold-to-talk, release-to-end
 - Support tap-to-start, tap-again-to-end
 - Support streaming WebSocket speech recognition
@@ -87,7 +87,6 @@ Reasons:
 - No recording file management interface
 - No multi-turn conversational voice assistant
 - No voice wake word
-- No floating screen bubble
 - No dependency on input method framework
 
 ## 4. Product Form
@@ -114,6 +113,19 @@ Instead of a CLI tool, the app provides a menu bar dropdown with:
 - **Quit option**
 
 Section headers use custom `NSView` with bold labels (not selectable, not grayed out). The idle icon is a 5-bar audio waveform for easy recognition.
+
+### 4.3 Floating Overlay
+
+A borderless, non-activating `NSPanel` positioned at the bottom-center of the screen above the Dock. It appears across all spaces and ignores mouse events.
+
+The overlay displays the current session state:
+
+- **Recording**: animated waveform icon with real-time interim ASR text (falls back to "Listening…" before the first interim result arrives). The pill expands horizontally as text grows but never shrinks within a session, up to the screen width minus margins. When text overflows, only the trailing portion is shown with a left-edge gradient fade.
+- **Connecting / Recognizing / Thinking**: pulsing dots with a status label
+- **Pasting**: animated checkmark
+- **Error**: cross mark
+
+The overlay fades in when a session begins and fades out when it completes or returns to idle.
 
 ## 5. Required Permissions
 
@@ -390,16 +402,17 @@ This system supports two parallel user interaction paths.
 4. The application starts recording and connects to streaming ASR
 5. The user speaks while holding the key
 6. The application continuously uploads audio and receives streaming interim results
-7. The user finishes speaking and releases `Fn`
-8. The application ends the audio stream and waits for the ASR final text
-9. The application sends the ASR text, user dictionary, and cleanup rules to LLM for correction
-10. The application obtains the corrected final text
-11. The application checks that a pasteable foreground input field still exists
-12. The application backs up the current clipboard
-13. The application writes the final text to the clipboard
-14. The application simulates sending `Cmd+V`
-15. The application restores the original clipboard at the appropriate time
-16. This input is complete; the application returns to standby state
+7. The floating overlay displays interim recognition text in real time as the user speaks
+8. The user finishes speaking and releases `Fn`
+9. The application ends the audio stream and waits for the ASR final text
+10. The application sends the ASR text, user dictionary, and cleanup rules to LLM for correction
+11. The application obtains the corrected final text
+12. The application checks that a pasteable foreground input field still exists
+13. The application backs up the current clipboard
+14. The application writes the final text to the clipboard
+15. The application simulates sending `Cmd+V`
+16. The application restores the original clipboard at the appropriate time
+17. This input is complete; the application returns to standby state
 
 #### Path B: Tap to Start, Tap Again to End
 
@@ -409,17 +422,18 @@ This system supports two parallel user interaction paths.
 4. The application starts recording and connects to streaming ASR
 5. The user releases the key and speaks freely
 6. The application continuously uploads audio and receives streaming interim results
-7. After the user finishes speaking, they press `Fn` again
-8. The application ends the audio stream at the instant of the second press
-9. The application waits for the ASR final text
-10. The application sends the ASR text, user dictionary, and cleanup rules to LLM for correction
-11. The application obtains the corrected final text
-12. The application checks that a pasteable foreground input field still exists
-13. The application backs up the current clipboard
-14. The application writes the final text to the clipboard
-15. The application simulates sending `Cmd+V`
-16. The application restores the original clipboard at the appropriate time
-17. This input is complete; the application returns to standby state
+7. The floating overlay displays interim recognition text in real time as the user speaks
+8. After the user finishes speaking, they press `Fn` again
+9. The application ends the audio stream at the instant of the second press
+10. The application waits for the ASR final text
+11. The application sends the ASR text, user dictionary, and cleanup rules to LLM for correction
+12. The application obtains the corrected final text
+13. The application checks that a pasteable foreground input field still exists
+14. The application backs up the current clipboard
+15. The application writes the final text to the clipboard
+16. The application simulates sending `Cmd+V`
+17. The application restores the original clipboard at the appropriate time
+18. This input is complete; the application returns to standby state
 
 ## 9. Key Design Clarifications
 
