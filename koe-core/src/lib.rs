@@ -341,18 +341,9 @@ async fn run_session(
 ) {
     let final_wait_timeout_ms = asr_config.final_wait_timeout_ms;
 
-    // --- Connect ASR ---
-    invoke_state_changed("connecting_asr");
-    let mut asr = DoubaoWsProvider::new();
-    if let Err(e) = asr.connect(&asr_config).await {
-        log::error!("[{session_id}] ASR connection failed: {e}");
-        invoke_session_error(&e.to_string());
-        invoke_state_changed("failed");
-        cleanup_session(&session_arc);
-        return;
-    }
-
-    // Transition to recording
+    // Transition to recording immediately so the user can start speaking
+    // while ASR connects.  Audio frames are buffered in the mpsc channel
+    // (capacity 1024) and drained once the connection is established.
     let recording_state = match mode {
         SPSessionMode::Hold => SessionState::RecordingHold,
         SPSessionMode::Toggle => SessionState::RecordingToggle,
@@ -365,6 +356,16 @@ async fn run_session(
     }
     invoke_state_changed(&recording_state.to_string());
     invoke_session_ready();
+
+    // --- Connect ASR ---
+    let mut asr = DoubaoWsProvider::new();
+    if let Err(e) = asr.connect(&asr_config).await {
+        log::error!("[{session_id}] ASR connection failed: {e}");
+        invoke_session_error(&e.to_string());
+        invoke_state_changed("failed");
+        cleanup_session(&session_arc);
+        return;
+    }
 
     // --- Stream audio to ASR + collect results ---
     let mut aggregator = TranscriptAggregator::new();

@@ -345,16 +345,18 @@ static NSString *yamlWrite(NSString *yaml, NSString *keyPath, NSString *value) {
     [view addSubview:self.llmModelField];
     y -= 42;
 
-    // Test connection button + result label
+    // Test connection button
     self.llmTestButton = [NSButton buttonWithTitle:@"Test Connection" target:self action:@selector(testLlmConnection:)];
     self.llmTestButton.bezelStyle = NSBezelStyleRounded;
     self.llmTestButton.frame = NSMakeRect(fieldX, y, 130, 28);
     [view addSubview:self.llmTestButton];
+    y -= 28;
 
-    self.llmTestResultLabel = [NSTextField labelWithString:@""];
-    self.llmTestResultLabel.frame = NSMakeRect(fieldX + 140, y + 4, 250, 20);
+    // Result label below button — wrapping, multi-line, selectable
+    self.llmTestResultLabel = [NSTextField wrappingLabelWithString:@""];
+    self.llmTestResultLabel.frame = NSMakeRect(fieldX, y - 36, fieldW, 36);
     self.llmTestResultLabel.font = [NSFont systemFontOfSize:12];
-    self.llmTestResultLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    self.llmTestResultLabel.selectable = YES;
     [view addSubview:self.llmTestResultLabel];
 
     tab.view = view;

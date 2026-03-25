@@ -25,6 +25,9 @@
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     NSLog(@"[Koe] Application launching...");
 
+    // Add Edit menu so Cmd+C/V/X/A work in text fields (menu-bar-only app has none by default)
+    [self installEditMenu];
+
     // Initialize components
     self.cuePlayer = [[SPCuePlayer alloc] init];
     self.clipboardManager = [[SPClipboardManager alloc] init];
@@ -88,6 +91,30 @@
     }
     [self.hotkeyMonitor stop];
     [self.rustBridge destroyCore];
+}
+
+#pragma mark - Edit Menu (for Cmd+C/V in text fields)
+
+- (void)installEditMenu {
+    NSMenu *mainMenu = [NSApp mainMenu];
+    if (!mainMenu) {
+        mainMenu = [[NSMenu alloc] init];
+        [NSApp setMainMenu:mainMenu];
+    }
+
+    NSMenuItem *editMenuItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:nil keyEquivalent:@""];
+    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+
+    [editMenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+    [editMenu addItemWithTitle:@"Redo" action:@selector(redo:) keyEquivalent:@"Z"];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    [editMenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
+    [editMenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
+    [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+    [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+
+    editMenuItem.submenu = editMenu;
+    [mainMenu addItem:editMenuItem];
 }
 
 #pragma mark - Config File Watcher
