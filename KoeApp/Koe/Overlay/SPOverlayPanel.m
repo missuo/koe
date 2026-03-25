@@ -21,10 +21,15 @@ static const NSInteger kDotCount      = 3;
 static const CGFloat   kDotBaseRadius = 2.5;
 static const CGFloat   kDotSpacing    = 8.0;
 
+// Interim text
+static const CGFloat kScreenHorizontalMargin = 32.0;
+static const CGFloat kFadeGradientWidth      = 30.0;
+
 // Animation
-static const NSTimeInterval kAnimInterval    = 1.0 / 30.0;
-static const NSTimeInterval kFadeInDuration  = 0.2;
-static const NSTimeInterval kFadeOutDuration = 0.3;
+static const NSTimeInterval kAnimInterval      = 1.0 / 30.0;
+static const NSTimeInterval kFadeInDuration    = 0.2;
+static const NSTimeInterval kFadeOutDuration   = 0.3;
+static const NSTimeInterval kResizeDuration    = 0.15;
 
 // ── Animation mode ───────────────────────────────────────
 typedef NS_ENUM(NSInteger, SPOverlayMode) {
@@ -39,6 +44,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
 @interface SPOverlayContentView : NSView
 @property (nonatomic, copy)   NSString      *statusText;
+@property (nonatomic, copy)   NSString      *interimText;
 @property (nonatomic, strong) NSColor       *accentColor;
 @property (nonatomic, assign) SPOverlayMode  mode;
 @property (nonatomic, assign) NSInteger      tick;  // animation counter
@@ -88,16 +94,39 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     }
 
     // ── Text ──
-    if (self.statusText.length > 0) {
+    NSString *displayText = (self.interimText.length > 0) ? self.interimText : self.statusText;
+    if (displayText.length > 0) {
         NSDictionary *attrs = @{
             NSFontAttributeName: [NSFont systemFontOfSize:13.0 weight:NSFontWeightMedium],
             NSForegroundColorAttributeName: [NSColor colorWithWhite:1.0 alpha:0.92],
         };
-        NSAttributedString *str = [[NSAttributedString alloc] initWithString:self.statusText
+        NSAttributedString *str = [[NSAttributedString alloc] initWithString:displayText
                                                                   attributes:attrs];
         CGFloat textX = kHorizontalPad + kIconAreaWidth + kIconTextGap;
         CGFloat textY = (bounds.size.height - str.size.height) / 2.0;
-        [str drawAtPoint:NSMakePoint(textX, textY)];
+        CGFloat textAreaW = bounds.size.width - textX - kHorizontalPad;
+        CGFloat textW = str.size.width;
+
+        if (self.interimText.length > 0 && textW > textAreaW) {
+            // Clip to text area and draw right-aligned (show trailing portion)
+            [NSGraphicsContext saveGraphicsState];
+            NSRect textClip = NSMakeRect(textX, 0, textAreaW, bounds.size.height);
+            [NSBezierPath clipRect:textClip];
+
+            CGFloat drawX = textX + textAreaW - textW;
+            [str drawAtPoint:NSMakePoint(drawX, textY)];
+
+            // Left-edge fade gradient (re-draw background to cover text)
+            NSGradient *fade = [[NSGradient alloc]
+                initWithStartingColor:[NSColor colorWithWhite:0.0 alpha:0.70]
+                          endingColor:[NSColor colorWithWhite:0.0 alpha:0.0]];
+            NSRect fadeRect = NSMakeRect(textX, 0, kFadeGradientWidth, bounds.size.height);
+            [fade drawInRect:fadeRect angle:0];
+
+            [NSGraphicsContext restoreGraphicsState];
+        } else {
+            [str drawAtPoint:NSMakePoint(textX, textY)];
+        }
     }
 }
 
@@ -208,6 +237,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, strong) SPOverlayContentView *contentView;
 @property (nonatomic, strong) NSTimer *animationTimer;
 @property (nonatomic, copy)   NSString *currentState;
+@property (nonatomic, assign) CGFloat sessionMaxWidth;
 
 @end
 
@@ -242,6 +272,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
     self.contentView = [[SPOverlayContentView alloc] initWithFrame:rect];
     self.contentView.wantsLayer = YES;
+    self.contentView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     panel.contentView = self.contentView;
 
     self.panel = panel;
@@ -253,7 +284,11 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     self.currentState = state;
     [self stopAnimation];
 
+    // Clear interim text on any state change
+    self.contentView.interimText = nil;
+
     if ([state isEqualToString:@"idle"] || [state isEqualToString:@"completed"]) {
+        self.sessionMaxWidth = 0;
         [self hide];
         return;
     }
@@ -263,6 +298,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     SPOverlayMode mode;
 
     if ([state hasPrefix:@"recording"]) {
+        self.sessionMaxWidth = 0;
         text   = @"Listening…";
         accent = [NSColor colorWithRed:1.0 green:0.32 blue:0.32 alpha:1.0];
         mode   = SPOverlayModeWaveform;
@@ -296,32 +332,59 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     self.contentView.accentColor = accent;
     self.contentView.mode        = mode;
     self.contentView.tick        = 0;
-    [self resizeAndCenter];
+    [self resizeAndCenterAnimated:NO];
     [self.contentView setNeedsDisplay:YES];
     [self show];
     [self startAnimation];
 }
 
 - (void)updateInterimText:(NSString *)text {
-    // Stub — full implementation in next commit
+    if (![self.currentState hasPrefix:@"recording"]) return;
+    self.contentView.interimText = text;
+    [self resizeAndCenterAnimated:YES];
+    [self.contentView setNeedsDisplay:YES];
 }
 
 #pragma mark - Layout
 
-- (void)resizeAndCenter {
+- (void)resizeAndCenterAnimated:(BOOL)animated {
     NSDictionary *attrs = @{
         NSFontAttributeName: [NSFont systemFontOfSize:13.0 weight:NSFontWeightMedium],
     };
-    CGFloat textW = [self.contentView.statusText sizeWithAttributes:attrs].width;
+    NSString *displayText = (self.contentView.interimText.length > 0)
+                            ? self.contentView.interimText
+                            : self.contentView.statusText;
+    CGFloat textW = [displayText sizeWithAttributes:attrs].width;
     CGFloat pillW = kHorizontalPad + kIconAreaWidth + kIconTextGap + textW + kHorizontalPad;
 
     NSScreen *screen = [NSScreen mainScreen];
     NSRect visible = screen.visibleFrame;
+
+    // Clamp to screen width minus margins
+    CGFloat maxW = visible.size.width - 2 * kScreenHorizontalMargin;
+    pillW = fmin(pillW, maxW);
+
+    // Only-grow within a recording session
+    if (animated && self.sessionMaxWidth > 0) {
+        pillW = fmax(pillW, self.sessionMaxWidth);
+    }
+    if (animated) {
+        self.sessionMaxWidth = pillW;
+    }
+
     CGFloat x = NSMidX(visible) - pillW / 2.0;
     CGFloat y = NSMinY(visible) + kBottomMargin;
+    NSRect newFrame = NSMakeRect(x, y, pillW, kPillHeight);
 
-    [self.panel setFrame:NSMakeRect(x, y, pillW, kPillHeight) display:YES];
-    self.contentView.frame = NSMakeRect(0, 0, pillW, kPillHeight);
+    if (animated) {
+        [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
+            ctx.duration = kResizeDuration;
+            ctx.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+            [self.panel.animator setFrame:newFrame display:YES];
+        }];
+    } else {
+        [self.panel setFrame:newFrame display:YES];
+    }
 }
 
 #pragma mark - Show / Hide
