@@ -288,4 +288,10 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     }
 }
 
+- (void)resetToIdle {
+    [self cancelHoldTimer];
+    self.fnDown = NO;
+    self.state = SPHotkeyStateIdle;
+}
+
 @end

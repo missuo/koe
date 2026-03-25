@@ -614,6 +614,9 @@ Input device selection is handled entirely in the Objective-C layer:
 - Before each capture session, `SPAudioCaptureManager` applies the selected device by calling `AudioUnitSetProperty` with `kAudioOutputUnitProperty_CurrentDevice` on the input node's AudioUnit — this must happen before querying the hardware format
 - Aggregate devices (transport type `kAudioDeviceTransportTypeAggregate`) are filtered out of the device list — these are internal system devices (e.g., `CADefaultDeviceAggregate`) created by macOS for virtual audio routing and should not be shown to the user; note that this also filters user-created aggregate devices from Audio MIDI Setup, which is a deliberate trade-off for simplicity
 - The selected device UID and display name are both persisted so the UI can show the device name even when it is disconnected; the preference is never cleared by a menu refresh — if the device is temporarily unavailable, it appears as a greyed-out "(Unavailable)" item, and `resolvedDeviceID` silently falls back to the macOS default input device at recording time
+- `AVAudioEngine` is recreated at the start of each capture session and released on stop — this avoids stale device references that would otherwise persist after a Bluetooth device disconnects and reconnects (CoreAudio assigns a new `AudioDeviceID`, but the old engine's internal AudioUnit still points to the dead device)
+- `SPAudioDeviceManager` registers a CoreAudio `kAudioHardwarePropertyDevices` property listener at launch to detect device arrivals and removals in real time; changes are dispatched to the main thread and forwarded to `SPAppDelegate` via the `SPAudioDeviceManagerDelegate` protocol
+- When a device disconnect is detected mid-recording via the device list listener, `SPAppDelegate` stops capture, ends the Rust session, resets the hotkey state machine to idle, plays an error cue, shows a brief error state, and auto-recovers to idle after 2 seconds
 
 ## 13. File and Directory Layout
 
@@ -1372,6 +1375,26 @@ Behavior:
 
 - Do not auto-paste by default
 - Copy to clipboard only
+
+### 22.8 Audio Device Disconnected Mid-Recording
+
+This covers the case where a manually selected audio input device (e.g. Bluetooth AirPods) disconnects during an active recording session.
+
+Detection:
+
+- CoreAudio `kAudioHardwarePropertyDevices` listener — fires when any system audio device is added or removed; `SPAppDelegate` checks whether the selected device UID is still present
+
+Behavior:
+
+- Stop audio capture immediately
+- End the Rust session
+- Reset the hotkey state machine to idle (prevents stuck recording state)
+- Play error cue sound
+- Show error state in status bar and overlay
+- Send a system notification with the error
+- Auto-recover to idle after 2 seconds
+
+If the device reconnects before the next recording session, it is automatically picked up — `AVAudioEngine` is recreated per session and `resolvedDeviceID` re-queries the device list by UID each time.
 
 ## 23. Privacy and Security Design
 
