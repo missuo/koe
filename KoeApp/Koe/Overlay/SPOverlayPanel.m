@@ -59,18 +59,15 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = self.bounds;
 
-    // ── Background pill ──
-    NSBezierPath *pill = [NSBezierPath bezierPathWithRoundedRect:bounds
-                                                         xRadius:kPillCornerRadius
-                                                         yRadius:kPillCornerRadius];
-    [[NSColor colorWithWhite:0.0 alpha:0.70] setFill];
-    [pill fill];
+    // ── Dark tint (minimum contrast for white text on any background) ──
+    [[NSColor colorWithWhite:0.0 alpha:0.35] setFill];
+    [NSBezierPath fillRect:bounds];
 
-    // Subtle light border
+    // ── Border (edge definition on dark backgrounds) ──
     NSBezierPath *border = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(bounds, 0.5, 0.5)
                                                             xRadius:kPillCornerRadius
                                                             yRadius:kPillCornerRadius];
-    [[NSColor colorWithWhite:1.0 alpha:0.10] setStroke];
+    [[NSColor colorWithWhite:1.0 alpha:0.20] setStroke];
     border.lineWidth = 0.5;
     [border stroke];
 
@@ -219,6 +216,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @interface SPOverlayPanel ()
 
 @property (nonatomic, strong) NSPanel *panel;
+@property (nonatomic, strong) NSVisualEffectView *effectView;
 @property (nonatomic, strong) SPOverlayContentView *contentView;
 @property (nonatomic, strong) NSTimer *animationTimer;
 @property (nonatomic, copy)   NSString *currentState;
@@ -251,15 +249,50 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
                                NSWindowCollectionBehaviorFullScreenAuxiliary;
     panel.backgroundColor = [NSColor clearColor];
     panel.opaque = NO;
-    panel.hasShadow = YES;
+    panel.hasShadow = NO;
     panel.ignoresMouseEvents = YES;
     panel.hidesOnDeactivate = NO;
     panel.alphaValue = 0.0;
 
+    // Visual effect background (HUD material for contrast on any desktop)
+    NSVisualEffectView *effectView = [[NSVisualEffectView alloc] initWithFrame:rect];
+    effectView.material     = NSVisualEffectMaterialHUDWindow;
+    effectView.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+    effectView.state        = NSVisualEffectStateActive;
+    effectView.appearance   = [NSAppearance appearanceNamed:NSAppearanceNameVibrantDark];
+    effectView.wantsLayer   = YES;
+    effectView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+    // Pill shape via maskImage (Apple-recommended for shaping NSVisualEffectView)
+    CGFloat diameter = kPillCornerRadius * 2;
+    NSImage *mask = [NSImage imageWithSize:NSMakeSize(diameter + 1, kPillHeight)
+                                   flipped:NO
+                            drawingHandler:^BOOL(NSRect dstRect) {
+        [[NSColor blackColor] setFill];
+        [[NSBezierPath bezierPathWithRoundedRect:dstRect
+                                         xRadius:kPillCornerRadius
+                                         yRadius:kPillCornerRadius] fill];
+        return YES;
+    }];
+    mask.capInsets     = NSEdgeInsetsMake(kPillCornerRadius, kPillCornerRadius,
+                                          kPillCornerRadius, kPillCornerRadius);
+    mask.resizingMode  = NSImageResizingModeStretch;
+    effectView.maskImage = mask;
+
+    // Light glow shadow (visible on dark backgrounds)
+    effectView.layer.shadowColor   = [[NSColor whiteColor] CGColor];
+    effectView.layer.shadowOpacity = 0.15;
+    effectView.layer.shadowRadius  = 6.0;
+    effectView.layer.shadowOffset  = CGSizeMake(0, 0);
+
+    panel.contentView = effectView;
+    self.effectView = effectView;
+
+    // Content drawn on top of the effect view
     self.contentView = [[SPOverlayContentView alloc] initWithFrame:rect];
     self.contentView.wantsLayer = YES;
     self.contentView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    panel.contentView = self.contentView;
+    [effectView addSubview:self.contentView];
 
     self.panel = panel;
 }
