@@ -39,6 +39,9 @@ pub struct SPCallbacks {
     /// Called when session state changes (for status bar updates)
     /// state is a UTF-8 C string representing the state name
     pub on_state_changed: Option<extern "C" fn(state: *const c_char)>,
+    /// Called when an interim (partial) ASR result arrives during recording
+    /// text is a UTF-8 C string, caller must NOT free it
+    pub on_interim_text: Option<extern "C" fn(text: *const c_char)>,
 }
 
 static CALLBACKS: Mutex<Option<SPCallbacks>> = Mutex::new(None);
@@ -103,6 +106,16 @@ pub fn invoke_state_changed(state: &str) {
         if let Some(f) = cbs.on_state_changed {
             let c_state = CString::new(state).unwrap_or_default();
             f(c_state.as_ptr());
+        }
+    }
+}
+
+pub fn invoke_interim_text(text: &str) {
+    let cb = CALLBACKS.lock().unwrap();
+    if let Some(ref cbs) = *cb {
+        if let Some(f) = cbs.on_interim_text {
+            let c_text = CString::new(text).unwrap_or_default();
+            f(c_text.as_ptr());
         }
     }
 }

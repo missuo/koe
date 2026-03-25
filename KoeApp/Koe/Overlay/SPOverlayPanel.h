@@ -9,4 +9,7 @@
 /// Update displayed state. Same state strings as SPStatusBarManager.
 - (void)updateState:(NSString *)state;
 
+/// Update interim ASR text shown during recording.
+- (void)updateInterimText:(NSString *)text;
+
 @end

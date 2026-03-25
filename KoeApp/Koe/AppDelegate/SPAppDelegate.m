@@ -310,6 +310,10 @@
     [self sendWarningNotification:message];
 }
 
+- (void)rustBridgeDidReceiveInterimText:(NSString *)text {
+    [self.overlayPanel updateInterimText:text];
+}
+
 - (void)rustBridgeDidChangeState:(NSString *)state {
     [self.statusBarManager updateState:state];
     [self.overlayPanel updateState:state];

@@ -302,6 +302,10 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     [self startAnimation];
 }
 
+- (void)updateInterimText:(NSString *)text {
+    // Stub — full implementation in next commit
+}
+
 #pragma mark - Layout
 
 - (void)resizeAndCenter {

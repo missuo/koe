@@ -10,9 +10,9 @@ pub mod telemetry;
 
 use crate::config::Config;
 use crate::ffi::{
-    cstr_to_str, invoke_final_text_ready, invoke_session_error, invoke_session_ready,
-    invoke_session_warning, invoke_state_changed, SPCallbacks, SPFeedbackConfig, SPHotkeyConfig, SPSessionContext,
-    SPSessionMode,
+    cstr_to_str, invoke_final_text_ready, invoke_interim_text, invoke_session_error,
+    invoke_session_ready, invoke_session_warning, invoke_state_changed, SPCallbacks,
+    SPFeedbackConfig, SPHotkeyConfig, SPSessionContext, SPSessionMode,
 };
 use crate::llm::openai_compatible::OpenAiCompatibleProvider;
 use crate::llm::{CorrectionRequest, LlmProvider};
@@ -394,6 +394,7 @@ async fn run_session(
                     Ok(AsrEvent::Interim(text)) => {
                         if !text.is_empty() {
                             aggregator.update_interim(&text);
+                            invoke_interim_text(&text);
                         }
                     }
                     Ok(AsrEvent::Definite(text)) => {
@@ -575,6 +576,7 @@ async fn wait_for_final(
             Ok(AsrEvent::Interim(text)) => {
                 if !text.is_empty() {
                     aggregator.update_interim(&text);
+                    invoke_interim_text(&text);
                 }
             }
             Ok(AsrEvent::Definite(text)) => {

@@ -67,6 +67,16 @@ static void bridge_on_state_changed(const char *state) {
     }
 }
 
+static void bridge_on_interim_text(const char *text) {
+    NSString *txt = text ? [NSString stringWithUTF8String:text] : @"";
+    id<SPRustBridgeDelegate> delegate = _bridgeDelegate;
+    if (delegate) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [delegate rustBridgeDidReceiveInterimText:txt];
+        });
+    }
+}
+
 // ─── SPRustBridge Implementation ────────────────────────────────────
 
 @interface SPRustBridge ()
@@ -93,6 +103,7 @@ static void bridge_on_state_changed(const char *state) {
         .on_final_text_ready = bridge_on_final_text_ready,
         .on_log_event = bridge_on_log_event,
         .on_state_changed = bridge_on_state_changed,
+        .on_interim_text = bridge_on_interim_text,
     };
     sp_core_register_callbacks(callbacks);
 
