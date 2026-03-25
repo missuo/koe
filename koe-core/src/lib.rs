@@ -492,6 +492,7 @@ async fn run_session(
             llm_config.temperature,
             llm_config.top_p,
             llm_config.max_output_tokens,
+            llm_config.max_token_parameter,
             llm_config.timeout_ms,
         );
 

@@ -203,6 +203,10 @@ llm:
   # Max tokens in LLM response. 1024 is plenty for voice input correction.
   max_output_tokens: 1024
 
+  # Token limit field sent to the OpenAI-compatible API.
+  # Use "max_completion_tokens" for GPT-5/reasoning-compatible endpoints.
+  max_token_parameter: "max_tokens"
+
   # How many dictionary entries to include in the LLM prompt.
   # 0 = send all entries (recommended for dictionaries under ~500 entries).
   # Set a limit if your dictionary is very large and you want to reduce prompt size.

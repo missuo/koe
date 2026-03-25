@@ -59,12 +59,21 @@ pub struct LlmSection {
     pub timeout_ms: u64,
     #[serde(default = "default_max_output_tokens")]
     pub max_output_tokens: u32,
+    #[serde(default = "default_llm_max_token_parameter")]
+    pub max_token_parameter: LlmMaxTokenParameter,
     #[serde(default = "default_dictionary_max_candidates")]
     pub dictionary_max_candidates: usize,
     #[serde(default = "default_system_prompt_path")]
     pub system_prompt_path: String,
     #[serde(default = "default_user_prompt_path")]
     pub user_prompt_path: String,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmMaxTokenParameter {
+    MaxTokens,
+    MaxCompletionTokens,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -165,6 +174,9 @@ fn default_max_output_tokens() -> u32 {
 }
 fn default_dictionary_max_candidates() -> usize {
     0
+}
+fn default_llm_max_token_parameter() -> LlmMaxTokenParameter {
+    LlmMaxTokenParameter::MaxTokens
 }
 fn default_dictionary_path() -> String {
     "dictionary.txt".into()
@@ -357,7 +369,8 @@ llm:
   top_p: 1
   timeout_ms: 8000
   max_output_tokens: 1024
-  dictionary_max_candidates: 0    # 0 = send all entries to LLM
+  max_token_parameter: "max_tokens"        # use "max_completion_tokens" for GPT-5/reasoning-compatible endpoints
+  dictionary_max_candidates: 0             # 0 = send all entries to LLM
   system_prompt_path: "system_prompt.txt"  # relative to ~/.koe/
   user_prompt_path: "user_prompt.txt"      # relative to ~/.koe/
 

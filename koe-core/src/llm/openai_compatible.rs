@@ -1,3 +1,4 @@
+use crate::config::LlmMaxTokenParameter;
 use crate::errors::{KoeError, Result};
 use crate::llm::{CorrectionRequest, LlmProvider};
 use reqwest::Client;
@@ -13,6 +14,7 @@ pub struct OpenAiCompatibleProvider {
     temperature: f64,
     top_p: f64,
     max_output_tokens: u32,
+    max_token_parameter: LlmMaxTokenParameter,
 }
 
 impl OpenAiCompatibleProvider {
@@ -23,6 +25,7 @@ impl OpenAiCompatibleProvider {
         temperature: f64,
         top_p: f64,
         max_output_tokens: u32,
+        max_token_parameter: LlmMaxTokenParameter,
         timeout_ms: u64,
     ) -> Self {
         let client = Client::builder()
@@ -38,6 +41,7 @@ impl OpenAiCompatibleProvider {
             temperature,
             top_p,
             max_output_tokens,
+            max_token_parameter,
         }
     }
 }
@@ -49,11 +53,10 @@ impl LlmProvider for OpenAiCompatibleProvider {
             self.base_url.trim_end_matches('/')
         );
 
-        let body = json!({
+        let mut body = json!({
             "model": self.model,
             "temperature": self.temperature,
             "top_p": self.top_p,
-            "max_tokens": self.max_output_tokens,
             "messages": [
                 {
                     "role": "system",
@@ -65,6 +68,11 @@ impl LlmProvider for OpenAiCompatibleProvider {
                 }
             ]
         });
+        let token_field_name = match self.max_token_parameter {
+            LlmMaxTokenParameter::MaxTokens => "max_tokens",
+            LlmMaxTokenParameter::MaxCompletionTokens => "max_completion_tokens",
+        };
+        body[token_field_name] = json!(self.max_output_tokens);
 
         log::debug!("LLM request to {url}");
 
