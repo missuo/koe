@@ -1,10 +1,13 @@
 use crate::errors::{KoeError, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
 use std::path::{Path, PathBuf};
 
 /// Root configuration structure matching ~/.koe/config.yaml
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
+    #[serde(default = "default_config_version")]
+    pub version: u32,
     #[serde(default)]
     pub asr: AsrSection,
     #[serde(default)]
@@ -17,8 +20,34 @@ pub struct Config {
     pub hotkey: HotkeySection,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AsrSection {
+    #[serde(default)]
+    pub provider: AsrProviderKind,
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout_ms: u64,
+    #[serde(default = "default_final_wait_timeout")]
+    pub final_wait_timeout_ms: u64,
+    #[serde(default)]
+    pub doubao: DoubaoAsrSection,
+    #[serde(default)]
+    pub openai: OpenAIAsrSection,
+    #[serde(default)]
+    pub qwen: QwenAsrSection,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+pub enum AsrProviderKind {
+    #[serde(rename = "doubao")]
+    Doubao,
+    #[serde(rename = "openai")]
+    OpenAI,
+    #[serde(rename = "qwen")]
+    Qwen,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DoubaoAsrSection {
     #[serde(default = "default_asr_url")]
     pub url: String,
     #[serde(default)]
@@ -27,10 +56,6 @@ pub struct AsrSection {
     pub access_key: String,
     #[serde(default = "default_resource_id")]
     pub resource_id: String,
-    #[serde(default = "default_connect_timeout")]
-    pub connect_timeout_ms: u64,
-    #[serde(default = "default_final_wait_timeout")]
-    pub final_wait_timeout_ms: u64,
     #[serde(default = "default_true")]
     pub enable_ddc: bool,
     #[serde(default = "default_true")]
@@ -41,7 +66,33 @@ pub struct AsrSection {
     pub enable_nonstream: bool,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct OpenAIAsrSection {
+    #[serde(default = "default_openai_asr_base_url")]
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_openai_asr_model")]
+    pub model: String,
+    #[serde(default)]
+    pub language: String,
+    #[serde(default)]
+    pub prompt: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct QwenAsrSection {
+    #[serde(default = "default_qwen_asr_base_url")]
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_qwen_asr_model")]
+    pub model: String,
+    #[serde(default)]
+    pub language: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct LlmSection {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -69,30 +120,30 @@ pub struct LlmSection {
     pub user_prompt_path: String,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum LlmMaxTokenParameter {
     MaxTokens,
     MaxCompletionTokens,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct FeedbackSection {
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub start_sound: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub stop_sound: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub error_sound: bool,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DictionarySection {
     #[serde(default = "default_dictionary_path")]
     pub path: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct HotkeySection {
     /// Trigger key for voice input.
     /// Options: "fn", "left_option", "right_option", "left_command", "right_command"
@@ -101,58 +152,132 @@ pub struct HotkeySection {
     pub trigger_key: String,
 }
 
-/// Resolved hotkey parameters for the native side
 #[derive(Debug, Clone, Copy)]
 pub struct HotkeyParams {
-    /// Primary key code (from Carbon Events)
     pub key_code: u16,
-    /// Alternative key code (e.g. 179 for Globe key), 0 if none
     pub alt_key_code: u16,
-    /// Modifier flag to check (e.g. NSEventModifierFlagFunction = 0x800000)
     pub modifier_flag: u64,
 }
 
 impl HotkeySection {
-    /// Resolve the trigger_key string into concrete key codes and modifier flags.
     pub fn resolve(&self) -> HotkeyParams {
         match self.trigger_key.as_str() {
             "left_option" => HotkeyParams {
-                key_code: 58,       // kVK_Option
+                key_code: 58,
                 alt_key_code: 0,
-                modifier_flag: 0x00080000,  // NSEventModifierFlagOption
+                modifier_flag: 0x00080000,
             },
             "right_option" => HotkeyParams {
-                key_code: 61,       // kVK_RightOption
+                key_code: 61,
                 alt_key_code: 0,
-                modifier_flag: 0x00080000,  // NSEventModifierFlagOption
+                modifier_flag: 0x00080000,
             },
             "left_command" => HotkeyParams {
-                key_code: 55,       // kVK_Command
+                key_code: 55,
                 alt_key_code: 0,
-                modifier_flag: 0x00100000,  // NSEventModifierFlagCommand
+                modifier_flag: 0x00100000,
             },
             "right_command" => HotkeyParams {
-                key_code: 54,       // kVK_RightCommand
+                key_code: 54,
                 alt_key_code: 0,
-                modifier_flag: 0x00100000,  // NSEventModifierFlagCommand
+                modifier_flag: 0x00100000,
             },
-            // "fn" or anything else defaults to Fn/Globe
             _ => HotkeyParams {
-                key_code: 63,       // kVK_Function (Fn)
-                alt_key_code: 179,  // Globe key on newer keyboards
-                modifier_flag: 0x00800000,  // NSEventModifierFlagFunction
+                key_code: 63,
+                alt_key_code: 179,
+                modifier_flag: 0x00800000,
             },
         }
     }
 }
 
-// ─── Defaults ───────────────────────────────────────────────────────
+#[derive(Debug, Deserialize, Clone)]
+struct LegacyConfig {
+    #[serde(default)]
+    pub asr: LegacyAsrSection,
+    #[serde(default)]
+    pub llm: LlmSection,
+    #[serde(default)]
+    pub feedback: FeedbackSection,
+    #[serde(default)]
+    pub dictionary: DictionarySection,
+    #[serde(default)]
+    pub hotkey: HotkeySection,
+}
 
+#[derive(Debug, Deserialize, Clone, Default)]
+struct LegacyAsrSection {
+    #[serde(default = "default_asr_url")]
+    pub url: String,
+    #[serde(default)]
+    pub app_key: String,
+    #[serde(default)]
+    pub access_key: String,
+    #[serde(default = "default_resource_id")]
+    pub resource_id: String,
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout_ms: u64,
+    #[serde(default = "default_final_wait_timeout")]
+    pub final_wait_timeout_ms: u64,
+    #[serde(default = "default_true")]
+    pub enable_ddc: bool,
+    #[serde(default = "default_true")]
+    pub enable_itn: bool,
+    #[serde(default = "default_true")]
+    pub enable_punc: bool,
+    #[serde(default = "default_true")]
+    pub enable_nonstream: bool,
+}
+
+impl From<LegacyConfig> for Config {
+    fn from(value: LegacyConfig) -> Self {
+        Self {
+            version: default_config_version(),
+            asr: AsrSection {
+                provider: AsrProviderKind::Doubao,
+                connect_timeout_ms: value.asr.connect_timeout_ms,
+                final_wait_timeout_ms: value.asr.final_wait_timeout_ms,
+                doubao: DoubaoAsrSection {
+                    url: value.asr.url,
+                    app_key: value.asr.app_key,
+                    access_key: value.asr.access_key,
+                    resource_id: value.asr.resource_id,
+                    enable_ddc: value.asr.enable_ddc,
+                    enable_itn: value.asr.enable_itn,
+                    enable_punc: value.asr.enable_punc,
+                    enable_nonstream: value.asr.enable_nonstream,
+                },
+                openai: OpenAIAsrSection::default(),
+                qwen: QwenAsrSection::default(),
+            },
+            llm: value.llm,
+            feedback: value.feedback,
+            dictionary: value.dictionary,
+            hotkey: value.hotkey,
+        }
+    }
+}
+
+fn default_config_version() -> u32 {
+    2
+}
 fn default_asr_url() -> String {
     "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async".into()
 }
 fn default_resource_id() -> String {
     "volc.seedasr.sauc.duration".into()
+}
+fn default_openai_asr_base_url() -> String {
+    "https://api.openai.com/v1".into()
+}
+fn default_openai_asr_model() -> String {
+    "gpt-4o-transcribe".into()
+}
+fn default_qwen_asr_base_url() -> String {
+    "wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime".into()
+}
+fn default_qwen_asr_model() -> String {
+    "qwen3-asr-flash-realtime".into()
 }
 fn default_connect_timeout() -> u64 {
     3000
@@ -162,6 +287,9 @@ fn default_final_wait_timeout() -> u64 {
 }
 fn default_true() -> bool {
     true
+}
+fn default_false() -> bool {
+    false
 }
 fn default_top_p() -> f64 {
     1.0
@@ -201,6 +329,26 @@ impl Default for AsrSection {
         serde_yaml::from_str("{}").unwrap()
     }
 }
+impl Default for AsrProviderKind {
+    fn default() -> Self {
+        Self::Doubao
+    }
+}
+impl Default for DoubaoAsrSection {
+    fn default() -> Self {
+        serde_yaml::from_str("{}").unwrap()
+    }
+}
+impl Default for OpenAIAsrSection {
+    fn default() -> Self {
+        serde_yaml::from_str("{}").unwrap()
+    }
+}
+impl Default for QwenAsrSection {
+    fn default() -> Self {
+        serde_yaml::from_str("{}").unwrap()
+    }
+}
 impl Default for LlmSection {
     fn default() -> Self {
         serde_yaml::from_str("{}").unwrap()
@@ -222,20 +370,15 @@ impl Default for HotkeySection {
     }
 }
 
-// ─── Config Directory ───────────────────────────────────────────────
-
-/// Returns ~/.koe/
 pub fn config_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     PathBuf::from(home).join(".koe")
 }
 
-/// Returns ~/.koe/config.yaml
 pub fn config_path() -> PathBuf {
     config_dir().join("config.yaml")
 }
 
-/// Resolve a path relative to config dir.
 fn resolve_path(p: &str) -> PathBuf {
     let path = Path::new(p);
     if path.is_absolute() {
@@ -245,27 +388,20 @@ fn resolve_path(p: &str) -> PathBuf {
     }
 }
 
-/// Resolve dictionary path (relative to config dir).
 pub fn resolve_dictionary_path(config: &Config) -> PathBuf {
     resolve_path(&config.dictionary.path)
 }
 
-/// Resolve system prompt path (relative to config dir).
 pub fn resolve_system_prompt_path(config: &Config) -> PathBuf {
     resolve_path(&config.llm.system_prompt_path)
 }
 
-/// Resolve user prompt path (relative to config dir).
 pub fn resolve_user_prompt_path(config: &Config) -> PathBuf {
     resolve_path(&config.llm.user_prompt_path)
 }
 
-// ─── Environment Variable Substitution ──────────────────────────────
-
-/// Replace ${VAR_NAME} patterns with environment variable values.
 fn substitute_env_vars(input: &str) -> String {
     let mut result = input.to_string();
-    // Simple regex-free approach
     loop {
         let start = match result.find("${") {
             Some(pos) => pos,
@@ -282,13 +418,77 @@ fn substitute_env_vars(input: &str) -> String {
     result
 }
 
-// ─── Load & Ensure ─────────────────────────────────────────────────
+fn substitute_string(value: &mut String) {
+    *value = substitute_env_vars(value);
+}
 
-/// Load config from ~/.koe/config.yaml.
-/// Performs environment variable substitution before parsing.
+fn substitute_config_env_vars(config: &mut Config) {
+    substitute_string(&mut config.asr.doubao.url);
+    substitute_string(&mut config.asr.doubao.app_key);
+    substitute_string(&mut config.asr.doubao.access_key);
+    substitute_string(&mut config.asr.doubao.resource_id);
+
+    substitute_string(&mut config.asr.openai.base_url);
+    substitute_string(&mut config.asr.openai.api_key);
+    substitute_string(&mut config.asr.openai.model);
+    substitute_string(&mut config.asr.openai.language);
+    substitute_string(&mut config.asr.openai.prompt);
+
+    substitute_string(&mut config.asr.qwen.base_url);
+    substitute_string(&mut config.asr.qwen.api_key);
+    substitute_string(&mut config.asr.qwen.model);
+    substitute_string(&mut config.asr.qwen.language);
+
+    substitute_string(&mut config.llm.base_url);
+    substitute_string(&mut config.llm.api_key);
+    substitute_string(&mut config.llm.model);
+    substitute_string(&mut config.llm.system_prompt_path);
+    substitute_string(&mut config.llm.user_prompt_path);
+    substitute_string(&mut config.dictionary.path);
+    substitute_string(&mut config.hotkey.trigger_key);
+}
+
+fn is_legacy_asr_config(root: &Value) -> bool {
+    let Some(asr) = root.get("asr").and_then(Value::as_mapping) else {
+        return false;
+    };
+
+    let has_provider_key = asr.contains_key(Value::String("provider".into()))
+        || asr.contains_key(Value::String("doubao".into()))
+        || asr.contains_key(Value::String("openai".into()))
+        || asr.contains_key(Value::String("qwen".into()));
+
+    let has_legacy_key = asr.contains_key(Value::String("url".into()))
+        || asr.contains_key(Value::String("app_key".into()))
+        || asr.contains_key(Value::String("access_key".into()))
+        || asr.contains_key(Value::String("resource_id".into()));
+
+    !has_provider_key && has_legacy_key
+}
+
+fn write_migrated_config(path: &Path, original_raw: &str, config: &Config) -> Result<()> {
+    let backup_path = path.with_file_name("config.v1.backup.yaml");
+    if !backup_path.exists() {
+        std::fs::write(&backup_path, original_raw).map_err(|e| {
+            KoeError::Config(format!("write backup {}: {e}", backup_path.display()))
+        })?;
+        log::info!("backed up legacy config to {}", backup_path.display());
+    }
+
+    let mut serialized = serde_yaml::to_string(config)
+        .map_err(|e| KoeError::Config(format!("serialize migrated config: {e}")))?;
+    if let Some(stripped) = serialized.strip_prefix("---\n") {
+        serialized = stripped.to_string();
+    }
+
+    std::fs::write(path, serialized)
+        .map_err(|e| KoeError::Config(format!("write migrated {}: {e}", path.display())))?;
+    log::info!("migrated config.yaml to version {}", config.version);
+    Ok(())
+}
+
 pub fn load_config() -> Result<Config> {
     let path = config_path();
-
     if !path.exists() {
         return Err(KoeError::Config(format!(
             "config file not found: {}",
@@ -298,17 +498,25 @@ pub fn load_config() -> Result<Config> {
 
     let raw = std::fs::read_to_string(&path)
         .map_err(|e| KoeError::Config(format!("read {}: {e}", path.display())))?;
-
-    let substituted = substitute_env_vars(&raw);
-
-    let config: Config = serde_yaml::from_str(&substituted)
+    let yaml_value: Value = serde_yaml::from_str(&raw)
         .map_err(|e| KoeError::Config(format!("parse {}: {e}", path.display())))?;
 
-    Ok(config)
+    let config = if is_legacy_asr_config(&yaml_value) {
+        let legacy: LegacyConfig = serde_yaml::from_str(&raw)
+            .map_err(|e| KoeError::Config(format!("parse legacy {}: {e}", path.display())))?;
+        let migrated = Config::from(legacy);
+        write_migrated_config(&path, &raw, &migrated)?;
+        migrated
+    } else {
+        serde_yaml::from_str::<Config>(&raw)
+            .map_err(|e| KoeError::Config(format!("parse {}: {e}", path.display())))?
+    };
+
+    let mut resolved = config;
+    substitute_config_env_vars(&mut resolved);
+    Ok(resolved)
 }
 
-/// Ensure ~/.koe/ exists with default config.yaml and dictionary.txt.
-/// Returns true if files were created (first launch).
 pub fn ensure_defaults() -> Result<bool> {
     let dir = config_dir();
     let config_file = config_path();
@@ -346,33 +554,49 @@ pub fn ensure_defaults() -> Result<bool> {
 const DEFAULT_CONFIG_YAML: &str = r#"# Koe - Voice Input Tool Configuration
 # ~/.koe/config.yaml
 
+version: 2
+
 asr:
-  # Doubao (豆包) Streaming ASR 2.0 (优化版双向流式)
-  url: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
-  app_key: ""          # X-Api-App-Key (火山引擎 App ID)
-  access_key: ""       # X-Api-Access-Key (火山引擎 Access Token)
-  resource_id: "volc.seedasr.sauc.duration"
+  provider: "doubao"  # doubao | openai | qwen
   connect_timeout_ms: 3000
   final_wait_timeout_ms: 5000
-  enable_ddc: true     # 语义顺滑 (去除口语重复/语气词)
-  enable_itn: true     # 文本规范化 (数字、日期等)
-  enable_punc: true    # 自动标点
-  enable_nonstream: true  # 二遍识别 (流式+非流式, 提升准确率)
+
+  doubao:
+    url: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
+    app_key: ""          # X-Api-App-Key (火山引擎 App ID)
+    access_key: ""       # X-Api-Access-Key (火山引擎 Access Token)
+    resource_id: "volc.seedasr.sauc.duration"
+    enable_ddc: true
+    enable_itn: true
+    enable_punc: true
+    enable_nonstream: true
+
+  openai:
+    base_url: "https://api.openai.com/v1"
+    api_key: ""          # or use ${OPENAI_API_KEY}
+    model: "gpt-4o-transcribe"
+    language: ""
+    prompt: ""
+
+  qwen:
+    base_url: "wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime"
+    api_key: ""          # or use ${QWEN_API_KEY}
+    model: "qwen3-asr-flash-realtime"
+    language: ""
 
 llm:
-  enabled: true        # set to false to skip LLM correction entirely
-  # OpenAI-compatible endpoint for text correction
+  enabled: true
   base_url: "https://api.openai.com/v1"
-  api_key: ""          # or use ${LLM_API_KEY}
+  api_key: ""
   model: "gpt-5.4-nano"
   temperature: 0
   top_p: 1
   timeout_ms: 8000
   max_output_tokens: 1024
-  max_token_parameter: "max_completion_tokens"  # use "max_tokens" for older model endpoints
-  dictionary_max_candidates: 0             # 0 = send all entries to LLM
-  system_prompt_path: "system_prompt.txt"  # relative to ~/.koe/
-  user_prompt_path: "user_prompt.txt"      # relative to ~/.koe/
+  max_token_parameter: "max_completion_tokens"
+  dictionary_max_candidates: 0
+  system_prompt_path: "system_prompt.txt"
+  user_prompt_path: "user_prompt.txt"
 
 feedback:
   start_sound: false
@@ -380,10 +604,9 @@ feedback:
   error_sound: false
 
 dictionary:
-  path: "dictionary.txt"  # relative to ~/.koe/
+  path: "dictionary.txt"
 
 hotkey:
-  # 触发键：fn | left_option | right_option | left_command | right_command
   trigger_key: "fn"
 "#;
 
@@ -394,5 +617,4 @@ const DEFAULT_DICTIONARY_TXT: &str = r#"# Koe User Dictionary
 "#;
 
 const DEFAULT_SYSTEM_PROMPT: &str = include_str!("default_system_prompt.txt");
-
 const DEFAULT_USER_PROMPT: &str = include_str!("default_user_prompt.txt");

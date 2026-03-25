@@ -2,7 +2,7 @@
 name = "koe-asr"
 version = "0.1.0"
 edition = "2021"
-description = "Streaming ASR (Automatic Speech Recognition) client for Volcengine/Doubao"
+description = "Streaming ASR (Automatic Speech Recognition) providers for Koe"
 license = "MIT"
 
 [dependencies]
@@ -12,6 +12,7 @@ rustls = { version = "0.23", features = ["ring"], default-features = false }
 futures-util = "0.3"
 flate2 = "1"
 serde_json = "1"
+base64 = "0.22"
 log = "0.4"
 uuid = { version = "1", features = ["v4"] }
 

@@ -1,35 +1,48 @@
-use koe_asr::{AsrConfig, AsrEvent, AsrProvider, DoubaoWsProvider, TranscriptAggregator};
+use koe_asr::{
+    create_provider, AnyAsrProvider, AsrConfig, AsrEvent, AsrProvider, AsrProviderKind,
+    DoubaoConfig, DoubaoWsProvider, ProviderConfig, TranscriptAggregator,
+};
 
 #[test]
 fn test_default_config() {
     let config = AsrConfig::default();
-    assert_eq!(config.sample_rate_hz, 16000);
-    assert!(config.enable_ddc);
-    assert!(config.enable_itn);
-    assert!(config.enable_punc);
-    assert!(config.enable_nonstream);
+    assert_eq!(config.provider_kind(), AsrProviderKind::Doubao);
     assert!(config.hotwords.is_empty());
-    assert!(!config.url.is_empty());
-    assert!(!config.resource_id.is_empty());
+    let doubao = config.doubao().unwrap();
+    assert_eq!(doubao.sample_rate_hz, 16000);
+    assert!(doubao.enable_ddc);
+    assert!(doubao.enable_itn);
+    assert!(doubao.enable_punc);
+    assert!(doubao.enable_nonstream);
+    assert!(!doubao.url.is_empty());
+    assert!(!doubao.resource_id.is_empty());
 }
 
 #[test]
 fn test_custom_config() {
     let config = AsrConfig {
-        app_key: "test-key".into(),
-        access_key: "test-access".into(),
         hotwords: vec!["Rust".into(), "Tokio".into()],
+        provider: ProviderConfig::Doubao(DoubaoConfig {
+            app_key: "test-key".into(),
+            access_key: "test-access".into(),
+            ..Default::default()
+        }),
         ..Default::default()
     };
-    assert_eq!(config.app_key, "test-key");
+    assert_eq!(config.doubao().unwrap().app_key, "test-key");
     assert_eq!(config.hotwords.len(), 2);
 }
 
 #[test]
 fn test_provider_creation() {
-    let provider = DoubaoWsProvider::new();
-    assert!(!provider.connect_id().is_empty());
-    assert!(provider.logid().is_none());
+    let provider = create_provider(&AsrConfig::default());
+    match provider {
+        AnyAsrProvider::Doubao(provider) => {
+            assert!(!provider.connect_id().is_empty());
+            assert!(provider.logid().is_none());
+        }
+        _ => panic!("expected Doubao provider"),
+    }
 }
 
 #[test]
@@ -106,9 +119,12 @@ fn test_asr_event_variants() {
 #[tokio::test]
 async fn test_connect_fails_with_invalid_credentials() {
     let config = AsrConfig {
-        app_key: "invalid".into(),
-        access_key: "invalid".into(),
         connect_timeout_ms: 2000,
+        provider: ProviderConfig::Doubao(DoubaoConfig {
+            app_key: "invalid".into(),
+            access_key: "invalid".into(),
+            ..Default::default()
+        }),
         ..Default::default()
     };
 

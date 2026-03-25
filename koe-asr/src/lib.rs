@@ -1,20 +1,26 @@
 //! # koe-asr
 //!
-//! Streaming ASR (Automatic Speech Recognition) client for Volcengine/Doubao.
+//! Streaming ASR (Automatic Speech Recognition) client abstraction.
 //!
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use koe_asr::{AsrConfig, AsrEvent, AsrProvider, DoubaoWsProvider, TranscriptAggregator};
+//! use koe_asr::{
+//!     create_provider, AsrConfig, AsrEvent, AsrProvider, DoubaoConfig, ProviderConfig,
+//!     TranscriptAggregator,
+//! };
 //!
 //! # async fn example() -> Result<(), koe_asr::AsrError> {
 //! let config = AsrConfig {
-//!     app_key: "your-app-key".into(),
-//!     access_key: "your-access-key".into(),
+//!     provider: ProviderConfig::Doubao(DoubaoConfig {
+//!         app_key: "your-app-key".into(),
+//!         access_key: "your-access-key".into(),
+//!         ..Default::default()
+//!     }),
 //!     ..Default::default()
 //! };
 //!
-//! let mut asr = DoubaoWsProvider::new();
+//! let mut asr = create_provider(&config);
 //! asr.connect(&config).await?;
 //!
 //! // Push audio frames...
@@ -39,15 +45,21 @@
 //! ```
 
 pub mod config;
-pub mod doubao;
 pub mod error;
 pub mod event;
 pub mod provider;
+pub mod providers;
 pub mod transcript;
 
-pub use config::AsrConfig;
-pub use doubao::DoubaoWsProvider;
+pub use config::{
+    AsrConfig, AsrProviderKind, DoubaoConfig, OpenAIRealtimeConfig, ProviderConfig,
+    QwenRealtimeConfig,
+};
 pub use error::AsrError;
 pub use event::AsrEvent;
 pub use provider::AsrProvider;
+pub use providers::{
+    create_provider, AnyAsrProvider, DoubaoWsProvider, OpenAIRealtimeProvider,
+    QwenRealtimeProvider,
+};
 pub use transcript::TranscriptAggregator;

@@ -14,8 +14,9 @@ static NSToolbarItemIdentifier const kToolbarDictionary = @"dictionary";
 static NSToolbarItemIdentifier const kToolbarSystemPrompt = @"system_prompt";
 
 // ─── YAML helpers (minimal, line-based) ─────────────────────────────
-// We parse/write the config.yaml with simple line-based logic to avoid
-// pulling in a YAML library.  The config file is flat enough for this.
+// We still avoid pulling in a YAML library, but the config is now nested
+// enough that reads need to handle arbitrary key paths. Saves are done by
+// regenerating the full config.yaml in the current v2 schema.
 
 static NSString *configDirPath(void) {
     return [NSHomeDirectory() stringByAppendingPathComponent:kConfigDir];
@@ -25,47 +26,74 @@ static NSString *configFilePath(void) {
     return [configDirPath() stringByAppendingPathComponent:kConfigFile];
 }
 
-/// Read a top-level or nested YAML value.  `keyPath` e.g. @"asr.app_key".
-/// Handles `key: "value"` and `key: value`.  Returns @"" if not found.
-static NSString *yamlRead(NSString *yaml, NSString *keyPath) {
-    NSArray<NSString *> *parts = [keyPath componentsSeparatedByString:@"."];
-    if (parts.count == 0) return @"";
+static NSInteger yamlIndentLevel(NSString *line) {
+    NSInteger count = 0;
+    while (count < (NSInteger)line.length && [line characterAtIndex:count] == ' ') {
+        count += 1;
+    }
+    return count / 2;
+}
 
+static NSString *yamlUnquoteScalar(NSString *value) {
+    if (value.length < 2) {
+        return value ?: @"";
+    }
+
+    unichar first = [value characterAtIndex:0];
+    unichar last = [value characterAtIndex:value.length - 1];
+    if (first == '"' && last == '"') {
+        NSString *inner = [value substringWithRange:NSMakeRange(1, value.length - 2)];
+        inner = [inner stringByReplacingOccurrencesOfString:@"\\n" withString:@"\n"];
+        inner = [inner stringByReplacingOccurrencesOfString:@"\\\"" withString:@"\""];
+        inner = [inner stringByReplacingOccurrencesOfString:@"\\\\" withString:@"\\"];
+        return inner;
+    }
+
+    if (first == '\'' && last == '\'') {
+        NSString *inner = [value substringWithRange:NSMakeRange(1, value.length - 2)];
+        return [inner stringByReplacingOccurrencesOfString:@"''" withString:@"'"];
+    }
+
+    return value;
+}
+
+/// Read a nested YAML scalar value. `keyPath` e.g. @"asr.openai.api_key".
+static NSString *yamlRead(NSString *yaml, NSString *keyPath) {
     NSArray<NSString *> *lines = [yaml componentsSeparatedByString:@"\n"];
-    BOOL inSection = (parts.count == 1);  // top-level key needs no section
-    NSString *section = parts.count > 1 ? parts[0] : nil;
-    NSString *key = parts.lastObject;
+    NSMutableArray<NSString *> *pathStack = [NSMutableArray array];
 
     for (NSString *line in lines) {
         NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
         if (trimmed.length == 0 || [trimmed hasPrefix:@"#"]) continue;
 
-        // Check section header (no leading whitespace, ends with :)
-        if (section && !inSection) {
-            if (![line hasPrefix:@" "] && ![line hasPrefix:@"\t"]) {
-                NSString *sectionCandidate = [trimmed stringByReplacingOccurrencesOfString:@":" withString:@""];
-                sectionCandidate = [sectionCandidate stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                if ([sectionCandidate isEqualToString:section]) {
-                    inSection = YES;
-                }
-            }
+        NSInteger depth = yamlIndentLevel(line);
+        while ((NSInteger)pathStack.count > depth) {
+            [pathStack removeLastObject];
+        }
+
+        if ([trimmed hasSuffix:@":"] && [trimmed rangeOfString:@": "].location == NSNotFound) {
+            NSString *section = [[trimmed substringToIndex:trimmed.length - 1]
+                                 stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            [pathStack addObject:section];
             continue;
         }
 
-        // If we were in a section and hit a new top-level key, stop
-        if (section && inSection && ![line hasPrefix:@" "] && ![line hasPrefix:@"\t"]) {
-            break;
-        }
+        NSRange colon = [trimmed rangeOfString:@":"];
+        if (colon.location == NSNotFound) continue;
 
-        // Match key
-        NSString *prefix = [NSString stringWithFormat:@"%@:", key];
-        if ([trimmed hasPrefix:prefix]) {
-            NSString *value = [trimmed substringFromIndex:prefix.length];
+        NSString *key = [[trimmed substringToIndex:colon.location]
+                         stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        NSString *value = [trimmed substringFromIndex:colon.location + 1];
+        value = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+
+        NSMutableArray<NSString *> *fullPath = [pathStack mutableCopy];
+        [fullPath addObject:key];
+        if ([[fullPath componentsJoinedByString:@"."] isEqualToString:keyPath]) {
             value = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            // Strip inline comment first (before quote removal).
-            if ([value hasPrefix:@"\""]) {
-                NSRange closeQuote = [value rangeOfString:@"\"" options:0 range:NSMakeRange(1, value.length - 1)];
-                if (closeQuote.location != NSNotFound) {
+            if ([value hasPrefix:@"\""] || [value hasPrefix:@"'"]) {
+                NSString *quote = [value substringToIndex:1];
+                NSRange closeQuote = [value rangeOfString:quote options:NSBackwardsSearch];
+                if (closeQuote.location != NSNotFound && closeQuote.location > 0) {
                     value = [value substringToIndex:closeQuote.location + 1];
                 }
             } else {
@@ -75,111 +103,23 @@ static NSString *yamlRead(NSString *yaml, NSString *keyPath) {
                              stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
                 }
             }
-            // Strip surrounding quotes
-            if (value.length >= 2 &&
-                [value hasPrefix:@"\""] && [value hasSuffix:@"\""]) {
-                value = [value substringWithRange:NSMakeRange(1, value.length - 2)];
-            }
-            return value;
+            return yamlUnquoteScalar(value ?: @"");
         }
     }
     return @"";
 }
 
-/// Set a value in the YAML string.  If the key exists, replace; otherwise append under section.
-static NSString *yamlWrite(NSString *yaml, NSString *keyPath, NSString *value) {
-    NSArray<NSString *> *parts = [keyPath componentsSeparatedByString:@"."];
-    NSString *section = parts.count > 1 ? parts[0] : nil;
-    NSString *key = parts.lastObject;
+static NSString *yamlValueOrDefault(NSString *yaml, NSString *keyPath, NSString *fallback) {
+    NSString *value = yamlRead(yaml, keyPath);
+    return value.length > 0 ? value : fallback;
+}
 
-    // Quote the value if it contains special chars or is empty
-    NSString *quotedValue;
-    if (value.length == 0 ||
-        [value rangeOfString:@" "].location != NSNotFound ||
-        [value rangeOfString:@"#"].location != NSNotFound ||
-        [value rangeOfString:@":"].location != NSNotFound ||
-        [value rangeOfString:@"\""].location != NSNotFound ||
-        [value rangeOfString:@"$"].location != NSNotFound ||
-        [value rangeOfString:@"@"].location != NSNotFound ||
-        [value hasPrefix:@"wss://"] || [value hasPrefix:@"https://"] || [value hasPrefix:@"http://"]) {
-        quotedValue = [NSString stringWithFormat:@"\"%@\"", value];
-    } else {
-        quotedValue = value;
-    }
-
-    NSMutableArray<NSString *> *lines = [[yaml componentsSeparatedByString:@"\n"] mutableCopy];
-    BOOL inSection = (section == nil);
-    BOOL found = NO;
-    NSString *indent = section ? @"  " : @"";
-
-    for (NSInteger i = 0; i < (NSInteger)lines.count; i++) {
-        NSString *line = lines[i];
-        NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        if (trimmed.length == 0 || [trimmed hasPrefix:@"#"]) continue;
-
-        if (section && !inSection) {
-            if (![line hasPrefix:@" "] && ![line hasPrefix:@"\t"]) {
-                NSString *s = [trimmed stringByReplacingOccurrencesOfString:@":" withString:@""];
-                s = [s stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                if ([s isEqualToString:section]) {
-                    inSection = YES;
-                }
-            }
-            continue;
-        }
-
-        if (section && inSection && ![line hasPrefix:@" "] && ![line hasPrefix:@"\t"]) {
-            // Went past our section — insert before this line
-            NSString *newLine = [NSString stringWithFormat:@"%@%@: %@", indent, key, quotedValue];
-            [lines insertObject:newLine atIndex:i];
-            found = YES;
-            break;
-        }
-
-        NSString *prefix = [NSString stringWithFormat:@"%@:", key];
-        if ([trimmed hasPrefix:prefix]) {
-            NSString *newLine = [NSString stringWithFormat:@"%@%@: %@", indent, key, quotedValue];
-            lines[i] = newLine;
-            found = YES;
-            break;
-        }
-    }
-
-    if (!found) {
-        if (section) {
-            BOOL sectionFound = NO;
-            NSInteger insertIdx = (NSInteger)lines.count;
-            for (NSInteger i = 0; i < (NSInteger)lines.count; i++) {
-                NSString *line = lines[i];
-                NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                if (!sectionFound) {
-                    if (![line hasPrefix:@" "] && ![line hasPrefix:@"\t"] && trimmed.length > 0 && ![trimmed hasPrefix:@"#"]) {
-                        NSString *s = [trimmed stringByReplacingOccurrencesOfString:@":" withString:@""];
-                        s = [s stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                        if ([s isEqualToString:section]) {
-                            sectionFound = YES;
-                        }
-                    }
-                } else {
-                    if (![line hasPrefix:@" "] && ![line hasPrefix:@"\t"] && trimmed.length > 0 && ![trimmed hasPrefix:@"#"]) {
-                        insertIdx = i;
-                        break;
-                    }
-                }
-            }
-            if (!sectionFound) {
-                [lines addObject:@""];
-                [lines addObject:[NSString stringWithFormat:@"%@:", section]];
-                insertIdx = (NSInteger)lines.count;
-            }
-            NSString *newLine = [NSString stringWithFormat:@"%@%@: %@", indent, key, quotedValue];
-            [lines insertObject:newLine atIndex:insertIdx];
-        } else {
-            [lines addObject:[NSString stringWithFormat:@"%@: %@", key, quotedValue]];
-        }
-    }
-
-    return [lines componentsJoinedByString:@"\n"];
+static NSString *yamlQuotedString(NSString *value) {
+    NSString *safe = value ?: @"";
+    safe = [safe stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"];
+    safe = [safe stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+    safe = [safe stringByReplacingOccurrencesOfString:@"\n" withString:@"\\n"];
+    return [NSString stringWithFormat:@"\"%@\"", safe];
 }
 
 // ─── Window Controller ──────────────────────────────────────────────
@@ -191,10 +131,25 @@ static NSString *yamlWrite(NSString *yaml, NSString *keyPath, NSString *value) {
 @property (nonatomic, strong) NSView *currentPaneView;
 
 // ASR fields
+@property (nonatomic, strong) NSPopUpButton *asrProviderPopup;
+@property (nonatomic, strong) NSTextField *asrDescriptionLabel;
 @property (nonatomic, strong) NSTextField *asrAppKeyField;
 @property (nonatomic, strong) NSTextField *asrAccessKeyField;
 @property (nonatomic, strong) NSSecureTextField *asrAccessKeySecureField;
 @property (nonatomic, strong) NSButton *asrAccessKeyToggle;
+@property (nonatomic, strong) NSTextField *asrOpenAIBaseUrlField;
+@property (nonatomic, strong) NSTextField *asrOpenAIApiKeyField;
+@property (nonatomic, strong) NSSecureTextField *asrOpenAIApiKeySecureField;
+@property (nonatomic, strong) NSButton *asrOpenAIApiKeyToggle;
+@property (nonatomic, strong) NSPopUpButton *asrOpenAIModelPopup;
+@property (nonatomic, strong) NSTextField *asrQwenBaseUrlField;
+@property (nonatomic, strong) NSTextField *asrQwenApiKeyField;
+@property (nonatomic, strong) NSSecureTextField *asrQwenApiKeySecureField;
+@property (nonatomic, strong) NSButton *asrQwenApiKeyToggle;
+@property (nonatomic, strong) NSPopUpButton *asrQwenModelPopup;
+@property (nonatomic, strong) NSArray<NSView *> *asrDoubaoViews;
+@property (nonatomic, strong) NSArray<NSView *> *asrOpenAIViews;
+@property (nonatomic, strong) NSArray<NSView *> *asrQwenViews;
 
 // LLM fields
 @property (nonatomic, strong) NSButton *llmEnabledCheckbox;
@@ -364,42 +319,141 @@ static NSString *yamlWrite(NSString *yaml, NSString *keyPath, NSString *value) {
     CGFloat fieldW = paneWidth - fieldX - 32;
     CGFloat rowH = 32;
 
-    // Calculate content height
-    CGFloat contentHeight = 220;
+    CGFloat contentHeight = 380;
     NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
 
     CGFloat y = contentHeight - 48;
 
-    // Description
-    NSTextField *desc = [self descriptionLabel:@"Configure the Doubao Streaming ASR service. You need credentials from the Volcengine console."];
-    desc.frame = NSMakeRect(24, y - 10, paneWidth - 48, 36);
-    [pane addSubview:desc];
+    self.asrDescriptionLabel = [self descriptionLabel:@""];
+    self.asrDescriptionLabel.frame = NSMakeRect(24, y - 10, paneWidth - 48, 36);
+    [pane addSubview:self.asrDescriptionLabel];
     y -= 52;
 
-    // App Key
-    [pane addSubview:[self formLabel:@"App Key" frame:NSMakeRect(16, y, labelW, 22)]];
-    self.asrAppKeyField = [self formTextField:NSMakeRect(fieldX, y, fieldW, 22) placeholder:@"Volcengine App ID"];
-    [pane addSubview:self.asrAppKeyField];
+    [pane addSubview:[self formLabel:@"Provider" frame:NSMakeRect(16, y, labelW, 22)]];
+    self.asrProviderPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 220, 26) pullsDown:NO];
+    [self.asrProviderPopup addItemsWithTitles:@[@"Doubao", @"OpenAI", @"Qwen"]];
+    [self.asrProviderPopup itemAtIndex:0].representedObject = @"doubao";
+    [self.asrProviderPopup itemAtIndex:1].representedObject = @"openai";
+    [self.asrProviderPopup itemAtIndex:2].representedObject = @"qwen";
+    self.asrProviderPopup.target = self;
+    self.asrProviderPopup.action = @selector(asrProviderChanged:);
+    [pane addSubview:self.asrProviderPopup];
     y -= rowH;
 
-    // Access Key (secure by default)
+    CGFloat providerRow1Y = y;
+    CGFloat providerRow2Y = y - rowH;
+    CGFloat providerRow3Y = y - rowH * 2;
+
+    NSTextField *doubaoAppKeyLabel = [self formLabel:@"App Key" frame:NSMakeRect(16, providerRow1Y, labelW, 22)];
+    [pane addSubview:doubaoAppKeyLabel];
+    self.asrAppKeyField = [self formTextField:NSMakeRect(fieldX, providerRow1Y, fieldW, 22) placeholder:@"Volcengine App ID"];
+    [pane addSubview:self.asrAppKeyField];
+
     CGFloat eyeW = 28;
     CGFloat secFieldW = fieldW - eyeW - 4;
-    [pane addSubview:[self formLabel:@"Access Key" frame:NSMakeRect(16, y, labelW, 22)]];
-    self.asrAccessKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, y, secFieldW, 22)];
+    NSTextField *doubaoAccessKeyLabel = [self formLabel:@"Access Key" frame:NSMakeRect(16, providerRow2Y, labelW, 22)];
+    [pane addSubview:doubaoAccessKeyLabel];
+    self.asrAccessKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, providerRow2Y, secFieldW, 22)];
     self.asrAccessKeySecureField.placeholderString = @"Volcengine Access Token";
     self.asrAccessKeySecureField.font = [NSFont systemFontOfSize:13];
     [pane addSubview:self.asrAccessKeySecureField];
-    self.asrAccessKeyField = [self formTextField:NSMakeRect(fieldX, y, secFieldW, 22) placeholder:@"Volcengine Access Token"];
+    self.asrAccessKeyField = [self formTextField:NSMakeRect(fieldX, providerRow2Y, secFieldW, 22) placeholder:@"Volcengine Access Token"];
     self.asrAccessKeyField.hidden = YES;
     [pane addSubview:self.asrAccessKeyField];
-    self.asrAccessKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, y - 1, eyeW, 24)
+    self.asrAccessKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, providerRow2Y - 1, eyeW, 24)
                                                 action:@selector(toggleAsrAccessKeyVisibility:)];
     [pane addSubview:self.asrAccessKeyToggle];
-    y -= rowH + 16;
 
-    // Save / Cancel buttons
+    NSTextField *openaiBaseUrlLabel = [self formLabel:@"Base URL" frame:NSMakeRect(16, providerRow1Y, labelW, 22)];
+    [pane addSubview:openaiBaseUrlLabel];
+    self.asrOpenAIBaseUrlField = [self formTextField:NSMakeRect(fieldX, providerRow1Y, fieldW, 22) placeholder:@"https://api.openai.com/v1"];
+    [pane addSubview:self.asrOpenAIBaseUrlField];
+
+    NSTextField *openaiApiKeyLabel = [self formLabel:@"API Key" frame:NSMakeRect(16, providerRow2Y, labelW, 22)];
+    [pane addSubview:openaiApiKeyLabel];
+    self.asrOpenAIApiKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, providerRow2Y, secFieldW, 22)];
+    self.asrOpenAIApiKeySecureField.placeholderString = @"sk-...";
+    self.asrOpenAIApiKeySecureField.font = [NSFont systemFontOfSize:13];
+    [pane addSubview:self.asrOpenAIApiKeySecureField];
+    self.asrOpenAIApiKeyField = [self formTextField:NSMakeRect(fieldX, providerRow2Y, secFieldW, 22) placeholder:@"sk-..."];
+    self.asrOpenAIApiKeyField.hidden = YES;
+    [pane addSubview:self.asrOpenAIApiKeyField];
+    self.asrOpenAIApiKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, providerRow2Y - 1, eyeW, 24)
+                                                   action:@selector(toggleAsrOpenAIApiKeyVisibility:)];
+    [pane addSubview:self.asrOpenAIApiKeyToggle];
+
+    NSTextField *openaiModelLabel = [self formLabel:@"Model" frame:NSMakeRect(16, providerRow3Y, labelW, 22)];
+    [pane addSubview:openaiModelLabel];
+    self.asrOpenAIModelPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, providerRow3Y - 2, 240, 26) pullsDown:NO];
+    [self.asrOpenAIModelPopup addItemsWithTitles:@[
+        @"gpt-4o-transcribe",
+        @"gpt-4o-mini-transcribe",
+    ]];
+    [self.asrOpenAIModelPopup itemAtIndex:0].representedObject = @"gpt-4o-transcribe";
+    [self.asrOpenAIModelPopup itemAtIndex:1].representedObject = @"gpt-4o-mini-transcribe";
+    [self.asrOpenAIModelPopup selectItemAtIndex:0];
+    [pane addSubview:self.asrOpenAIModelPopup];
+
+    NSTextField *qwenBaseUrlLabel = [self formLabel:@"Base URL" frame:NSMakeRect(16, providerRow1Y, labelW, 22)];
+    [pane addSubview:qwenBaseUrlLabel];
+    self.asrQwenBaseUrlField = [self formTextField:NSMakeRect(fieldX, providerRow1Y, fieldW, 22) placeholder:@"wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime"];
+    [pane addSubview:self.asrQwenBaseUrlField];
+
+    NSTextField *qwenApiKeyLabel = [self formLabel:@"API Key" frame:NSMakeRect(16, providerRow2Y, labelW, 22)];
+    [pane addSubview:qwenApiKeyLabel];
+    self.asrQwenApiKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, providerRow2Y, secFieldW, 22)];
+    self.asrQwenApiKeySecureField.placeholderString = @"sk-...";
+    self.asrQwenApiKeySecureField.font = [NSFont systemFontOfSize:13];
+    [pane addSubview:self.asrQwenApiKeySecureField];
+    self.asrQwenApiKeyField = [self formTextField:NSMakeRect(fieldX, providerRow2Y, secFieldW, 22) placeholder:@"sk-..."];
+    self.asrQwenApiKeyField.hidden = YES;
+    [pane addSubview:self.asrQwenApiKeyField];
+    self.asrQwenApiKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, providerRow2Y - 1, eyeW, 24)
+                                                 action:@selector(toggleAsrQwenApiKeyVisibility:)];
+    [pane addSubview:self.asrQwenApiKeyToggle];
+
+    NSTextField *qwenModelLabel = [self formLabel:@"Model" frame:NSMakeRect(16, providerRow3Y, labelW, 22)];
+    [pane addSubview:qwenModelLabel];
+    self.asrQwenModelPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, providerRow3Y - 2, 260, 26) pullsDown:NO];
+    [self.asrQwenModelPopup addItemsWithTitles:@[
+        @"qwen3-asr-flash-realtime",
+    ]];
+    [self.asrQwenModelPopup itemAtIndex:0].representedObject = @"qwen3-asr-flash-realtime";
+    [self.asrQwenModelPopup selectItemAtIndex:0];
+    [pane addSubview:self.asrQwenModelPopup];
+    y = providerRow3Y - rowH - 16;
+
+    self.asrDoubaoViews = @[
+        doubaoAppKeyLabel,
+        self.asrAppKeyField,
+        doubaoAccessKeyLabel,
+        self.asrAccessKeySecureField,
+        self.asrAccessKeyField,
+        self.asrAccessKeyToggle,
+    ];
+    self.asrOpenAIViews = @[
+        openaiBaseUrlLabel,
+        self.asrOpenAIBaseUrlField,
+        openaiApiKeyLabel,
+        self.asrOpenAIApiKeySecureField,
+        self.asrOpenAIApiKeyField,
+        self.asrOpenAIApiKeyToggle,
+        openaiModelLabel,
+        self.asrOpenAIModelPopup,
+    ];
+    self.asrQwenViews = @[
+        qwenBaseUrlLabel,
+        self.asrQwenBaseUrlField,
+        qwenApiKeyLabel,
+        self.asrQwenApiKeySecureField,
+        self.asrQwenApiKeyField,
+        self.asrQwenApiKeyToggle,
+        qwenModelLabel,
+        self.asrQwenModelPopup,
+    ];
+
     [self addButtonsToPane:pane atY:y width:paneWidth];
+    [self updateAsrProviderControls];
 
     return pane;
 }
@@ -736,6 +790,66 @@ static NSString *yamlWrite(NSString *yaml, NSString *keyPath, NSString *value) {
     }
 }
 
+- (void)toggleAsrOpenAIApiKeyVisibility:(NSButton *)sender {
+    if (sender.tag == 0) {
+        self.asrOpenAIApiKeyField.stringValue = self.asrOpenAIApiKeySecureField.stringValue;
+        self.asrOpenAIApiKeySecureField.hidden = YES;
+        self.asrOpenAIApiKeyField.hidden = NO;
+        sender.image = [NSImage imageWithSystemSymbolName:@"eye" accessibilityDescription:@"Hide"];
+        sender.tag = 1;
+    } else {
+        self.asrOpenAIApiKeySecureField.stringValue = self.asrOpenAIApiKeyField.stringValue;
+        self.asrOpenAIApiKeyField.hidden = YES;
+        self.asrOpenAIApiKeySecureField.hidden = NO;
+        sender.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
+        sender.tag = 0;
+    }
+}
+
+- (void)toggleAsrQwenApiKeyVisibility:(NSButton *)sender {
+    if (sender.tag == 0) {
+        self.asrQwenApiKeyField.stringValue = self.asrQwenApiKeySecureField.stringValue;
+        self.asrQwenApiKeySecureField.hidden = YES;
+        self.asrQwenApiKeyField.hidden = NO;
+        sender.image = [NSImage imageWithSystemSymbolName:@"eye" accessibilityDescription:@"Hide"];
+        sender.tag = 1;
+    } else {
+        self.asrQwenApiKeySecureField.stringValue = self.asrQwenApiKeyField.stringValue;
+        self.asrQwenApiKeyField.hidden = YES;
+        self.asrQwenApiKeySecureField.hidden = NO;
+        sender.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
+        sender.tag = 0;
+    }
+}
+
+- (void)asrProviderChanged:(id)sender {
+    [self updateAsrProviderControls];
+}
+
+- (void)updateAsrProviderControls {
+    NSString *provider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
+    BOOL isOpenAI = [provider isEqualToString:@"openai"];
+    BOOL isQwen = [provider isEqualToString:@"qwen"];
+
+    for (NSView *view in self.asrDoubaoViews) {
+        view.hidden = isOpenAI || isQwen;
+    }
+    for (NSView *view in self.asrOpenAIViews) {
+        view.hidden = !isOpenAI;
+    }
+    for (NSView *view in self.asrQwenViews) {
+        view.hidden = !isQwen;
+    }
+
+    if (isOpenAI) {
+        self.asrDescriptionLabel.stringValue = @"Configure OpenAI Realtime transcription. This provider uses gpt-4o-transcribe or gpt-4o-mini-transcribe over WebSocket.";
+    } else if (isQwen) {
+        self.asrDescriptionLabel.stringValue = @"Configure Qwen-ASR-Realtime from Alibaba Cloud Model Studio. This provider uses a realtime WebSocket session with manual commit mode.";
+    } else {
+        self.asrDescriptionLabel.stringValue = @"Configure the Doubao Streaming ASR service. You need credentials from the Volcengine console.";
+    }
+}
+
 // ─── Load / Save ────────────────────────────────────────────────────
 
 - (void)loadCurrentValues {
@@ -748,15 +862,58 @@ static NSString *yamlWrite(NSString *yaml, NSString *keyPath, NSString *value) {
     NSString *yaml = [NSString stringWithContentsOfFile:configPath encoding:NSUTF8StringEncoding error:nil] ?: @"";
 
     if ([identifier isEqualToString:kToolbarASR]) {
-        self.asrAppKeyField.stringValue = yamlRead(yaml, @"asr.app_key");
-        NSString *accessKey = yamlRead(yaml, @"asr.access_key");
+        NSString *provider = yamlValueOrDefault(yaml, @"asr.provider", @"doubao");
+        for (NSInteger i = 0; i < self.asrProviderPopup.numberOfItems; i++) {
+            if ([[self.asrProviderPopup itemAtIndex:i].representedObject isEqualToString:provider]) {
+                [self.asrProviderPopup selectItemAtIndex:i];
+                break;
+            }
+        }
+
+        self.asrAppKeyField.stringValue = yamlValueOrDefault(yaml, @"asr.doubao.app_key", yamlRead(yaml, @"asr.app_key"));
+        NSString *accessKey = yamlValueOrDefault(yaml, @"asr.doubao.access_key", yamlRead(yaml, @"asr.access_key"));
         self.asrAccessKeySecureField.stringValue = accessKey;
         self.asrAccessKeyField.stringValue = accessKey;
-        // Reset to hidden state
         self.asrAccessKeySecureField.hidden = NO;
         self.asrAccessKeyField.hidden = YES;
         self.asrAccessKeyToggle.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
         self.asrAccessKeyToggle.tag = 0;
+
+        self.asrOpenAIBaseUrlField.stringValue = yamlValueOrDefault(yaml, @"asr.openai.base_url", @"https://api.openai.com/v1");
+        NSString *openaiApiKey = yamlRead(yaml, @"asr.openai.api_key");
+        self.asrOpenAIApiKeySecureField.stringValue = openaiApiKey;
+        self.asrOpenAIApiKeyField.stringValue = openaiApiKey;
+        self.asrOpenAIApiKeySecureField.hidden = NO;
+        self.asrOpenAIApiKeyField.hidden = YES;
+        self.asrOpenAIApiKeyToggle.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
+        self.asrOpenAIApiKeyToggle.tag = 0;
+
+        NSString *asrModel = yamlValueOrDefault(yaml, @"asr.openai.model", @"gpt-4o-transcribe");
+        for (NSInteger i = 0; i < self.asrOpenAIModelPopup.numberOfItems; i++) {
+            if ([[self.asrOpenAIModelPopup itemAtIndex:i].representedObject isEqualToString:asrModel]) {
+                [self.asrOpenAIModelPopup selectItemAtIndex:i];
+                break;
+            }
+        }
+
+        self.asrQwenBaseUrlField.stringValue = yamlValueOrDefault(yaml, @"asr.qwen.base_url", @"wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime");
+        NSString *qwenApiKey = yamlRead(yaml, @"asr.qwen.api_key");
+        self.asrQwenApiKeySecureField.stringValue = qwenApiKey;
+        self.asrQwenApiKeyField.stringValue = qwenApiKey;
+        self.asrQwenApiKeySecureField.hidden = NO;
+        self.asrQwenApiKeyField.hidden = YES;
+        self.asrQwenApiKeyToggle.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
+        self.asrQwenApiKeyToggle.tag = 0;
+
+        NSString *qwenModel = yamlValueOrDefault(yaml, @"asr.qwen.model", @"qwen3-asr-flash-realtime");
+        for (NSInteger i = 0; i < self.asrQwenModelPopup.numberOfItems; i++) {
+            if ([[self.asrQwenModelPopup itemAtIndex:i].representedObject isEqualToString:qwenModel]) {
+                [self.asrQwenModelPopup selectItemAtIndex:i];
+                break;
+            }
+        }
+
+        [self updateAsrProviderControls];
     } else if ([identifier isEqualToString:kToolbarLLM]) {
         NSString *enabled = yamlRead(yaml, @"llm.enabled");
         self.llmEnabledCheckbox.state = ([enabled isEqualToString:@"false"]) ? NSControlStateValueOff : NSControlStateValueOn;
@@ -818,46 +975,146 @@ static NSString *yamlWrite(NSString *yaml, NSString *keyPath, NSString *value) {
                                                attributes:nil
                                                     error:nil];
 
-    // Read existing config.yaml (preserve structure)
+    // Read existing config.yaml so we can preserve fields not exposed in the UI.
     NSString *configPath = configFilePath();
     NSString *yaml = [NSString stringWithContentsOfFile:configPath encoding:NSUTF8StringEncoding error:nil] ?: @"";
 
-    // Update ASR fields (always save — fields may be nil if pane not visited, check first)
+    NSString *asrProvider = yamlValueOrDefault(yaml, @"asr.provider", @"doubao");
+    NSString *asrConnectTimeout = yamlValueOrDefault(yaml, @"asr.connect_timeout_ms", @"3000");
+    NSString *asrFinalWaitTimeout = yamlValueOrDefault(yaml, @"asr.final_wait_timeout_ms", @"5000");
+
+    NSString *doubaoUrl = yamlValueOrDefault(yaml, @"asr.doubao.url",
+                                             yamlValueOrDefault(yaml, @"asr.url",
+                                                                @"wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"));
+    NSString *doubaoAppKey = yamlValueOrDefault(yaml, @"asr.doubao.app_key", yamlRead(yaml, @"asr.app_key"));
+    NSString *doubaoAccessKey = yamlValueOrDefault(yaml, @"asr.doubao.access_key", yamlRead(yaml, @"asr.access_key"));
+    NSString *doubaoResourceId = yamlValueOrDefault(yaml, @"asr.doubao.resource_id",
+                                                    yamlValueOrDefault(yaml, @"asr.resource_id", @"volc.seedasr.sauc.duration"));
+    NSString *doubaoEnableDdc = yamlValueOrDefault(yaml, @"asr.doubao.enable_ddc",
+                                                   yamlValueOrDefault(yaml, @"asr.enable_ddc", @"true"));
+    NSString *doubaoEnableItn = yamlValueOrDefault(yaml, @"asr.doubao.enable_itn",
+                                                   yamlValueOrDefault(yaml, @"asr.enable_itn", @"true"));
+    NSString *doubaoEnablePunc = yamlValueOrDefault(yaml, @"asr.doubao.enable_punc",
+                                                    yamlValueOrDefault(yaml, @"asr.enable_punc", @"true"));
+    NSString *doubaoEnableNonstream = yamlValueOrDefault(yaml, @"asr.doubao.enable_nonstream",
+                                                         yamlValueOrDefault(yaml, @"asr.enable_nonstream", @"true"));
+
+    NSString *openaiBaseUrl = yamlValueOrDefault(yaml, @"asr.openai.base_url", @"https://api.openai.com/v1");
+    NSString *openaiApiKey = yamlRead(yaml, @"asr.openai.api_key");
+    NSString *openaiModel = yamlValueOrDefault(yaml, @"asr.openai.model", @"gpt-4o-transcribe");
+    NSString *openaiLanguage = yamlRead(yaml, @"asr.openai.language");
+    NSString *openaiPrompt = yamlRead(yaml, @"asr.openai.prompt");
+    NSString *qwenBaseUrl = yamlValueOrDefault(yaml, @"asr.qwen.base_url", @"wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime");
+    NSString *qwenApiKey = yamlRead(yaml, @"asr.qwen.api_key");
+    NSString *qwenModel = yamlValueOrDefault(yaml, @"asr.qwen.model", @"qwen3-asr-flash-realtime");
+    NSString *qwenLanguage = yamlRead(yaml, @"asr.qwen.language");
+
+    NSString *llmEnabled = yamlValueOrDefault(yaml, @"llm.enabled", @"true");
+    NSString *llmBaseUrl = yamlValueOrDefault(yaml, @"llm.base_url", @"https://api.openai.com/v1");
+    NSString *llmApiKey = yamlRead(yaml, @"llm.api_key");
+    NSString *llmModel = yamlValueOrDefault(yaml, @"llm.model", @"gpt-5.4-nano");
+    NSString *llmTemperature = yamlValueOrDefault(yaml, @"llm.temperature", @"0");
+    NSString *llmTopP = yamlValueOrDefault(yaml, @"llm.top_p", @"1");
+    NSString *llmTimeout = yamlValueOrDefault(yaml, @"llm.timeout_ms", @"8000");
+    NSString *llmMaxOutputTokens = yamlValueOrDefault(yaml, @"llm.max_output_tokens", @"1024");
+    NSString *llmMaxTokenParameter = yamlValueOrDefault(yaml, @"llm.max_token_parameter", @"max_completion_tokens");
+    NSString *llmDictionaryMaxCandidates = yamlValueOrDefault(yaml, @"llm.dictionary_max_candidates", @"0");
+    NSString *llmSystemPromptPath = yamlValueOrDefault(yaml, @"llm.system_prompt_path", @"system_prompt.txt");
+    NSString *llmUserPromptPath = yamlValueOrDefault(yaml, @"llm.user_prompt_path", @"user_prompt.txt");
+
+    NSString *feedbackStartSound = yamlValueOrDefault(yaml, @"feedback.start_sound", @"false");
+    NSString *feedbackStopSound = yamlValueOrDefault(yaml, @"feedback.stop_sound", @"false");
+    NSString *feedbackErrorSound = yamlValueOrDefault(yaml, @"feedback.error_sound", @"false");
+
+    NSString *dictionaryPath = yamlValueOrDefault(yaml, @"dictionary.path", @"dictionary.txt");
+    NSString *hotkeyTrigger = yamlValueOrDefault(yaml, @"hotkey.trigger_key", @"fn");
+
+    if (self.asrProviderPopup) {
+        asrProvider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
+    }
     if (self.asrAppKeyField) {
-        yaml = yamlWrite(yaml, @"asr.app_key", self.asrAppKeyField.stringValue);
-        NSString *accessKey = self.asrAccessKeyToggle.tag == 1 ? self.asrAccessKeyField.stringValue : self.asrAccessKeySecureField.stringValue;
-        yaml = yamlWrite(yaml, @"asr.access_key", accessKey);
+        doubaoAppKey = self.asrAppKeyField.stringValue ?: @"";
+        doubaoAccessKey = (self.asrAccessKeyToggle.tag == 1 ? self.asrAccessKeyField.stringValue : self.asrAccessKeySecureField.stringValue) ?: @"";
+        openaiBaseUrl = self.asrOpenAIBaseUrlField.stringValue.length > 0 ? self.asrOpenAIBaseUrlField.stringValue : @"https://api.openai.com/v1";
+        openaiApiKey = (self.asrOpenAIApiKeyToggle.tag == 1 ? self.asrOpenAIApiKeyField.stringValue : self.asrOpenAIApiKeySecureField.stringValue) ?: @"";
+        openaiModel = self.asrOpenAIModelPopup.selectedItem.representedObject ?: @"gpt-4o-transcribe";
+        qwenBaseUrl = self.asrQwenBaseUrlField.stringValue.length > 0 ? self.asrQwenBaseUrlField.stringValue : @"wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime";
+        qwenApiKey = (self.asrQwenApiKeyToggle.tag == 1 ? self.asrQwenApiKeyField.stringValue : self.asrQwenApiKeySecureField.stringValue) ?: @"";
+        qwenModel = self.asrQwenModelPopup.selectedItem.representedObject ?: @"qwen3-asr-flash-realtime";
     }
-
-    // Update LLM fields
     if (self.llmEnabledCheckbox) {
-        NSString *enabledStr = (self.llmEnabledCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
-        yaml = yamlWrite(yaml, @"llm.enabled", enabledStr);
-        yaml = yamlWrite(yaml, @"llm.base_url", self.llmBaseUrlField.stringValue);
-        NSString *llmApiKey = self.llmApiKeyToggle.tag == 1 ? self.llmApiKeyField.stringValue : self.llmApiKeySecureField.stringValue;
-        yaml = yamlWrite(yaml, @"llm.api_key", llmApiKey);
-        yaml = yamlWrite(yaml, @"llm.model", self.llmModelField.stringValue);
-        NSString *selectedTokenParam = self.maxTokenParamPopup.selectedItem.representedObject ?: @"max_completion_tokens";
-        yaml = yamlWrite(yaml, @"llm.max_token_parameter", selectedTokenParam);
+        llmEnabled = (self.llmEnabledCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
+        llmBaseUrl = self.llmBaseUrlField.stringValue.length > 0 ? self.llmBaseUrlField.stringValue : @"https://api.openai.com/v1";
+        llmApiKey = (self.llmApiKeyToggle.tag == 1 ? self.llmApiKeyField.stringValue : self.llmApiKeySecureField.stringValue) ?: @"";
+        llmModel = self.llmModelField.stringValue.length > 0 ? self.llmModelField.stringValue : @"gpt-5.4-nano";
+        llmMaxTokenParameter = self.maxTokenParamPopup.selectedItem.representedObject ?: @"max_completion_tokens";
     }
-
-    // Update hotkey
     if (self.hotkeyPopup) {
-        NSString *selectedHotkey = self.hotkeyPopup.selectedItem.representedObject ?: @"fn";
-        yaml = yamlWrite(yaml, @"hotkey.trigger_key", selectedHotkey);
+        hotkeyTrigger = self.hotkeyPopup.selectedItem.representedObject ?: @"fn";
     }
     if (self.startSoundCheckbox) {
-        NSString *startSound = (self.startSoundCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
-        NSString *stopSound = (self.stopSoundCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
-        NSString *errorSound = (self.errorSoundCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
-        yaml = yamlWrite(yaml, @"feedback.start_sound", startSound);
-        yaml = yamlWrite(yaml, @"feedback.stop_sound", stopSound);
-        yaml = yamlWrite(yaml, @"feedback.error_sound", errorSound);
+        feedbackStartSound = (self.startSoundCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
+        feedbackStopSound = (self.stopSoundCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
+        feedbackErrorSound = (self.errorSoundCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
     }
 
-    // Write config.yaml
+    NSMutableString *newYaml = [NSMutableString string];
+    [newYaml appendString:@"version: 2\n\n"];
+    [newYaml appendString:@"asr:\n"];
+    [newYaml appendFormat:@"  provider: %@\n", yamlQuotedString(asrProvider)];
+    [newYaml appendFormat:@"  connect_timeout_ms: %@\n", asrConnectTimeout];
+    [newYaml appendFormat:@"  final_wait_timeout_ms: %@\n", asrFinalWaitTimeout];
+    [newYaml appendString:@"\n"];
+    [newYaml appendString:@"  doubao:\n"];
+    [newYaml appendFormat:@"    url: %@\n", yamlQuotedString(doubaoUrl)];
+    [newYaml appendFormat:@"    app_key: %@\n", yamlQuotedString(doubaoAppKey)];
+    [newYaml appendFormat:@"    access_key: %@\n", yamlQuotedString(doubaoAccessKey)];
+    [newYaml appendFormat:@"    resource_id: %@\n", yamlQuotedString(doubaoResourceId)];
+    [newYaml appendFormat:@"    enable_ddc: %@\n", doubaoEnableDdc];
+    [newYaml appendFormat:@"    enable_itn: %@\n", doubaoEnableItn];
+    [newYaml appendFormat:@"    enable_punc: %@\n", doubaoEnablePunc];
+    [newYaml appendFormat:@"    enable_nonstream: %@\n", doubaoEnableNonstream];
+    [newYaml appendString:@"\n"];
+    [newYaml appendString:@"  openai:\n"];
+    [newYaml appendFormat:@"    base_url: %@\n", yamlQuotedString(openaiBaseUrl)];
+    [newYaml appendFormat:@"    api_key: %@\n", yamlQuotedString(openaiApiKey)];
+    [newYaml appendFormat:@"    model: %@\n", yamlQuotedString(openaiModel)];
+    [newYaml appendFormat:@"    language: %@\n", yamlQuotedString(openaiLanguage)];
+    [newYaml appendFormat:@"    prompt: %@\n", yamlQuotedString(openaiPrompt)];
+    [newYaml appendString:@"\n"];
+    [newYaml appendString:@"  qwen:\n"];
+    [newYaml appendFormat:@"    base_url: %@\n", yamlQuotedString(qwenBaseUrl)];
+    [newYaml appendFormat:@"    api_key: %@\n", yamlQuotedString(qwenApiKey)];
+    [newYaml appendFormat:@"    model: %@\n", yamlQuotedString(qwenModel)];
+    [newYaml appendFormat:@"    language: %@\n", yamlQuotedString(qwenLanguage)];
+    [newYaml appendString:@"\n"];
+    [newYaml appendString:@"llm:\n"];
+    [newYaml appendFormat:@"  enabled: %@\n", llmEnabled];
+    [newYaml appendFormat:@"  base_url: %@\n", yamlQuotedString(llmBaseUrl)];
+    [newYaml appendFormat:@"  api_key: %@\n", yamlQuotedString(llmApiKey)];
+    [newYaml appendFormat:@"  model: %@\n", yamlQuotedString(llmModel)];
+    [newYaml appendFormat:@"  temperature: %@\n", llmTemperature];
+    [newYaml appendFormat:@"  top_p: %@\n", llmTopP];
+    [newYaml appendFormat:@"  timeout_ms: %@\n", llmTimeout];
+    [newYaml appendFormat:@"  max_output_tokens: %@\n", llmMaxOutputTokens];
+    [newYaml appendFormat:@"  max_token_parameter: %@\n", yamlQuotedString(llmMaxTokenParameter)];
+    [newYaml appendFormat:@"  dictionary_max_candidates: %@\n", llmDictionaryMaxCandidates];
+    [newYaml appendFormat:@"  system_prompt_path: %@\n", yamlQuotedString(llmSystemPromptPath)];
+    [newYaml appendFormat:@"  user_prompt_path: %@\n", yamlQuotedString(llmUserPromptPath)];
+    [newYaml appendString:@"\n"];
+    [newYaml appendString:@"feedback:\n"];
+    [newYaml appendFormat:@"  start_sound: %@\n", feedbackStartSound];
+    [newYaml appendFormat:@"  stop_sound: %@\n", feedbackStopSound];
+    [newYaml appendFormat:@"  error_sound: %@\n", feedbackErrorSound];
+    [newYaml appendString:@"\n"];
+    [newYaml appendString:@"dictionary:\n"];
+    [newYaml appendFormat:@"  path: %@\n", yamlQuotedString(dictionaryPath)];
+    [newYaml appendString:@"\n"];
+    [newYaml appendString:@"hotkey:\n"];
+    [newYaml appendFormat:@"  trigger_key: %@\n", yamlQuotedString(hotkeyTrigger)];
+
     NSError *error = nil;
-    [yaml writeToFile:configPath atomically:YES encoding:NSUTF8StringEncoding error:&error];
+    [newYaml writeToFile:configPath atomically:YES encoding:NSUTF8StringEncoding error:&error];
     if (error) {
         NSLog(@"[Koe] Failed to write config.yaml: %@", error.localizedDescription);
         [self showAlert:@"Failed to save config.yaml" info:error.localizedDescription];

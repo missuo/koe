@@ -17,7 +17,10 @@ use crate::ffi::{
 use crate::llm::openai_compatible::OpenAiCompatibleProvider;
 use crate::llm::{CorrectionRequest, LlmProvider};
 use crate::session::{Session, SessionState};
-use koe_asr::{AsrConfig, AsrEvent, AsrProvider, DoubaoWsProvider, TranscriptAggregator};
+use koe_asr::{
+    create_provider, AsrConfig, AsrEvent, AsrProvider, DoubaoConfig, OpenAIRealtimeConfig,
+    ProviderConfig, QwenRealtimeConfig, TranscriptAggregator,
+};
 
 use std::ffi::c_char;
 use std::sync::{Arc, Mutex};
@@ -206,19 +209,40 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
 
     // Capture config for the async task
     let cfg = &core.config;
+    let provider = match cfg.asr.provider {
+        config::AsrProviderKind::Doubao => ProviderConfig::Doubao(DoubaoConfig {
+            url: cfg.asr.doubao.url.clone(),
+            app_key: cfg.asr.doubao.app_key.clone(),
+            access_key: cfg.asr.doubao.access_key.clone(),
+            resource_id: cfg.asr.doubao.resource_id.clone(),
+            sample_rate_hz: 16000,
+            enable_ddc: cfg.asr.doubao.enable_ddc,
+            enable_itn: cfg.asr.doubao.enable_itn,
+            enable_punc: cfg.asr.doubao.enable_punc,
+            enable_nonstream: cfg.asr.doubao.enable_nonstream,
+        }),
+        config::AsrProviderKind::OpenAI => ProviderConfig::OpenAI(OpenAIRealtimeConfig {
+            base_url: cfg.asr.openai.base_url.clone(),
+            api_key: cfg.asr.openai.api_key.clone(),
+            model: cfg.asr.openai.model.clone(),
+            language: cfg.asr.openai.language.clone(),
+            prompt: cfg.asr.openai.prompt.clone(),
+            input_sample_rate_hz: 16000,
+            output_sample_rate_hz: 24000,
+        }),
+        config::AsrProviderKind::Qwen => ProviderConfig::Qwen(QwenRealtimeConfig {
+            base_url: cfg.asr.qwen.base_url.clone(),
+            api_key: cfg.asr.qwen.api_key.clone(),
+            model: cfg.asr.qwen.model.clone(),
+            language: cfg.asr.qwen.language.clone(),
+            sample_rate_hz: 16000,
+        }),
+    };
     let asr_config = AsrConfig {
-        url: cfg.asr.url.clone(),
-        app_key: cfg.asr.app_key.clone(),
-        access_key: cfg.asr.access_key.clone(),
-        resource_id: cfg.asr.resource_id.clone(),
-        sample_rate_hz: 16000,
         connect_timeout_ms: cfg.asr.connect_timeout_ms,
         final_wait_timeout_ms: cfg.asr.final_wait_timeout_ms,
-        enable_ddc: cfg.asr.enable_ddc,
-        enable_itn: cfg.asr.enable_itn,
-        enable_punc: cfg.asr.enable_punc,
-        enable_nonstream: cfg.asr.enable_nonstream,
         hotwords: core.dictionary.clone(),
+        provider,
     };
     let llm_config = cfg.llm.clone();
     let dictionary = core.dictionary.clone();
@@ -358,7 +382,7 @@ async fn run_session(
     invoke_session_ready();
 
     // --- Connect ASR ---
-    let mut asr = DoubaoWsProvider::new();
+    let mut asr = create_provider(&asr_config);
     if let Err(e) = asr.connect(&asr_config).await {
         log::error!("[{session_id}] ASR connection failed: {e}");
         invoke_session_error(&e.to_string());
@@ -568,10 +592,7 @@ async fn run_session(
     invoke_state_changed("idle");
 }
 
-async fn wait_for_final(
-    asr: &mut DoubaoWsProvider,
-    aggregator: &mut TranscriptAggregator,
-) {
+async fn wait_for_final<P: AsrProvider>(asr: &mut P, aggregator: &mut TranscriptAggregator) {
     loop {
         match asr.next_event().await {
             Ok(AsrEvent::Final(text)) => {
