@@ -49,6 +49,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, strong) NSColor       *accentColor;
 @property (nonatomic, assign) SPOverlayMode  mode;
 @property (nonatomic, assign) NSInteger      tick;  // animation counter
+@property (nonatomic, assign) CGFloat       layoutWidth;
 @end
 
 @implementation SPOverlayContentView
@@ -104,7 +105,8 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         NSAttributedString *str = [[NSAttributedString alloc] initWithString:displayText
                                                                   attributes:attrs];
         CGFloat textX = kHorizontalPad + kIconAreaWidth + kIconTextGap;
-        CGFloat textMaxW = bounds.size.width - textX - kHorizontalPad;
+        // Use layoutWidth to avoid wrapping into animated/intermediate bounds
+        CGFloat textMaxW = fmax(1.0, self.layoutWidth - textX - kHorizontalPad);
         NSRect textRect = [str boundingRectWithSize:NSMakeSize(textMaxW, CGFLOAT_MAX)
                                             options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingTruncatesLastVisibleLine];
         CGFloat textY = (bounds.size.height - textRect.size.height) / 2.0;
@@ -221,6 +223,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, strong) NSTimer *animationTimer;
 @property (nonatomic, copy)   NSString *currentState;
 @property (nonatomic, assign) CGFloat sessionMaxWidth;
+@property (nonatomic, assign) CGFloat sessionMaxHeight;
 
 @end
 
@@ -272,6 +275,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
     if ([state isEqualToString:@"idle"] || [state isEqualToString:@"completed"]) {
         self.sessionMaxWidth = 0;
+        self.sessionMaxHeight = 0;
         [self hide];
         return;
     }
@@ -282,6 +286,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
     if ([state hasPrefix:@"recording"]) {
         self.sessionMaxWidth = 0;
+        self.sessionMaxHeight = 0;
         text   = @"Listening…";
         accent = [NSColor colorWithRed:1.0 green:0.32 blue:0.32 alpha:1.0];
         mode   = SPOverlayModeWaveform;
@@ -339,37 +344,46 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
                             : self.contentView.statusText;
     NSAttributedString *str = [[NSAttributedString alloc] initWithString:displayText ?: @"" attributes:attrs];
     
-    // First try a single line width
-    CGFloat textW = [str size].width;
     CGFloat iconSpace = kHorizontalPad + kIconAreaWidth + kIconTextGap;
-    CGFloat desiredW = iconSpace + textW + kHorizontalPad;
+    
+    // 1. Determine natural single-line width
+    CGFloat naturalW = [str size].width;
+    CGFloat desiredW = iconSpace + naturalW + kHorizontalPad;
+    
+    // 2. Clamp to screen/max limits
+    NSScreen *screen = [NSScreen mainScreen];
+    NSRect visible = screen.visibleFrame;
+    CGFloat absoluteMaxW = fmin(kMaxWidth, visible.size.width - 2 * kScreenHorizontalMargin);
     
     CGFloat pillW = desiredW;
     CGFloat pillH = kPillHeight;
-    
-    if (desiredW > kMaxWidth) {
-        pillW = kMaxWidth;
+
+    if (desiredW > absoluteMaxW) {
+        pillW = absoluteMaxW;
+        // Only calculate height (multi-line) if it actually overflows absoluteMaxW
         CGFloat textMaxW = pillW - iconSpace - kHorizontalPad;
         NSRect textRect = [str boundingRectWithSize:NSMakeSize(textMaxW, kMaxHeight)
                                             options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingTruncatesLastVisibleLine];
-        pillH = fmax(kPillHeight, textRect.size.height + 20.0); // 10pt top/bottom padding
+        pillH = fmax(kPillHeight, ceil(textRect.size.height) + 20.0);
     }
 
-    NSScreen *screen = [NSScreen mainScreen];
-    NSRect visible = screen.visibleFrame;
-
-    // Clamp to screen width minus margins
-    CGFloat maxW = visible.size.width - 2 * kScreenHorizontalMargin;
-    pillW = fmin(pillW, maxW);
-
-    // Only-grow within a recording session
+    // 3. Stabilization: Only-grow during active session
     if (animated && self.sessionMaxWidth > 0) {
         pillW = fmax(pillW, self.sessionMaxWidth);
     }
+    if (animated && self.sessionMaxHeight > 0) {
+        pillH = fmax(pillH, self.sessionMaxHeight);
+    }
+    
     if (animated) {
         self.sessionMaxWidth = pillW;
+        self.sessionMaxHeight = pillH;
     }
 
+    // 4. Update internal layout width to prevent wrapping mid-animation
+    self.contentView.layoutWidth = pillW;
+
+    // 5. Final Frame
     CGFloat x = NSMidX(visible) - pillW / 2.0;
     CGFloat y = NSMinY(visible) + kBottomMargin;
     NSRect newFrame = NSMakeRect(x, y, pillW, pillH);
@@ -378,12 +392,11 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
             ctx.duration = kResizeDuration;
             ctx.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
-            [self.panel.animator setFrame:newFrame display:YES];
+            [[self.panel animator] setFrame:newFrame display:YES];
         }];
     } else {
         [self.panel setFrame:newFrame display:YES];
     }
-    self.contentView.frame = NSMakeRect(0, 0, pillW, pillH);
 }
 
 #pragma mark - Show / Hide
