@@ -110,13 +110,13 @@ pub struct DictionarySection {
 #[derive(Debug, Deserialize, Clone)]
 pub struct HotkeySection {
     /// Trigger key for voice input.
-    /// Options: "fn", "left_option", "right_option", "left_command", "right_command"
+    /// Options: "fn", "left_option", "right_option", "left_command", "right_command", "left_control", "right_control"
     /// Default: "fn"
     #[serde(default = "default_trigger_key")]
     pub trigger_key: String,
 
     /// Cancel key for aborting the current voice input session.
-    /// Options: "fn", "left_option", "right_option", "left_command", "right_command"
+    /// Options: "fn", "left_option", "right_option", "left_command", "right_command", "left_control", "right_control"
     /// Default: "left_option"
     #[serde(default = "default_cancel_key")]
     pub cancel_key: String,
@@ -173,14 +173,14 @@ impl HotkeySection {
 
     fn normalize_trigger_key_name(value: &str) -> String {
         match value {
-            "left_option" | "right_option" | "left_command" | "right_command" | "fn" => value.into(),
+            "left_option" | "right_option" | "left_command" | "right_command" | "left_control" | "right_control" | "fn" => value.into(),
             _ => default_trigger_key(),
         }
     }
 
     fn normalize_cancel_key_name(value: &str) -> String {
         match value {
-            "left_option" | "right_option" | "left_command" | "right_command" | "fn" => value.into(),
+            "left_option" | "right_option" | "left_command" | "right_command" | "left_control" | "right_control" | "fn" => value.into(),
             _ => default_cancel_key(),
         }
     }
@@ -206,6 +206,16 @@ impl HotkeySection {
                 key_code: 54,       // kVK_RightCommand
                 alt_key_code: 0,
                 modifier_flag: 0x00000010,  // NX_DEVICERCMDKEYMASK
+            },
+            "left_control" => HotkeyParams {
+                key_code: 59,       // kVK_Control
+                alt_key_code: 0,
+                modifier_flag: 0x00000001,  // NX_DEVICELCTLKEYMASK
+            },
+            "right_control" => HotkeyParams {
+                key_code: 62,       // kVK_RightControl
+                alt_key_code: 0,
+                modifier_flag: 0x00000002,  // NX_DEVICERCTLKEYMASK
             },
             // "fn" or anything else defaults to Fn/Globe
             _ => HotkeyParams {
@@ -272,7 +282,9 @@ fn default_cancel_key_for_trigger(trigger_key: &str) -> &'static str {
         "left_option" => "right_option",
         "right_option" => "left_command",
         "left_command" => "right_command",
-        "right_command" => "fn",
+        "right_command" => "left_control",
+        "left_control" => "right_control",
+        "right_control" => "fn",
         _ => "left_option",
     }
 }
@@ -654,7 +666,7 @@ dictionary:
   path: "dictionary.txt"  # relative to ~/.koe/
 
 hotkey:
-  # 触发键：fn | left_option | right_option | left_command | right_command
+  # 触发键：fn | left_option | right_option | left_command | right_command | left_control | right_control
   trigger_key: "fn"
   # 取消键：不能与触发键重复
   cancel_key: "left_option"

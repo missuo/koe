@@ -43,6 +43,12 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     if ([value isEqualToString:@"right_command"]) {
         return @"Right Command (⌘)";
     }
+    if ([value isEqualToString:@"left_control"]) {
+        return @"Left Control (⌃)";
+    }
+    if ([value isEqualToString:@"right_control"]) {
+        return @"Right Control (⌃)";
+    }
     return @"Fn (Globe)";
 }
 

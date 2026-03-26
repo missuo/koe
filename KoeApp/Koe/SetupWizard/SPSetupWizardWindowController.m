@@ -250,6 +250,8 @@ static NSString *normalizedHotkeyValue(NSString *value) {
             @"right_option",
             @"left_command",
             @"right_command",
+            @"left_control",
+            @"right_control",
         ]];
     });
     return [validValues containsObject:value] ? value : @"fn";
@@ -261,6 +263,8 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     if ([normalizedTrigger isEqualToString:@"left_option"]) return @"right_option";
     if ([normalizedTrigger isEqualToString:@"right_option"]) return @"left_command";
     if ([normalizedTrigger isEqualToString:@"left_command"]) return @"right_command";
+    if ([normalizedTrigger isEqualToString:@"right_command"]) return @"left_control";
+    if ([normalizedTrigger isEqualToString:@"left_control"]) return @"right_control";
     return @"fn";
 }
 
@@ -615,12 +619,16 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         @"Right Option (\u2325)",
         @"Left Command (\u2318)",
         @"Right Command (\u2318)",
+        @"Left Control (\u2303)",
+        @"Right Control (\u2303)",
     ]];
     [self.hotkeyPopup itemAtIndex:0].representedObject = @"fn";
     [self.hotkeyPopup itemAtIndex:1].representedObject = @"left_option";
     [self.hotkeyPopup itemAtIndex:2].representedObject = @"right_option";
     [self.hotkeyPopup itemAtIndex:3].representedObject = @"left_command";
     [self.hotkeyPopup itemAtIndex:4].representedObject = @"right_command";
+    [self.hotkeyPopup itemAtIndex:5].representedObject = @"left_control";
+    [self.hotkeyPopup itemAtIndex:6].representedObject = @"right_control";
     [pane addSubview:self.hotkeyPopup];
     y -= rowH + 16;
 
@@ -634,12 +642,16 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         @"Right Option (\u2325)",
         @"Left Command (\u2318)",
         @"Right Command (\u2318)",
+        @"Left Control (\u2303)",
+        @"Right Control (\u2303)",
     ]];
     [self.cancelHotkeyPopup itemAtIndex:0].representedObject = @"fn";
     [self.cancelHotkeyPopup itemAtIndex:1].representedObject = @"left_option";
     [self.cancelHotkeyPopup itemAtIndex:2].representedObject = @"right_option";
     [self.cancelHotkeyPopup itemAtIndex:3].representedObject = @"left_command";
     [self.cancelHotkeyPopup itemAtIndex:4].representedObject = @"right_command";
+    [self.cancelHotkeyPopup itemAtIndex:5].representedObject = @"left_control";
+    [self.cancelHotkeyPopup itemAtIndex:6].representedObject = @"right_control";
     [pane addSubview:self.cancelHotkeyPopup];
     y -= rowH + 8;
 
