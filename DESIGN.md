@@ -118,11 +118,11 @@ Section headers use custom `NSView` with bold labels (not selectable, not grayed
 
 ### 4.3 Floating Overlay
 
-A borderless, non-activating `NSPanel` positioned at the bottom-center of the screen above the Dock. It appears across all spaces and ignores mouse events.
+A borderless, non-activating `NSPanel` positioned at the bottom-center of the screen above the Dock. It appears across all spaces and ignores mouse events. The pill background uses an `NSVisualEffectView` with HUD material and behind-window blending for a frosted-glass appearance that adapts to the desktop. The pill shape is applied via `maskImage` with nine-part cap insets.
 
 The overlay displays the current session state:
 
-- **Recording**: animated waveform icon with real-time interim ASR text (falls back to "Listening…" before the first interim result arrives). The pill expands horizontally as text grows but never shrinks within a session, up to the screen width minus margins. Interim text auto-wraps and the layout avoids visible jitter while the transcript stabilizes. When text overflows, only the trailing portion is shown with a left-edge gradient fade.
+- **Recording**: animated waveform icon with real-time interim ASR text (falls back to "Listening…" before the first interim result arrives). The pill expands horizontally as text grows but never shrinks within a session, up to the screen width minus margins. Interim text auto-wraps to multiple lines when it exceeds the maximum width, and the layout avoids visible jitter while the transcript stabilizes.
 - **Connecting / Recognizing / Thinking**: pulsing dots with a status label
 - **Pasting**: animated checkmark
 - **Error**: cross mark
