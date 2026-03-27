@@ -15,7 +15,10 @@ pub fn load_system_prompt(path: &Path) -> String {
             }
         }
         Err(e) => {
-            log::warn!("failed to load system prompt from {}: {e}, using built-in default", path.display());
+            log::warn!(
+                "failed to load system prompt from {}: {e}, using built-in default",
+                path.display()
+            );
             build_default_system_prompt()
         }
     }
@@ -37,7 +40,10 @@ pub fn load_user_prompt_template(path: &Path) -> String {
             }
         }
         Err(e) => {
-            log::warn!("failed to load user prompt from {}: {e}, using built-in default", path.display());
+            log::warn!(
+                "failed to load user prompt from {}: {e}, using built-in default",
+                path.display()
+            );
             build_default_user_prompt_template()
         }
     }
@@ -111,13 +117,12 @@ pub fn filter_dictionary_candidates(
                 .chars()
                 .filter(|c| asr_chars.contains(c))
                 .count();
-            let substring_bonus = if asr_lower.contains(&entry_lower)
-                || entry_lower.contains(&asr_lower)
-            {
-                entry.len() * 10
-            } else {
-                0
-            };
+            let substring_bonus =
+                if asr_lower.contains(&entry_lower) || entry_lower.contains(&asr_lower) {
+                    entry.len() * 10
+                } else {
+                    0
+                };
             (overlap + substring_bonus, entry)
         })
         .collect();

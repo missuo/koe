@@ -51,7 +51,11 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(mode: SPSessionMode, frontmost_bundle_id: Option<String>, frontmost_pid: i32) -> Self {
+    pub fn new(
+        mode: SPSessionMode,
+        frontmost_bundle_id: Option<String>,
+        frontmost_pid: i32,
+    ) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             mode,
@@ -66,12 +70,7 @@ impl Session {
 
     pub fn transition(&mut self, to: SessionState) -> Result<()> {
         if self.is_valid_transition(to) {
-            log::debug!(
-                "session {}: {} -> {}",
-                self.id,
-                self.state,
-                to
-            );
+            log::debug!("session {}: {} -> {}", self.id, self.state, to);
             self.state = to;
             Ok(())
         } else {

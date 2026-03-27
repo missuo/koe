@@ -17,7 +17,9 @@ use crate::ffi::{
 use crate::llm::openai_compatible::OpenAiCompatibleProvider;
 use crate::llm::{CorrectionRequest, LlmProvider};
 use crate::session::{Session, SessionState};
-use koe_asr::{AsrConfig, AsrEvent, AsrProvider, DoubaoWsProvider, TranscriptAggregator};
+use koe_asr::{
+    AliyunAsrProvider, AsrConfig, AsrEvent, AsrProvider, DoubaoWsProvider, TranscriptAggregator,
+};
 
 use std::ffi::c_char;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -79,7 +81,8 @@ pub extern "C" fn sp_core_create(config_path: *const c_char) -> i32 {
 
     // Load prompts
     let system_prompt = prompt::load_system_prompt(&config::resolve_system_prompt_path(&cfg));
-    let user_prompt_template = prompt::load_user_prompt_template(&config::resolve_user_prompt_path(&cfg));
+    let user_prompt_template =
+        prompt::load_user_prompt_template(&config::resolve_user_prompt_path(&cfg));
 
     let runtime = match Runtime::new() {
         Ok(rt) => rt,
@@ -145,7 +148,8 @@ pub extern "C" fn sp_core_reload_config() -> i32 {
     };
 
     let system_prompt = prompt::load_system_prompt(&config::resolve_system_prompt_path(&cfg));
-    let user_prompt_template = prompt::load_user_prompt_template(&config::resolve_user_prompt_path(&cfg));
+    let user_prompt_template =
+        prompt::load_user_prompt_template(&config::resolve_user_prompt_path(&cfg));
 
     let mut global = CORE.lock().unwrap();
     if let Some(ref mut core) = *global {
@@ -187,8 +191,10 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
         if let Ok(d) = dictionary::load_dictionary(&dict_path) {
             core.dictionary = d;
         }
-        core.system_prompt = prompt::load_system_prompt(&config::resolve_system_prompt_path(&new_cfg));
-        core.user_prompt_template = prompt::load_user_prompt_template(&config::resolve_user_prompt_path(&new_cfg));
+        core.system_prompt =
+            prompt::load_system_prompt(&config::resolve_system_prompt_path(&new_cfg));
+        core.user_prompt_template =
+            prompt::load_user_prompt_template(&config::resolve_user_prompt_path(&new_cfg));
         core.config = new_cfg;
     }
 
@@ -213,20 +219,47 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
 
     // Capture config for the async task
     let cfg = &core.config;
-    let doubao = &cfg.asr.doubao;
-    let asr_config = AsrConfig {
-        url: doubao.url.clone(),
-        app_key: doubao.app_key.clone(),
-        access_key: doubao.access_key.clone(),
-        resource_id: doubao.resource_id.clone(),
-        sample_rate_hz: 16000,
-        connect_timeout_ms: doubao.connect_timeout_ms,
-        final_wait_timeout_ms: doubao.final_wait_timeout_ms,
-        enable_ddc: doubao.enable_ddc,
-        enable_itn: doubao.enable_itn,
-        enable_punc: doubao.enable_punc,
-        enable_nonstream: doubao.enable_nonstream,
-        hotwords: core.dictionary.clone(),
+    let asr_provider = cfg.asr.provider.clone();
+    let (asr_config, asr_provider_name) = match asr_provider.as_str() {
+        "aliyun" => {
+            let aliyun = &cfg.asr.aliyun;
+            let config = AsrConfig {
+                url: String::new(), // not used for aliyun
+                app_key: String::new(),
+                access_key: aliyun.api_key.clone(),
+                resource_id: String::new(),
+                sample_rate_hz: 16000,
+                connect_timeout_ms: aliyun.connect_timeout_ms,
+                final_wait_timeout_ms: aliyun.final_wait_timeout_ms,
+                enable_ddc: false,
+                enable_itn: false,
+                enable_punc: false,
+                enable_nonstream: false,
+                hotwords: Vec::new(),
+                language: Some(aliyun.language.clone()),
+            };
+            (config, "aliyun".to_string())
+        }
+        _ => {
+            // Default to doubao
+            let doubao = &cfg.asr.doubao;
+            let config = AsrConfig {
+                url: doubao.url.clone(),
+                app_key: doubao.app_key.clone(),
+                access_key: doubao.access_key.clone(),
+                resource_id: doubao.resource_id.clone(),
+                sample_rate_hz: 16000,
+                connect_timeout_ms: doubao.connect_timeout_ms,
+                final_wait_timeout_ms: doubao.final_wait_timeout_ms,
+                enable_ddc: doubao.enable_ddc,
+                enable_itn: doubao.enable_itn,
+                enable_punc: doubao.enable_punc,
+                enable_nonstream: doubao.enable_nonstream,
+                hotwords: core.dictionary.clone(),
+                language: Some("zh".to_string()),
+            };
+            (config, "doubao".to_string())
+        }
     };
     let llm_config = cfg.llm.clone();
     let dictionary = core.dictionary.clone();
@@ -242,6 +275,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
             mode,
             audio_rx,
             asr_config,
+            asr_provider_name,
             llm_config,
             dictionary,
             dictionary_max_candidates,
@@ -257,11 +291,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
 
 /// Push an audio frame into the current session.
 #[no_mangle]
-pub extern "C" fn sp_core_push_audio(
-    frame: *const u8,
-    len: u32,
-    _timestamp: u64,
-) -> i32 {
+pub extern "C" fn sp_core_push_audio(frame: *const u8, len: u32, _timestamp: u64) -> i32 {
     if frame.is_null() || len == 0 {
         return -1;
     }
@@ -361,6 +391,7 @@ async fn run_session(
     mode: SPSessionMode,
     mut audio_rx: mpsc::Receiver<Vec<u8>>,
     asr_config: AsrConfig,
+    asr_provider: String,
     llm_config: config::LlmSection,
     dictionary: Vec<String>,
     dictionary_max_candidates: usize,
@@ -384,16 +415,72 @@ async fn run_session(
         }
     }
     invoke_state_changed(&recording_state.to_string());
-    invoke_session_ready();
 
     // --- Connect ASR ---
-    let mut asr = DoubaoWsProvider::new();
-    if let Err(e) = asr.connect(&asr_config).await {
-        log::error!("[{session_id}] ASR connection failed: {e}");
-        invoke_session_error(&e.to_string());
-        invoke_state_changed("failed");
-        cleanup_session(&session_arc);
-        return;
+    log::info!("[{session_id}] Using ASR provider: {asr_provider}");
+    let mut asr: Box<dyn AsrProvider> = match asr_provider.as_str() {
+        "aliyun" => Box::new(AliyunAsrProvider::new()),
+        _ => Box::new(DoubaoWsProvider::new()),
+    };
+
+    // Buffer audio frames during ASR connection to prevent channel overflow
+    let mut pre_connect_buffer: Vec<Vec<u8>> = Vec::new();
+    let connect_result = tokio::time::timeout(
+        Duration::from_millis(asr_config.connect_timeout_ms),
+        async {
+            // Start ASR connection
+            let connect_future = asr.connect(&asr_config);
+            tokio::pin!(connect_future);
+
+            loop {
+                tokio::select! {
+                    result = &mut connect_future => {
+                        return result;
+                    }
+                    frame = audio_rx.recv() => {
+                        if let Some(data) = frame {
+                            // Buffer audio during connection
+                            if pre_connect_buffer.len() < 100 { // Limit buffer to ~20 seconds
+                                pre_connect_buffer.push(data);
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
+    .await;
+
+    match connect_result {
+        Ok(Ok(())) => {
+            log::info!(
+                "[{session_id}] ASR connected, buffered {} frames",
+                pre_connect_buffer.len()
+            );
+            invoke_session_ready();
+        }
+        Ok(Err(e)) => {
+            log::error!("[{session_id}] ASR connection failed: {e}");
+            invoke_session_error(&e.to_string());
+            invoke_state_changed("failed");
+            cleanup_session(&session_arc);
+            return;
+        }
+        Err(_) => {
+            log::error!("[{session_id}] ASR connection timeout");
+            invoke_session_error("connection timeout");
+            invoke_state_changed("failed");
+            cleanup_session(&session_arc);
+            return;
+        }
+    }
+
+    // Send buffered audio first
+    for data in pre_connect_buffer {
+        if let Err(e) = asr.send_audio(&data).await {
+            log::error!("[{session_id}] ASR send error (buffered): {e}");
+            break;
+        }
     }
 
     // --- Stream audio to ASR + collect results ---
@@ -475,7 +562,7 @@ async fn run_session(
     if !aggregator.has_final_result() && !asr_done {
         let wait_result = timeout(
             Duration::from_millis(final_wait_timeout_ms),
-            wait_for_final(&mut asr, &mut aggregator),
+            wait_for_final(asr.as_mut(), &mut aggregator),
         )
         .await;
 
@@ -511,9 +598,8 @@ async fn run_session(
     }
 
     // --- LLM Correction ---
-    let llm_enabled = llm_config.enabled
-        && !llm_config.base_url.is_empty()
-        && !llm_config.api_key.is_empty();
+    let llm_enabled =
+        llm_config.enabled && !llm_config.base_url.is_empty() && !llm_config.api_key.is_empty();
 
     let final_text = if llm_enabled {
         {
@@ -536,17 +622,22 @@ async fn run_session(
         );
 
         // Filter dictionary candidates for prompt
-        let candidates = prompt::filter_dictionary_candidates(
-            &dictionary,
-            &asr_text,
-            dictionary_max_candidates,
-        );
+        let candidates =
+            prompt::filter_dictionary_candidates(&dictionary, &asr_text, dictionary_max_candidates);
 
         log::info!("[{session_id}] LLM request — asr_text: \"{}\"", asr_text);
-        log::info!("[{session_id}] LLM request — {} dictionary entries, {} interim revisions",
-            candidates.len(), interim_history.len());
+        log::info!(
+            "[{session_id}] LLM request — {} dictionary entries, {} interim revisions",
+            candidates.len(),
+            interim_history.len()
+        );
 
-        let user_prompt = prompt::render_user_prompt(&user_prompt_template, &asr_text, &candidates, &interim_history);
+        let user_prompt = prompt::render_user_prompt(
+            &user_prompt_template,
+            &asr_text,
+            &candidates,
+            &interim_history,
+        );
         log::debug!("[{session_id}] LLM user prompt:\n{}", user_prompt);
 
         let request = CorrectionRequest {
@@ -606,10 +697,7 @@ async fn run_session(
     invoke_state_changed("idle");
 }
 
-async fn wait_for_final(
-    asr: &mut DoubaoWsProvider,
-    aggregator: &mut TranscriptAggregator,
-) {
+async fn wait_for_final(asr: &mut dyn AsrProvider, aggregator: &mut TranscriptAggregator) {
     loop {
         match asr.next_event().await {
             Ok(AsrEvent::Final(text)) => {

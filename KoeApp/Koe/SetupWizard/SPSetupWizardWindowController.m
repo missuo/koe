@@ -282,6 +282,9 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 @property (nonatomic, strong) NSTextField *asrAccessKeyField;
 @property (nonatomic, strong) NSSecureTextField *asrAccessKeySecureField;
 @property (nonatomic, strong) NSButton *asrAccessKeyToggle;
+@property (nonatomic, strong) NSSecureTextField *asrAliyunApiKeySecureField;
+@property (nonatomic, strong) NSTextField *asrAliyunApiKeyField;
+@property (nonatomic, strong) NSButton *asrAliyunApiKeyToggle;
 
 // LLM fields
 @property (nonatomic, strong) NSButton *llmEnabledCheckbox;
@@ -459,7 +462,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     CGFloat y = contentHeight - 48;
 
     // Description
-    NSTextField *desc = [self descriptionLabel:@"Choose the ASR provider used for transcription. Currently only Doubao is available."];
+    NSTextField *desc = [self descriptionLabel:@"Choose the ASR provider used for transcription."];
     desc.frame = NSMakeRect(24, y - 10, paneWidth - 48, 36);
     [pane addSubview:desc];
     y -= 52;
@@ -469,19 +472,24 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     self.asrProviderPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 220, 26) pullsDown:NO];
     [self.asrProviderPopup addItemWithTitle:@"Doubao (\u8c46\u5305)"];
     [self.asrProviderPopup itemAtIndex:0].representedObject = @"doubao";
+    [self.asrProviderPopup addItemWithTitle:@"Aliyun (\u963f\u91cc\u4e91)"];
+    [self.asrProviderPopup itemAtIndex:1].representedObject = @"aliyun";
+    [self.asrProviderPopup setTarget:self];
+    [self.asrProviderPopup setAction:@selector(asrProviderChanged:)];
     [pane addSubview:self.asrProviderPopup];
     y -= rowH;
 
-    // App Key
-    [pane addSubview:[self formLabel:@"App Key" frame:NSMakeRect(16, y, labelW, 22)]];
+    // App Key (Doubao only)
     self.asrAppKeyField = [self formTextField:NSMakeRect(fieldX, y, fieldW, 22) placeholder:@"Volcengine App ID"];
     [pane addSubview:self.asrAppKeyField];
+    NSTextField *appKeyLabel = [self formLabel:@"App Key" frame:NSMakeRect(16, y, labelW, 22)];
+    appKeyLabel.tag = 1001;
+    [pane addSubview:appKeyLabel];
     y -= rowH;
 
-    // Access Key (secure by default)
+    // Access Key (secure by default) - Doubao
     CGFloat eyeW = 28;
     CGFloat secFieldW = fieldW - eyeW - 4;
-    [pane addSubview:[self formLabel:@"Access Key" frame:NSMakeRect(16, y, labelW, 22)]];
     self.asrAccessKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, y, secFieldW, 22)];
     self.asrAccessKeySecureField.placeholderString = @"Volcengine Access Token";
     self.asrAccessKeySecureField.font = [NSFont systemFontOfSize:13];
@@ -492,6 +500,28 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     self.asrAccessKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, y - 1, eyeW, 24)
                                                 action:@selector(toggleAsrAccessKeyVisibility:)];
     [pane addSubview:self.asrAccessKeyToggle];
+    NSTextField *accessKeyLabel = [self formLabel:@"Access Key" frame:NSMakeRect(16, y, labelW, 22)];
+    accessKeyLabel.tag = 1002;
+    [pane addSubview:accessKeyLabel];
+    y -= rowH;
+
+    // Aliyun API Key (hidden by default, shown when aliyun selected)
+    self.asrAliyunApiKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, y, secFieldW, 22)];
+    self.asrAliyunApiKeySecureField.placeholderString = @"DashScope API Key (sk-xxx)";
+    self.asrAliyunApiKeySecureField.font = [NSFont systemFontOfSize:13];
+    self.asrAliyunApiKeySecureField.hidden = YES;
+    [pane addSubview:self.asrAliyunApiKeySecureField];
+    self.asrAliyunApiKeyField = [self formTextField:NSMakeRect(fieldX, y, secFieldW, 22) placeholder:@"DashScope API Key (sk-xxx)"];
+    self.asrAliyunApiKeyField.hidden = YES;
+    [pane addSubview:self.asrAliyunApiKeyField];
+    self.asrAliyunApiKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, y - 1, eyeW, 24)
+                                                action:@selector(toggleAliyunApiKeyVisibility:)];
+    self.asrAliyunApiKeyToggle.hidden = YES;
+    [pane addSubview:self.asrAliyunApiKeyToggle];
+    NSTextField *aliyunKeyLabel = [self formLabel:@"API Key" frame:NSMakeRect(16, y, labelW, 22)];
+    aliyunKeyLabel.tag = 1003;
+    aliyunKeyLabel.hidden = YES;
+    [pane addSubview:aliyunKeyLabel];
     y -= rowH + 16;
 
     // Save / Cancel buttons
@@ -848,6 +878,50 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     }
 }
 
+- (void)toggleAliyunApiKeyVisibility:(NSButton *)sender {
+    if (sender.tag == 0) {
+        // Show plain text
+        self.asrAliyunApiKeyField.stringValue = self.asrAliyunApiKeySecureField.stringValue;
+        self.asrAliyunApiKeySecureField.hidden = YES;
+        self.asrAliyunApiKeyField.hidden = NO;
+        sender.image = [NSImage imageWithSystemSymbolName:@"eye" accessibilityDescription:@"Hide"];
+        sender.tag = 1;
+    } else {
+        // Show secure
+        self.asrAliyunApiKeySecureField.stringValue = self.asrAliyunApiKeyField.stringValue;
+        self.asrAliyunApiKeyField.hidden = YES;
+        self.asrAliyunApiKeySecureField.hidden = NO;
+        sender.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
+        sender.tag = 0;
+    }
+}
+
+- (void)asrProviderChanged:(NSPopUpButton *)sender {
+    NSString *selectedProvider = sender.selectedItem.representedObject ?: @"doubao";
+    BOOL isDoubao = [selectedProvider isEqualToString:@"doubao"];
+
+    // Show/hide Doubao fields
+    for (NSView *view in self.currentPaneView.subviews) {
+        if (view.tag == 1001 || view.tag == 1002) { // App Key and Access Key labels
+            view.hidden = !isDoubao;
+        }
+    }
+    self.asrAppKeyField.hidden = !isDoubao;
+    self.asrAccessKeyField.hidden = YES; // Always start hidden (secure mode)
+    self.asrAccessKeySecureField.hidden = !isDoubao;
+    self.asrAccessKeyToggle.hidden = !isDoubao;
+
+    // Show/hide Aliyun fields
+    for (NSView *view in self.currentPaneView.subviews) {
+        if (view.tag == 1003) { // Aliyun API Key label
+            view.hidden = isDoubao;
+        }
+    }
+    self.asrAliyunApiKeyField.hidden = YES; // Always start hidden (secure mode)
+    self.asrAliyunApiKeySecureField.hidden = isDoubao;
+    self.asrAliyunApiKeyToggle.hidden = isDoubao;
+}
+
 - (void)toggleLlmApiKeyVisibility:(NSButton *)sender {
     if (sender.tag == 0) {
         self.llmApiKeyField.stringValue = self.llmApiKeySecureField.stringValue;
@@ -875,6 +949,9 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     NSString *configPath = configFilePath();
     NSString *yaml = [NSString stringWithContentsOfFile:configPath encoding:NSUTF8StringEncoding error:nil] ?: @"";
 
+    NSLog(@"[Koe] Loading values for pane: %@, config path: %@", identifier, configPath);
+    NSLog(@"[Koe] YAML content length: %lu", (unsigned long)yaml.length);
+
     if ([identifier isEqualToString:kToolbarASR]) {
         NSString *provider = yamlRead(yaml, @"asr.provider");
         if (provider.length == 0) provider = @"doubao";
@@ -884,15 +961,17 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
                 break;
             }
         }
+        // Load Doubao fields
         self.asrAppKeyField.stringValue = yamlRead(yaml, @"asr.doubao.app_key");
         NSString *accessKey = yamlRead(yaml, @"asr.doubao.access_key");
         self.asrAccessKeySecureField.stringValue = accessKey;
         self.asrAccessKeyField.stringValue = accessKey;
-        // Reset to hidden state
-        self.asrAccessKeySecureField.hidden = NO;
-        self.asrAccessKeyField.hidden = YES;
-        self.asrAccessKeyToggle.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
-        self.asrAccessKeyToggle.tag = 0;
+        // Load Aliyun fields
+        NSString *aliyunApiKey = yamlRead(yaml, @"asr.aliyun.api_key");
+        self.asrAliyunApiKeySecureField.stringValue = aliyunApiKey;
+        self.asrAliyunApiKeyField.stringValue = aliyunApiKey;
+        // Reset visibility based on selected provider
+        [self asrProviderChanged:self.asrProviderPopup];
     } else if ([identifier isEqualToString:kToolbarLLM]) {
         NSString *enabled = yamlRead(yaml, @"llm.enabled");
         self.llmEnabledCheckbox.state = ([enabled isEqualToString:@"false"]) ? NSControlStateValueOff : NSControlStateValueOn;
@@ -919,22 +998,49 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         self.llmTestResultLabel.stringValue = @"";
         [self updateLlmFieldsEnabled];
     } else if ([identifier isEqualToString:kToolbarHotkey]) {
-        NSString *triggerKey = normalizedHotkeyValue(yamlRead(yaml, @"hotkey.trigger_key"));
-        NSString *cancelKey = normalizedHotkeyValue(yamlRead(yaml, @"hotkey.cancel_key"));
-        if (cancelKey.length == 0 || [cancelKey isEqualToString:triggerKey]) {
+        // Debug: test yamlRead with simple key
+        NSString *testProvider = yamlRead(yaml, @"asr.provider");
+        NSLog(@"[Koe] Debug - asr.provider = '%@'", testProvider);
+
+        NSString *triggerKeyRaw = yamlRead(yaml, @"hotkey.trigger_key");
+        NSString *cancelKeyRaw = yamlRead(yaml, @"hotkey.cancel_key");
+        NSLog(@"[Koe] Loading hotkey config - raw trigger: '%@', raw cancel: '%@'", triggerKeyRaw, cancelKeyRaw);
+
+        // Debug: print first 500 chars of yaml
+        NSLog(@"[Koe] YAML snippet: %@", [yaml substringToIndex:MIN(500, yaml.length)]);
+
+        NSString *triggerKey = normalizedHotkeyValue(triggerKeyRaw);
+        NSString *cancelKey = normalizedHotkeyValue(cancelKeyRaw);
+        NSLog(@"[Koe] Normalized hotkey values - trigger: '%@', cancel: '%@'", triggerKey, cancelKey);
+
+        // Only use default cancel key if cancel key is empty or invalid (not just when equal)
+        if (cancelKeyRaw.length == 0) {
             cancelKey = defaultCancelKeyForTrigger(triggerKey);
+            NSLog(@"[Koe] Cancel key empty, using default: '%@'", cancelKey);
         }
+
+        BOOL triggerFound = NO, cancelFound = NO;
         for (NSInteger i = 0; i < self.hotkeyPopup.numberOfItems; i++) {
             if ([[self.hotkeyPopup itemAtIndex:i].representedObject isEqualToString:triggerKey]) {
                 [self.hotkeyPopup selectItemAtIndex:i];
+                triggerFound = YES;
+                NSLog(@"[Koe] Selected trigger key at index %ld", (long)i);
                 break;
             }
         }
         for (NSInteger i = 0; i < self.cancelHotkeyPopup.numberOfItems; i++) {
             if ([[self.cancelHotkeyPopup itemAtIndex:i].representedObject isEqualToString:cancelKey]) {
                 [self.cancelHotkeyPopup selectItemAtIndex:i];
+                cancelFound = YES;
+                NSLog(@"[Koe] Selected cancel key at index %ld", (long)i);
                 break;
             }
+        }
+        if (!triggerFound) {
+            NSLog(@"[Koe] Warning: trigger key '%@' not found in popup", triggerKey);
+        }
+        if (!cancelFound) {
+            NSLog(@"[Koe] Warning: cancel key '%@' not found in popup", cancelKey);
         }
 
         NSString *startSound = yamlRead(yaml, @"feedback.start_sound");
@@ -971,9 +1077,13 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     if (self.asrAppKeyField) {
         NSString *selectedProvider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
         yaml = yamlWrite(yaml, @"asr.provider", selectedProvider);
+        // Save Doubao fields
         yaml = yamlWrite(yaml, @"asr.doubao.app_key", self.asrAppKeyField.stringValue);
         NSString *accessKey = self.asrAccessKeyToggle.tag == 1 ? self.asrAccessKeyField.stringValue : self.asrAccessKeySecureField.stringValue;
         yaml = yamlWrite(yaml, @"asr.doubao.access_key", accessKey);
+        // Save Aliyun fields
+        NSString *aliyunApiKey = self.asrAliyunApiKeyToggle.tag == 1 ? self.asrAliyunApiKeyField.stringValue : self.asrAliyunApiKeySecureField.stringValue;
+        yaml = yamlWrite(yaml, @"asr.aliyun.api_key", aliyunApiKey);
     }
 
     // Update LLM fields

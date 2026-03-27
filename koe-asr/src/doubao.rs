@@ -286,6 +286,7 @@ enum ServerMessage {
     Error { code: u32, message: String },
 }
 
+#[async_trait::async_trait]
 impl AsrProvider for DoubaoWsProvider {
     async fn connect(&mut self, config: &AsrConfig) -> Result<()> {
         let connect_timeout = Duration::from_millis(config.connect_timeout_ms);
@@ -398,9 +399,7 @@ impl AsrProvider for DoubaoWsProvider {
                             .and_then(|u| u.as_array())
                             .map(|utterances| {
                                 utterances.iter().any(|u| {
-                                    u.get("definite")
-                                        .and_then(|d| d.as_bool())
-                                        .unwrap_or(false)
+                                    u.get("definite").and_then(|d| d.as_bool()).unwrap_or(false)
                                 })
                             })
                             .unwrap_or(false);

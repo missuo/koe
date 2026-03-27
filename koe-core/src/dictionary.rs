@@ -22,6 +22,10 @@ pub fn load_dictionary(path: &Path) -> Result<Vec<String>> {
         .map(|l| l.to_string())
         .collect();
 
-    log::info!("loaded {} dictionary entries from {}", entries.len(), path.display());
+    log::info!(
+        "loaded {} dictionary entries from {}",
+        entries.len(),
+        path.display()
+    );
     Ok(entries)
 }
