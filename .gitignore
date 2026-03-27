@@ -40,3 +40,6 @@ koe-core/target/
 # Environment / secrets
 .env
 .env.*
+
+# Documentation (planning and brainstorming files)
+docs/
