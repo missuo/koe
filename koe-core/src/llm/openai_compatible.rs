@@ -73,6 +73,9 @@ impl LlmProvider for OpenAiCompatibleProvider {
             LlmMaxTokenParameter::MaxCompletionTokens => "max_completion_tokens",
         };
         body[token_field_name] = json!(self.max_output_tokens);
+        if matches!(self.max_token_parameter, LlmMaxTokenParameter::MaxCompletionTokens) {
+            body["reasoning_effort"] = json!("none");
+        }
 
         log::debug!("LLM request to {url}");
 
