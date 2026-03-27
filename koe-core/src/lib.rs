@@ -14,10 +14,11 @@ use crate::ffi::{
     invoke_session_ready, invoke_session_warning, invoke_state_changed, SPCallbacks,
     SPFeedbackConfig, SPHotkeyConfig, SPSessionContext, SPSessionMode,
 };
-use crate::llm::openai_compatible::OpenAiCompatibleProvider;
+use crate::llm::openai_compatible::{build_http_client, OpenAiCompatibleProvider};
 use crate::llm::{CorrectionRequest, LlmProvider};
 use crate::session::{Session, SessionState};
 use koe_asr::{AsrConfig, AsrEvent, AsrProvider, DoubaoWsProvider, TranscriptAggregator};
+use reqwest::Client;
 
 use std::ffi::c_char;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,6 +37,7 @@ struct Core {
     dictionary: Vec<String>,
     system_prompt: String,
     user_prompt_template: String,
+    llm_http_client: Client,
 }
 
 static CORE: Mutex<Option<Core>> = Mutex::new(None);
@@ -88,6 +90,13 @@ pub extern "C" fn sp_core_create(config_path: *const c_char) -> i32 {
             return -1;
         }
     };
+    let llm_http_client = match build_http_client(cfg.llm.timeout_ms) {
+        Ok(client) => client,
+        Err(e) => {
+            log::error!("failed to create LLM HTTP client: {e}");
+            return -1;
+        }
+    };
 
     let core = Core {
         runtime,
@@ -98,6 +107,7 @@ pub extern "C" fn sp_core_create(config_path: *const c_char) -> i32 {
         dictionary,
         system_prompt,
         user_prompt_template,
+        llm_http_client,
     };
 
     let mut global = CORE.lock().unwrap();
@@ -149,11 +159,19 @@ pub extern "C" fn sp_core_reload_config() -> i32 {
 
     let mut global = CORE.lock().unwrap();
     if let Some(ref mut core) = *global {
+        let llm_http_client = match build_http_client(cfg.llm.timeout_ms) {
+            Ok(client) => client,
+            Err(e) => {
+                log::error!("reload HTTP client failed: {e}");
+                return -1;
+            }
+        };
         core.config = cfg;
         core.dictionary = dictionary;
         core.system_prompt = system_prompt;
         core.user_prompt_template = user_prompt_template;
-        log::info!("config, dictionary, and prompts reloaded");
+        core.llm_http_client = llm_http_client;
+        log::info!("config, dictionary, prompts, and HTTP client reloaded");
     }
 
     0
@@ -229,6 +247,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
         hotwords: core.dictionary.clone(),
     };
     let llm_config = cfg.llm.clone();
+    let llm_http_client = core.llm_http_client.clone();
     let dictionary = core.dictionary.clone();
     let dictionary_max_candidates = cfg.llm.dictionary_max_candidates;
     let system_prompt = core.system_prompt.clone();
@@ -243,6 +262,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
             audio_rx,
             asr_config,
             llm_config,
+            llm_http_client,
             dictionary,
             dictionary_max_candidates,
             system_prompt,
@@ -362,6 +382,7 @@ async fn run_session(
     mut audio_rx: mpsc::Receiver<Vec<u8>>,
     asr_config: AsrConfig,
     llm_config: config::LlmSection,
+    llm_http_client: Client,
     dictionary: Vec<String>,
     dictionary_max_candidates: usize,
     system_prompt: String,
@@ -525,6 +546,7 @@ async fn run_session(
         invoke_state_changed("correcting");
 
         let llm = OpenAiCompatibleProvider::new(
+            llm_http_client,
             llm_config.base_url,
             llm_config.api_key,
             llm_config.model,
@@ -532,7 +554,6 @@ async fn run_session(
             llm_config.top_p,
             llm_config.max_output_tokens,
             llm_config.max_token_parameter,
-            llm_config.timeout_ms,
         );
 
         // Filter dictionary candidates for prompt

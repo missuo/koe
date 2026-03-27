@@ -234,6 +234,7 @@ llm:
   top_p: 1
 
   # LLM request timeout in milliseconds.
+  # Restart Koe after changing this value.
   timeout_ms: 8000
 
   # Max tokens in LLM response. 1024 is plenty for voice input correction.
