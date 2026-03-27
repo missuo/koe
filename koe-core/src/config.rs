@@ -650,7 +650,7 @@ llm:
   model: "gpt-5.4-nano"
   temperature: 0
   top_p: 1
-  timeout_ms: 8000        # requires app restart to fully apply
+  timeout_ms: 8000
   max_output_tokens: 1024
   max_token_parameter: "max_completion_tokens"  # use "max_tokens" for older model endpoints
   dictionary_max_candidates: 0             # 0 = send all entries to LLM

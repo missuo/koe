@@ -42,6 +42,10 @@ struct Core {
 
 static CORE: Mutex<Option<Core>> = Mutex::new(None);
 
+fn llm_http_client_needs_reload(current: &Config, next: &Config) -> bool {
+    current.llm.timeout_ms != next.llm.timeout_ms
+}
+
 // ─── FFI Entry Points ───────────────────────────────────────────────
 
 /// Initialize the core. Must be called once before any other function.
@@ -159,19 +163,22 @@ pub extern "C" fn sp_core_reload_config() -> i32 {
 
     let mut global = CORE.lock().unwrap();
     if let Some(ref mut core) = *global {
-        let llm_http_client = match build_http_client(cfg.llm.timeout_ms) {
-            Ok(client) => client,
-            Err(e) => {
-                log::error!("reload HTTP client failed: {e}");
-                return -1;
-            }
-        };
+        if llm_http_client_needs_reload(&core.config, &cfg) {
+            let llm_http_client = match build_http_client(cfg.llm.timeout_ms) {
+                Ok(client) => client,
+                Err(e) => {
+                    log::error!("reload HTTP client failed: {e}");
+                    return -1;
+                }
+            };
+            core.llm_http_client = llm_http_client;
+            log::info!("LLM HTTP client reloaded after timeout_ms change");
+        }
         core.config = cfg;
         core.dictionary = dictionary;
         core.system_prompt = system_prompt;
         core.user_prompt_template = user_prompt_template;
-        core.llm_http_client = llm_http_client;
-        log::info!("config, dictionary, prompts, and HTTP client reloaded");
+        log::info!("config, dictionary, prompts, and HTTP client reloaded as needed");
     }
 
     0
@@ -207,6 +214,17 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
         }
         core.system_prompt = prompt::load_system_prompt(&config::resolve_system_prompt_path(&new_cfg));
         core.user_prompt_template = prompt::load_user_prompt_template(&config::resolve_user_prompt_path(&new_cfg));
+        if llm_http_client_needs_reload(&core.config, &new_cfg) {
+            match build_http_client(new_cfg.llm.timeout_ms) {
+                Ok(client) => {
+                    core.llm_http_client = client;
+                    log::info!("LLM HTTP client reloaded at session start after timeout_ms change");
+                }
+                Err(e) => {
+                    log::warn!("failed to reload LLM HTTP client at session start: {e}");
+                }
+            }
+        }
         core.config = new_cfg;
     }
 
