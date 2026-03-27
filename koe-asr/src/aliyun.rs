@@ -17,6 +17,14 @@ const DASHSCOPE_WS_URL: &str =
     "wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3-asr-flash-realtime";
 const SESSION_EVENT_TIMEOUT: Duration = Duration::from_secs(5);
 
+// VAD (语音活动检测) 参数配置
+// threshold: 语音检测阈值，0.0-1.0，越高越严格，可减少噪音误触发
+const VAD_THRESHOLD: f32 = 0.5;
+// silence_duration_ms: 静音持续时间，超过此值视为语音结束
+const VAD_SILENCE_DURATION_MS: u32 = 400;
+// prefix_padding_ms: 语音开始前保留的音频时长，用于捕捉语音起始部分
+const VAD_PREFIX_PADDING_MS: u32 = 100;
+
 /// 阿里云 DashScope 实时语音识别 Provider (Qwen-ASR-Realtime)
 ///
 /// 协议参考阿里云官方 WebSocket Realtime API：
@@ -55,9 +63,9 @@ impl AliyunAsrProvider {
                 },
                 "turn_detection": {
                     "type": "server_vad",
-                    "threshold": 0.0,
-                    "silence_duration_ms": 400,
-                    "prefix_padding_ms": 300,
+                    "threshold": VAD_THRESHOLD,
+                    "silence_duration_ms": VAD_SILENCE_DURATION_MS,
+                    "prefix_padding_ms": VAD_PREFIX_PADDING_MS,
                 }
             })),
         }
