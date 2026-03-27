@@ -19,6 +19,7 @@ pub struct OpenAiCompatibleProvider {
 
 impl OpenAiCompatibleProvider {
     pub fn new(
+        client: Client,
         base_url: String,
         api_key: String,
         model: String,
@@ -26,13 +27,7 @@ impl OpenAiCompatibleProvider {
         top_p: f64,
         max_output_tokens: u32,
         max_token_parameter: LlmMaxTokenParameter,
-        timeout_ms: u64,
     ) -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_millis(timeout_ms))
-            .build()
-            .expect("failed to create HTTP client");
-
         Self {
             client,
             base_url,
@@ -44,6 +39,18 @@ impl OpenAiCompatibleProvider {
             max_token_parameter,
         }
     }
+}
+
+pub fn build_http_client(timeout_ms: u64) -> std::result::Result<Client, reqwest::Error> {
+    Client::builder()
+        .timeout(Duration::from_millis(timeout_ms))
+        .pool_idle_timeout(Duration::from_secs(90))
+        .pool_max_idle_per_host(2)
+        .tcp_keepalive(Some(Duration::from_secs(30)))
+        .http2_keep_alive_interval(Duration::from_secs(30))
+        .http2_keep_alive_timeout(Duration::from_secs(30))
+        .http2_keep_alive_while_idle(true)
+        .build()
 }
 
 impl LlmProvider for OpenAiCompatibleProvider {
