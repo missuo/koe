@@ -72,10 +72,11 @@ impl QwenAsrProvider {
     }
 
     fn build_audio_append(audio_data: &[u8]) -> ClientEvent {
+        use base64::{Engine, engine::general_purpose::STANDARD};
         ClientEvent {
             event_id: format!("event_{}", Uuid::new_v4()),
             event_type: "input_audio_buffer.append".to_string(),
-            audio: Some(base64::encode(audio_data)),
+            audio: Some(STANDARD.encode(audio_data)),
             session: None,
         }
     }
@@ -354,44 +355,6 @@ struct ClientEvent {
     audio: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     session: Option<serde_json::Value>,
-}
-
-mod base64 {
-    const ENCODE_TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    pub fn encode(input: &[u8]) -> String {
-        let mut result = String::new();
-        let chunks = input.chunks_exact(3);
-        let remainder = chunks.remainder();
-
-        for chunk in chunks {
-            let b = ((chunk[0] as u32) << 16) | ((chunk[1] as u32) << 8) | (chunk[2] as u32);
-            result.push(ENCODE_TABLE[((b >> 18) & 0x3F) as usize] as char);
-            result.push(ENCODE_TABLE[((b >> 12) & 0x3F) as usize] as char);
-            result.push(ENCODE_TABLE[((b >> 6) & 0x3F) as usize] as char);
-            result.push(ENCODE_TABLE[(b & 0x3F) as usize] as char);
-        }
-
-        match remainder.len() {
-            1 => {
-                let b = (remainder[0] as u32) << 16;
-                result.push(ENCODE_TABLE[((b >> 18) & 0x3F) as usize] as char);
-                result.push(ENCODE_TABLE[((b >> 12) & 0x3F) as usize] as char);
-                result.push('=');
-                result.push('=');
-            }
-            2 => {
-                let b = ((remainder[0] as u32) << 16) | ((remainder[1] as u32) << 8);
-                result.push(ENCODE_TABLE[((b >> 18) & 0x3F) as usize] as char);
-                result.push(ENCODE_TABLE[((b >> 12) & 0x3F) as usize] as char);
-                result.push(ENCODE_TABLE[((b >> 6) & 0x3F) as usize] as char);
-                result.push('=');
-            }
-            _ => {}
-        }
-
-        result
-    }
 }
 
 #[cfg(test)]

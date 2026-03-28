@@ -399,7 +399,9 @@ impl AsrProvider for DoubaoWsProvider {
                             .and_then(|u| u.as_array())
                             .map(|utterances| {
                                 utterances.iter().any(|u| {
-                                    u.get("definite").and_then(|d| d.as_bool()).unwrap_or(false)
+                                    u.get("definite")
+                                        .and_then(|d| d.as_bool())
+                                        .unwrap_or(false)
                                 })
                             })
                             .unwrap_or(false);

@@ -55,7 +55,10 @@ pub fn build_http_client(timeout_ms: u64) -> std::result::Result<Client, reqwest
 
 impl LlmProvider for OpenAiCompatibleProvider {
     async fn correct(&self, request: &CorrectionRequest) -> Result<String> {
-        let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/chat/completions",
+            self.base_url.trim_end_matches('/')
+        );
 
         let mut body = json!({
             "model": self.model,
@@ -102,7 +105,9 @@ impl LlmProvider for OpenAiCompatibleProvider {
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
-            return Err(KoeError::LlmFailed(format!("HTTP {status}: {text}")));
+            return Err(KoeError::LlmFailed(format!(
+                "HTTP {status}: {text}"
+            )));
         }
 
         let json: Value = response

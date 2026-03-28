@@ -1030,18 +1030,15 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
             cancelKey = defaultCancelKeyForTrigger(triggerKey);
         }
 
-        BOOL triggerFound = NO, cancelFound = NO;
         for (NSInteger i = 0; i < self.hotkeyPopup.numberOfItems; i++) {
             if ([[self.hotkeyPopup itemAtIndex:i].representedObject isEqualToString:triggerKey]) {
                 [self.hotkeyPopup selectItemAtIndex:i];
-                triggerFound = YES;
                 break;
             }
         }
         for (NSInteger i = 0; i < self.cancelHotkeyPopup.numberOfItems; i++) {
             if ([[self.cancelHotkeyPopup itemAtIndex:i].representedObject isEqualToString:cancelKey]) {
                 [self.cancelHotkeyPopup selectItemAtIndex:i];
-                cancelFound = YES;
                 break;
             }
         }
@@ -1126,6 +1123,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     NSError *error = nil;
     [yaml writeToFile:configPath atomically:YES encoding:NSUTF8StringEncoding error:&error];
     if (error) {
+        NSLog(@"[Koe] Failed to write config.yaml: %@", error.localizedDescription);
         [self showAlert:@"Failed to save config.yaml" info:error.localizedDescription];
         return;
     }
@@ -1135,6 +1133,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         NSString *dictPath = [dir stringByAppendingPathComponent:kDictionaryFile];
         [self.dictionaryTextView.string writeToFile:dictPath atomically:YES encoding:NSUTF8StringEncoding error:&error];
         if (error) {
+            NSLog(@"[Koe] Failed to write dictionary.txt: %@", error.localizedDescription);
             [self showAlert:@"Failed to save dictionary.txt" info:error.localizedDescription];
             return;
         }
@@ -1145,10 +1144,13 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         NSString *promptPath = [dir stringByAppendingPathComponent:kSystemPromptFile];
         [self.systemPromptTextView.string writeToFile:promptPath atomically:YES encoding:NSUTF8StringEncoding error:&error];
         if (error) {
+            NSLog(@"[Koe] Failed to write system_prompt.txt: %@", error.localizedDescription);
             [self showAlert:@"Failed to save system_prompt.txt" info:error.localizedDescription];
             return;
         }
     }
+
+    NSLog(@"[Koe] Settings saved");
 
     // Notify delegate to reload
     if ([self.delegate respondsToSelector:@selector(setupWizardDidSaveConfig)]) {
