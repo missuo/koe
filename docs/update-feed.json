@@ -1,14 +1,13 @@
 {
-  "version": "1.0.10",
-  "build": 11,
-  "published_at": "2026-03-27T08:59:51Z",
+  "version": "1.0.11",
+  "build": 12,
+  "published_at": "2026-03-28T06:00:00Z",
   "minimum_system_version": "13.0",
-  "download_url": "https://github.com/missuo/koe/releases/download/v1.0.10/Koe-macOS-arm64.zip",
-  "release_notes_url": "https://github.com/missuo/koe/releases/tag/v1.0.10",
+  "download_url": "https://github.com/missuo/koe/releases/download/v1.0.11/Koe-macOS-arm64.zip",
+  "release_notes_url": "https://github.com/missuo/koe/releases/tag/v1.0.11",
   "notes": [
-    "Reuse a shared HTTP client across voice sessions and enable HTTP/2, reducing average LLM correction latency by ~20%.",
-    "Explicitly set reasoning_effort to none for GPT-5-style endpoints to avoid unnecessary latency on voice correction.",
-    "Use NSVisualEffectView for the live transcription overlay, giving it a native frosted-glass appearance.",
-    "Support both left and right Control keys as hotkey triggers."
+    "Support custom macOS keycodes for trigger and cancel keys, allowing any non-modifier key (e.g. F1-F20) to be configured in config.yaml.",
+    "Display friendly key names for custom keycodes in the status bar menu and setup wizard.",
+    "Make Qwen ASR URL and model configurable in config.yaml."
   ]
 }
