@@ -21,13 +21,29 @@ pub struct Config {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AsrSection {
-    /// Which ASR provider to use: "doubao" (default), future: "openai", etc.
+    /// Which ASR provider to use: "doubao" (default), "qwen", future: "openai", etc.
     #[serde(default = "default_asr_provider")]
     pub provider: String,
 
     /// Doubao (豆包/火山引擎) ASR configuration
     #[serde(default)]
     pub doubao: DoubaoAsrConfig,
+
+    /// Qwen ASR configuration
+    #[serde(default)]
+    pub qwen: QwenAsrConfig,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct QwenAsrConfig {
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_qwen_language")]
+    pub language: String,
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout_ms: u64,
+    #[serde(default = "default_final_wait_timeout")]
+    pub final_wait_timeout_ms: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -231,6 +247,9 @@ impl HotkeySection {
 
 fn default_asr_provider() -> String {
     "doubao".into()
+}
+fn default_qwen_language() -> String {
+    "zh".into()
 }
 fn default_asr_url() -> String {
     "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async".into()

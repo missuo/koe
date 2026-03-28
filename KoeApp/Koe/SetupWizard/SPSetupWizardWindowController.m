@@ -282,6 +282,11 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 @property (nonatomic, strong) NSTextField *asrAccessKeyField;
 @property (nonatomic, strong) NSSecureTextField *asrAccessKeySecureField;
 @property (nonatomic, strong) NSButton *asrAccessKeyToggle;
+@property (nonatomic, strong) NSSecureTextField *asrQwenApiKeySecureField;
+@property (nonatomic, strong) NSTextField *asrQwenApiKeyField;
+@property (nonatomic, strong) NSButton *asrQwenApiKeyToggle;
+@property (nonatomic, strong) NSButton *asrTestButton;
+@property (nonatomic, strong) NSTextField *asrTestResultLabel;
 
 // LLM fields
 @property (nonatomic, strong) NSButton *llmEnabledCheckbox;
@@ -452,36 +457,48 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     CGFloat fieldW = paneWidth - fieldX - 32;
     CGFloat rowH = 32;
 
-    // Calculate content height
-    CGFloat contentHeight = 256;
+    // Calculate content height (调整为合适的高度)
+    CGFloat contentHeight = 260;
     NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
 
     CGFloat y = contentHeight - 48;
 
     // Description
-    NSTextField *desc = [self descriptionLabel:@"Choose the ASR provider used for transcription. Currently only Doubao is available."];
+    NSTextField *desc = [self descriptionLabel:@"Choose the ASR provider used for transcription."];
     desc.frame = NSMakeRect(24, y - 10, paneWidth - 48, 36);
     [pane addSubview:desc];
     y -= 52;
 
     // Provider
     [pane addSubview:[self formLabel:@"Provider" frame:NSMakeRect(16, y, labelW, 22)]];
-    self.asrProviderPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 220, 26) pullsDown:NO];
+    self.asrProviderPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 160, 26) pullsDown:NO];
     [self.asrProviderPopup addItemWithTitle:@"Doubao (\u8c46\u5305)"];
     [self.asrProviderPopup itemAtIndex:0].representedObject = @"doubao";
+    [self.asrProviderPopup addItemWithTitle:@"Qwen (\u963f\u91cc\u4e91)"];
+    [self.asrProviderPopup itemAtIndex:1].representedObject = @"qwen";
+    [self.asrProviderPopup setTarget:self];
+    [self.asrProviderPopup setAction:@selector(asrProviderChanged:)];
     [pane addSubview:self.asrProviderPopup];
+
+    // Test button 放在 Provider 旁边
+    self.asrTestButton = [NSButton buttonWithTitle:@"Test" target:self action:@selector(testAsrConnection:)];
+    self.asrTestButton.bezelStyle = NSBezelStyleRounded;
+    self.asrTestButton.frame = NSMakeRect(fieldX + 168, y - 2, 70, 28);
+    [pane addSubview:self.asrTestButton];
     y -= rowH;
 
-    // App Key
-    [pane addSubview:[self formLabel:@"App Key" frame:NSMakeRect(16, y, labelW, 22)]];
+    // App Key (Doubao only) - 在 Provider 下方
     self.asrAppKeyField = [self formTextField:NSMakeRect(fieldX, y, fieldW, 22) placeholder:@"Volcengine App ID"];
     [pane addSubview:self.asrAppKeyField];
+    NSTextField *appKeyLabel = [self formLabel:@"App Key" frame:NSMakeRect(16, y, labelW, 22)];
+    appKeyLabel.tag = 1001;
+    [pane addSubview:appKeyLabel];
     y -= rowH;
 
-    // Access Key (secure by default)
+    // Access Key (Doubao) - 在 App Key 下方
     CGFloat eyeW = 28;
     CGFloat secFieldW = fieldW - eyeW - 4;
-    [pane addSubview:[self formLabel:@"Access Key" frame:NSMakeRect(16, y, labelW, 22)]];
+
     self.asrAccessKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, y, secFieldW, 22)];
     self.asrAccessKeySecureField.placeholderString = @"Volcengine Access Token";
     self.asrAccessKeySecureField.font = [NSFont systemFontOfSize:13];
@@ -492,10 +509,40 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     self.asrAccessKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, y - 1, eyeW, 24)
                                                 action:@selector(toggleAsrAccessKeyVisibility:)];
     [pane addSubview:self.asrAccessKeyToggle];
-    y -= rowH + 16;
+    NSTextField *accessKeyLabel = [self formLabel:@"Access Key" frame:NSMakeRect(16, y, labelW, 22)];
+    accessKeyLabel.tag = 1002;
+    [pane addSubview:accessKeyLabel];
+    y -= rowH;  // Access Key 的下一行
 
-    // Save / Cancel buttons
-    [self addButtonsToPane:pane atY:y width:paneWidth];
+    // Qwen API Key - 紧跟在 Provider 下方
+    // 计算方式：从顶部往下减去 Description(52) + Provider 的第一行位置
+    CGFloat qwenY = contentHeight - 48 - 52 - rowH;  // = 260 - 48 - 52 - 32 = 128
+    self.asrQwenApiKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, qwenY, secFieldW, 22)];
+    self.asrQwenApiKeySecureField.placeholderString = @"DashScope API Key (sk-xxx)";
+    self.asrQwenApiKeySecureField.font = [NSFont systemFontOfSize:13];
+    self.asrQwenApiKeySecureField.hidden = YES;
+    [pane addSubview:self.asrQwenApiKeySecureField];
+    self.asrQwenApiKeyField = [self formTextField:NSMakeRect(fieldX, qwenY, secFieldW, 22) placeholder:@"DashScope API Key (sk-xxx)"];
+    self.asrQwenApiKeyField.hidden = YES;
+    [pane addSubview:self.asrQwenApiKeyField];
+    self.asrQwenApiKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, qwenY - 1, eyeW, 24)
+                                                action:@selector(toggleQwenApiKeyVisibility:)];
+    self.asrQwenApiKeyToggle.hidden = YES;
+    [pane addSubview:self.asrQwenApiKeyToggle];
+    NSTextField *qwenKeyLabel = [self formLabel:@"API Key" frame:NSMakeRect(16, qwenY, labelW, 22)];
+    qwenKeyLabel.tag = 1003;
+    qwenKeyLabel.hidden = YES;
+    [pane addSubview:qwenKeyLabel];
+
+    // Test result label (放在 API Key 下方，调整位置以适应新高度)
+    self.asrTestResultLabel = [NSTextField wrappingLabelWithString:@""];
+    self.asrTestResultLabel.frame = NSMakeRect(fieldX, 55, fieldW, 42);
+    self.asrTestResultLabel.font = [NSFont systemFontOfSize:12];
+    self.asrTestResultLabel.selectable = YES;
+    [pane addSubview:self.asrTestResultLabel];
+
+    // Save / Cancel buttons - 固定位置在底部
+    [self addButtonsToPane:pane atY:16 width:paneWidth];
 
     return pane;
 }
@@ -848,6 +895,54 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     }
 }
 
+- (void)toggleQwenApiKeyVisibility:(NSButton *)sender {
+    if (sender.tag == 0) {
+        // Show plain text
+        self.asrQwenApiKeyField.stringValue = self.asrQwenApiKeySecureField.stringValue;
+        self.asrQwenApiKeySecureField.hidden = YES;
+        self.asrQwenApiKeyField.hidden = NO;
+        sender.image = [NSImage imageWithSystemSymbolName:@"eye" accessibilityDescription:@"Hide"];
+        sender.tag = 1;
+    } else {
+        // Show secure
+        self.asrQwenApiKeySecureField.stringValue = self.asrQwenApiKeyField.stringValue;
+        self.asrQwenApiKeyField.hidden = YES;
+        self.asrQwenApiKeySecureField.hidden = NO;
+        sender.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
+        sender.tag = 0;
+    }
+}
+
+- (void)asrProviderChanged:(NSPopUpButton *)sender {
+    NSString *selectedProvider = sender.selectedItem.representedObject ?: @"doubao";
+    BOOL isDoubao = [selectedProvider isEqualToString:@"doubao"];
+
+    // Show/hide Doubao fields
+    for (NSView *view in self.currentPaneView.subviews) {
+        if (view.tag == 1001 || view.tag == 1002) { // App Key and Access Key labels
+            view.hidden = !isDoubao;
+        }
+    }
+    self.asrAppKeyField.hidden = !isDoubao;
+    self.asrAccessKeyField.hidden = YES; // Always start hidden (secure mode)
+    self.asrAccessKeySecureField.hidden = !isDoubao;
+    self.asrAccessKeyToggle.hidden = !isDoubao;
+
+    // Show/hide Qwen fields
+    for (NSView *view in self.currentPaneView.subviews) {
+        if (view.tag == 1003) { // Qwen API Key label
+            view.hidden = isDoubao;
+        }
+    }
+    self.asrQwenApiKeyField.hidden = YES; // Always start hidden (secure mode)
+    self.asrQwenApiKeySecureField.hidden = isDoubao;
+    self.asrQwenApiKeyToggle.hidden = isDoubao;
+
+    // Clear test result when switching provider
+    self.asrTestResultLabel.stringValue = @"";
+    self.asrTestButton.enabled = YES;
+}
+
 - (void)toggleLlmApiKeyVisibility:(NSButton *)sender {
     if (sender.tag == 0) {
         self.llmApiKeyField.stringValue = self.llmApiKeySecureField.stringValue;
@@ -884,15 +979,20 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
                 break;
             }
         }
+        // Load Doubao fields
         self.asrAppKeyField.stringValue = yamlRead(yaml, @"asr.doubao.app_key");
         NSString *accessKey = yamlRead(yaml, @"asr.doubao.access_key");
         self.asrAccessKeySecureField.stringValue = accessKey;
         self.asrAccessKeyField.stringValue = accessKey;
-        // Reset to hidden state
-        self.asrAccessKeySecureField.hidden = NO;
-        self.asrAccessKeyField.hidden = YES;
-        self.asrAccessKeyToggle.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
-        self.asrAccessKeyToggle.tag = 0;
+        // Load Qwen fields
+        NSString *qwenApiKey = yamlRead(yaml, @"asr.qwen.api_key");
+        self.asrQwenApiKeySecureField.stringValue = qwenApiKey;
+        self.asrQwenApiKeyField.stringValue = qwenApiKey;
+        // Reset visibility based on selected provider
+        [self asrProviderChanged:self.asrProviderPopup];
+        // Clear test result when loading
+        self.asrTestResultLabel.stringValue = @"";
+        self.asrTestButton.enabled = YES;
     } else if ([identifier isEqualToString:kToolbarLLM]) {
         NSString *enabled = yamlRead(yaml, @"llm.enabled");
         self.llmEnabledCheckbox.state = ([enabled isEqualToString:@"false"]) ? NSControlStateValueOff : NSControlStateValueOn;
@@ -919,11 +1019,17 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         self.llmTestResultLabel.stringValue = @"";
         [self updateLlmFieldsEnabled];
     } else if ([identifier isEqualToString:kToolbarHotkey]) {
-        NSString *triggerKey = normalizedHotkeyValue(yamlRead(yaml, @"hotkey.trigger_key"));
-        NSString *cancelKey = normalizedHotkeyValue(yamlRead(yaml, @"hotkey.cancel_key"));
+        NSString *triggerKeyRaw = yamlRead(yaml, @"hotkey.trigger_key");
+        NSString *cancelKeyRaw = yamlRead(yaml, @"hotkey.cancel_key");
+
+        NSString *triggerKey = normalizedHotkeyValue(triggerKeyRaw);
+        NSString *cancelKey = normalizedHotkeyValue(cancelKeyRaw);
+
+        // Reset cancel key to default if it's empty or matches trigger key
         if (cancelKey.length == 0 || [cancelKey isEqualToString:triggerKey]) {
             cancelKey = defaultCancelKeyForTrigger(triggerKey);
         }
+
         for (NSInteger i = 0; i < self.hotkeyPopup.numberOfItems; i++) {
             if ([[self.hotkeyPopup itemAtIndex:i].representedObject isEqualToString:triggerKey]) {
                 [self.hotkeyPopup selectItemAtIndex:i];
@@ -971,9 +1077,13 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     if (self.asrAppKeyField) {
         NSString *selectedProvider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
         yaml = yamlWrite(yaml, @"asr.provider", selectedProvider);
+        // Save Doubao fields
         yaml = yamlWrite(yaml, @"asr.doubao.app_key", self.asrAppKeyField.stringValue);
         NSString *accessKey = self.asrAccessKeyToggle.tag == 1 ? self.asrAccessKeyField.stringValue : self.asrAccessKeySecureField.stringValue;
         yaml = yamlWrite(yaml, @"asr.doubao.access_key", accessKey);
+        // Save Qwen fields
+        NSString *qwenApiKey = self.asrQwenApiKeyToggle.tag == 1 ? self.asrQwenApiKeyField.stringValue : self.asrQwenApiKeySecureField.stringValue;
+        yaml = yamlWrite(yaml, @"asr.qwen.api_key", qwenApiKey);
     }
 
     // Update LLM fields
@@ -1142,6 +1252,244 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         });
     }];
     [task resume];
+}
+
+// ─── ASR Test Connection ────────────────────────────────────────────
+
+- (void)testAsrConnection:(id)sender {
+    NSString *provider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
+    if ([provider isEqualToString:@"doubao"]) {
+        [self testDoubaoConnection];
+    } else if ([provider isEqualToString:@"qwen"]) {
+        [self testQwenConnection];
+    }
+}
+
+- (void)testDoubaoConnection {
+    // 获取当前的 key 值（考虑明文/密文切换状态）
+    NSString *appKey = self.asrAppKeyField.stringValue;
+    NSString *accessKey = self.asrAccessKeyToggle.tag == 1 ? self.asrAccessKeyField.stringValue : self.asrAccessKeySecureField.stringValue;
+
+    if (appKey.length == 0 || accessKey.length == 0) {
+        self.asrTestResultLabel.stringValue = @"请先填写 App Key 和 Access Key";
+        self.asrTestResultLabel.textColor = [NSColor systemOrangeColor];
+        return;
+    }
+
+    self.asrTestButton.enabled = NO;
+    self.asrTestResultLabel.stringValue = @"测试中...";
+    self.asrTestResultLabel.textColor = [NSColor secondaryLabelColor];
+
+    // 创建 WebSocket 连接测试
+    NSURL *url = [NSURL URLWithString:@"wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.timeoutInterval = 5;
+
+    // 设置豆包认证头
+    [request setValue:appKey forHTTPHeaderField:@"X-Api-App-Key"];
+    [request setValue:accessKey forHTTPHeaderField:@"X-Api-Access-Key"];
+    [request setValue:@"volc.seedasr.sauc.duration" forHTTPHeaderField:@"X-Api-Resource-Id"];
+    [request setValue:[[NSUUID UUID] UUIDString] forHTTPHeaderField:@"X-Api-Connect-Id"];
+
+    NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
+    config.timeoutIntervalForRequest = 5;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:config];
+    NSURLSessionWebSocketTask *wsTask = [session webSocketTaskWithRequest:request];
+
+    // 使用弱引用避免循环引用
+    __weak typeof(self) weakSelf = self;
+    __block BOOL hasCompleted = NO;
+
+    // 尝试接收消息（豆包可能不会立即发送消息）
+    [wsTask receiveMessageWithCompletionHandler:^(NSURLSessionWebSocketMessage * _Nullable message, NSError * _Nullable error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (hasCompleted) return;
+            hasCompleted = YES;
+
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+
+            [wsTask cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
+            strongSelf.asrTestButton.enabled = YES;
+
+            if (error) {
+                // 检查错误类型并提供友好的中文提示
+                NSString *errorMsg = error.localizedDescription;
+                NSString *errorCode = [NSString stringWithFormat:@"%ld", (long)error.code];
+
+                // 检查 userInfo 中是否有 HTTP 状态码
+                NSHTTPURLResponse *response = error.userInfo[@"NSURLSessionDownloadTaskResumeData"];
+                NSInteger statusCode = 0;
+                if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+                    statusCode = response.statusCode;
+                }
+
+                if ([errorMsg containsString:@"401"] || [errorMsg containsString:@"403"] ||
+                    [error.localizedFailureReason containsString:@"401"] || statusCode == 401) {
+                    strongSelf.asrTestResultLabel.stringValue = @"认证失败：请检查 App Key 和 Access Key 是否正确";
+                } else if ([errorMsg containsString:@"time"] || error.code == NSURLErrorTimedOut) {
+                    strongSelf.asrTestResultLabel.stringValue = @"连接超时：请检查网络连接";
+                } else if ([errorMsg containsString:@"bad response"] ||
+                           [errorMsg containsString:@"Bad response"] ||
+                           statusCode == 400 || statusCode == 403) {
+                    // WebSocket 握手阶段返回 HTTP 错误（如 400 Bad Request）
+                    strongSelf.asrTestResultLabel.stringValue = @"认证失败：请检查 App Key 和 Access Key 是否正确";
+                } else if ([errorMsg containsString:@"unable"] ||
+                           [errorMsg containsString:@"Unable"] ||
+                           [errorMsg containsString:@"Cannot connect"] ||
+                           [errorMsg containsString:@"Network"]) {
+                    strongSelf.asrTestResultLabel.stringValue = @"网络连接失败：请检查网络设置";
+                } else {
+                    // 其他错误，显示简化的中文提示
+                    strongSelf.asrTestResultLabel.stringValue = @"连接失败：请检查配置信息是否正确";
+                }
+                strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
+                return;
+            }
+
+            // 收到消息表示连接成功
+            strongSelf.asrTestResultLabel.stringValue = @"连接成功";
+            strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
+        });
+    }];
+
+    // 启动连接
+    [wsTask resume];
+
+    // 豆包不会立即发送消息，2秒后如果没收到错误也认为成功
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (hasCompleted) return;
+        hasCompleted = YES;
+
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        // 关闭 WebSocket 连接
+        [wsTask cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
+
+        // 检查是否还在等待中（如果连接失败，上面的回调会被调用）
+        if (!strongSelf.asrTestButton.enabled) {
+            strongSelf.asrTestButton.enabled = YES;
+            // 2秒内没有收到错误，认为连接成功
+            strongSelf.asrTestResultLabel.stringValue = @"连接成功";
+            strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
+        }
+    });
+
+    // 备用超时处理
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (hasCompleted) return;
+        hasCompleted = YES;
+
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        [wsTask cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
+        strongSelf.asrTestButton.enabled = YES;
+        strongSelf.asrTestResultLabel.stringValue = @"连接超时：请检查网络连接";
+        strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
+    });
+}
+
+- (void)testQwenConnection {
+    // 获取当前的 key 值（考虑明文/密文切换状态）
+    NSString *apiKey = self.asrQwenApiKeyToggle.tag == 1 ? self.asrQwenApiKeyField.stringValue : self.asrQwenApiKeySecureField.stringValue;
+
+    if (apiKey.length == 0) {
+        self.asrTestResultLabel.stringValue = @"请先填写 API Key";
+        self.asrTestResultLabel.textColor = [NSColor systemOrangeColor];
+        return;
+    }
+
+    self.asrTestButton.enabled = NO;
+    self.asrTestResultLabel.stringValue = @"测试中...";
+    self.asrTestResultLabel.textColor = [NSColor secondaryLabelColor];
+
+    // 创建 WebSocket 连接测试
+    NSURL *url = [NSURL URLWithString:@"wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3-asr-flash-realtime"];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.timeoutInterval = 10;
+
+    // 设置Qwen DashScope认证头
+    [request setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
+
+    NSURLSessionConfiguration *config2 = [NSURLSessionConfiguration defaultSessionConfiguration];
+    config2.timeoutIntervalForRequest = 10;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:config2];
+    NSURLSessionWebSocketTask *wsTask = [session webSocketTaskWithRequest:request];
+
+    // 使用弱引用避免循环引用
+    __weak typeof(self) weakSelf = self;
+    __weak NSURLSessionWebSocketTask *weakWsTask = wsTask;
+
+    // 设置消息处理 - Qwen DashScope会返回 session.created 消息
+    [wsTask receiveMessageWithCompletionHandler:^(NSURLSessionWebSocketMessage * _Nullable message, NSError * _Nullable error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+
+            // 关闭 WebSocket 连接
+            [weakWsTask cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
+
+            strongSelf.asrTestButton.enabled = YES;
+
+            if (error) {
+                // 检查错误类型并提供友好的中文提示
+                NSString *errorMsg = error.localizedDescription;
+                NSInteger statusCode = 0;
+
+                // 尝试从 error 中提取 HTTP 状态码
+                if (error.userInfo[@"_kCFStreamErrorDomainKey"]) {
+                    // 某些网络错误可能包含状态码
+                    NSNumber *code = error.userInfo[@"_kCFStreamErrorDomainKey"];
+                    if (code) statusCode = code.integerValue;
+                }
+
+                if ([errorMsg containsString:@"401"] || [errorMsg containsString:@"403"] ||
+                    statusCode == 401) {
+                    strongSelf.asrTestResultLabel.stringValue = @"认证失败：请检查 API Key 是否正确";
+                } else if ([errorMsg containsString:@"time"] || error.code == NSURLErrorTimedOut) {
+                    strongSelf.asrTestResultLabel.stringValue = @"连接超时：请检查网络连接";
+                } else if ([errorMsg containsString:@"bad response"] ||
+                           [errorMsg containsString:@"Bad response"]) {
+                    // WebSocket 握手阶段返回 HTTP 错误
+                    strongSelf.asrTestResultLabel.stringValue = @"认证失败：请检查 API Key 是否正确";
+                } else if ([errorMsg containsString:@"unable"] ||
+                           [errorMsg containsString:@"Unable"] ||
+                           [errorMsg containsString:@"Cannot connect"]) {
+                    strongSelf.asrTestResultLabel.stringValue = @"网络连接失败：请检查网络设置";
+                } else {
+                    // 其他错误，显示简化的中文提示
+                    strongSelf.asrTestResultLabel.stringValue = @"连接失败：请检查配置信息是否正确";
+                }
+                strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
+                return;
+            }
+
+            // 收到消息表示连接成功
+            if (message) {
+                strongSelf.asrTestResultLabel.stringValue = @"连接成功";
+                strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
+            } else {
+                strongSelf.asrTestResultLabel.stringValue = @"连接失败：未收到服务器响应";
+                strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
+            }
+        });
+    }];
+
+    // 启动连接
+    [wsTask resume];
+
+    // 设置超时处理
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || strongSelf.asrTestButton.enabled) return;
+
+        [wsTask cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
+        strongSelf.asrTestButton.enabled = YES;
+        strongSelf.asrTestResultLabel.stringValue = @"连接超时：请检查网络连接";
+        strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
+    });
 }
 
 - (void)showAlert:(NSString *)message info:(NSString *)info {

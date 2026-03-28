@@ -4,7 +4,7 @@ use crate::event::AsrEvent;
 
 /// Trait for streaming ASR providers.
 /// Each session creates a new provider instance.
-#[allow(async_fn_in_trait)]
+#[async_trait::async_trait]
 pub trait AsrProvider: Send {
     /// Connect to the ASR service and send the initial configuration.
     async fn connect(&mut self, config: &AsrConfig) -> Result<()>;

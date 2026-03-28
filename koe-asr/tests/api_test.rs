@@ -1,4 +1,4 @@
-use koe_asr::{AsrConfig, AsrEvent, AsrProvider, DoubaoWsProvider, TranscriptAggregator};
+use koe_asr::{AsrConfig, AsrEvent, AsrProvider, DoubaoWsProvider, QwenAsrProvider, TranscriptAggregator};
 
 #[test]
 fn test_default_config() {
@@ -116,4 +116,21 @@ async fn test_connect_fails_with_invalid_credentials() {
     let result = provider.connect(&config).await;
     // Should fail since credentials are invalid
     assert!(result.is_err());
+}
+
+// ─── Qwen Provider Tests ────────────────────────────────────────────
+
+#[test]
+fn test_qwen_provider_creation() {
+    let provider = QwenAsrProvider::new();
+    // Qwen provider should be created successfully
+    let _ = provider;
+}
+
+#[test]
+fn test_qwen_default_config() {
+    let config = AsrConfig::default();
+    // Qwen uses default language "zh"
+    assert_eq!(config.language, Some("zh".to_string()));
+    assert_eq!(config.sample_rate_hz, 16000);
 }
