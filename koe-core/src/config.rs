@@ -21,7 +21,7 @@ pub struct Config {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AsrSection {
-    /// Which ASR provider to use: "doubao" (default), "aliyun", future: "openai", etc.
+    /// Which ASR provider to use: "doubao" (default), "qwen", future: "openai", etc.
     #[serde(default = "default_asr_provider")]
     pub provider: String,
 
@@ -29,9 +29,21 @@ pub struct AsrSection {
     #[serde(default)]
     pub doubao: DoubaoAsrConfig,
 
-    /// Aliyun (阿里云) Qwen ASR configuration
+    /// Qwen ASR configuration
     #[serde(default)]
-    pub aliyun: AliyunAsrConfig,
+    pub qwen: QwenAsrConfig,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct QwenAsrConfig {
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_qwen_language")]
+    pub language: String,
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout_ms: u64,
+    #[serde(default = "default_final_wait_timeout")]
+    pub final_wait_timeout_ms: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -56,22 +68,6 @@ pub struct DoubaoAsrConfig {
     pub enable_punc: bool,
     #[serde(default = "default_true")]
     pub enable_nonstream: bool,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct AliyunAsrConfig {
-    /// DashScope API Key (sk-xxx format)
-    #[serde(default)]
-    pub api_key: String,
-    /// Language code: zh (default), en, ja, ko, etc.
-    #[serde(default = "default_aliyun_language")]
-    pub language: String,
-    /// Connection timeout in milliseconds
-    #[serde(default = "default_connect_timeout")]
-    pub connect_timeout_ms: u64,
-    /// Timeout waiting for final ASR result
-    #[serde(default = "default_final_wait_timeout")]
-    pub final_wait_timeout_ms: u64,
 }
 
 // ─── Other Sections (unchanged) ─────────────────────────────────────
@@ -193,16 +189,14 @@ impl HotkeySection {
 
     fn normalize_trigger_key_name(value: &str) -> String {
         match value {
-            "left_option" | "right_option" | "left_command" | "right_command" | "left_control"
-            | "right_control" | "fn" => value.into(),
+            "left_option" | "right_option" | "left_command" | "right_command" | "left_control" | "right_control" | "fn" => value.into(),
             _ => default_trigger_key(),
         }
     }
 
     fn normalize_cancel_key_name(value: &str) -> String {
         match value {
-            "left_option" | "right_option" | "left_command" | "right_command" | "left_control"
-            | "right_control" | "fn" => value.into(),
+            "left_option" | "right_option" | "left_command" | "right_command" | "left_control" | "right_control" | "fn" => value.into(),
             _ => default_cancel_key(),
         }
     }
@@ -210,40 +204,40 @@ impl HotkeySection {
     fn resolve_key(key: &str) -> HotkeyParams {
         match key {
             "left_option" => HotkeyParams {
-                key_code: 58, // kVK_Option
+                key_code: 58,       // kVK_Option
                 alt_key_code: 0,
-                modifier_flag: 0x00000020, // NX_DEVICELALTKEYMASK
+                modifier_flag: 0x00000020,  // NX_DEVICELALTKEYMASK
             },
             "right_option" => HotkeyParams {
-                key_code: 61, // kVK_RightOption
+                key_code: 61,       // kVK_RightOption
                 alt_key_code: 0,
-                modifier_flag: 0x00000040, // NX_DEVICERALTKEYMASK
+                modifier_flag: 0x00000040,  // NX_DEVICERALTKEYMASK
             },
             "left_command" => HotkeyParams {
-                key_code: 55, // kVK_Command
+                key_code: 55,       // kVK_Command
                 alt_key_code: 0,
-                modifier_flag: 0x00000008, // NX_DEVICELCMDKEYMASK
+                modifier_flag: 0x00000008,  // NX_DEVICELCMDKEYMASK
             },
             "right_command" => HotkeyParams {
-                key_code: 54, // kVK_RightCommand
+                key_code: 54,       // kVK_RightCommand
                 alt_key_code: 0,
-                modifier_flag: 0x00000010, // NX_DEVICERCMDKEYMASK
+                modifier_flag: 0x00000010,  // NX_DEVICERCMDKEYMASK
             },
             "left_control" => HotkeyParams {
-                key_code: 59, // kVK_Control
+                key_code: 59,       // kVK_Control
                 alt_key_code: 0,
-                modifier_flag: 0x00000001, // NX_DEVICELCTLKEYMASK
+                modifier_flag: 0x00000001,  // NX_DEVICELCTLKEYMASK
             },
             "right_control" => HotkeyParams {
-                key_code: 62, // kVK_RightControl
+                key_code: 62,       // kVK_RightControl
                 alt_key_code: 0,
-                modifier_flag: 0x00002000, // NX_DEVICERCTLKEYMASK
+                modifier_flag: 0x00002000,  // NX_DEVICERCTLKEYMASK
             },
             // "fn" or anything else defaults to Fn/Globe
             _ => HotkeyParams {
-                key_code: 63,              // kVK_Function (Fn)
-                alt_key_code: 179,         // Globe key on newer keyboards
-                modifier_flag: 0x00800000, // NSEventModifierFlagFunction
+                key_code: 63,       // kVK_Function (Fn)
+                alt_key_code: 179,  // Globe key on newer keyboards
+                modifier_flag: 0x00800000,  // NSEventModifierFlagFunction
             },
         }
     }
@@ -254,7 +248,7 @@ impl HotkeySection {
 fn default_asr_provider() -> String {
     "doubao".into()
 }
-fn default_aliyun_language() -> String {
+fn default_qwen_language() -> String {
     "zh".into()
 }
 fn default_asr_url() -> String {
@@ -328,11 +322,6 @@ impl Default for AsrSection {
     }
 }
 impl Default for DoubaoAsrConfig {
-    fn default() -> Self {
-        serde_yaml::from_str("{}").unwrap()
-    }
-}
-impl Default for AliyunAsrConfig {
     fn default() -> Self {
         serde_yaml::from_str("{}").unwrap()
     }
@@ -422,16 +411,9 @@ fn substitute_env_vars(input: &str) -> String {
 
 /// V1 ASR fields that indicate the old flat format.
 const V1_ASR_KEYS: &[&str] = &[
-    "app_key",
-    "access_key",
-    "url",
-    "resource_id",
-    "connect_timeout_ms",
-    "final_wait_timeout_ms",
-    "enable_ddc",
-    "enable_itn",
-    "enable_punc",
-    "enable_nonstream",
+    "app_key", "access_key", "url", "resource_id",
+    "connect_timeout_ms", "final_wait_timeout_ms",
+    "enable_ddc", "enable_itn", "enable_punc", "enable_nonstream",
 ];
 
 /// Check if the config file uses V1 ASR format (flat fields under `asr:`)
@@ -464,9 +446,9 @@ fn migrate_config_v1_to_v2(path: &Path) -> Result<bool> {
     }
 
     // Check if any V1-specific key exists
-    let has_v1_keys = V1_ASR_KEYS
-        .iter()
-        .any(|k| asr_map.contains_key(&serde_yaml::Value::String((*k).into())));
+    let has_v1_keys = V1_ASR_KEYS.iter().any(|k| {
+        asr_map.contains_key(&serde_yaml::Value::String((*k).into()))
+    });
 
     if !has_v1_keys {
         return Ok(false);
@@ -544,9 +526,9 @@ fn normalize_hotkey_config(path: &Path, config: &Config) -> Result<bool> {
     let (normalized_trigger, normalized_cancel) = config.hotkey.normalized_keys();
     let hotkey_key = serde_yaml::Value::String("hotkey".into());
 
-    let hotkey_value = doc_map
-        .entry(hotkey_key)
-        .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+    let hotkey_value = doc_map.entry(hotkey_key).or_insert_with(|| {
+        serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+    });
 
     let hotkey_map = match hotkey_value.as_mapping_mut() {
         Some(map) => map,
@@ -577,9 +559,8 @@ fn normalize_hotkey_config(path: &Path, config: &Config) -> Result<bool> {
          {yaml_str}"
     );
 
-    std::fs::write(path, &output).map_err(|e| {
-        KoeError::Config(format!("write normalized config {}: {e}", path.display()))
-    })?;
+    std::fs::write(path, &output)
+        .map_err(|e| KoeError::Config(format!("write normalized config {}: {e}", path.display())))?;
 
     log::info!("normalized hotkey config on disk");
     Ok(true)
@@ -664,7 +645,7 @@ const DEFAULT_CONFIG_YAML: &str = r#"# Koe - Voice Input Tool Configuration
 # ~/.koe/config.yaml
 
 asr:
-  # ASR provider: "doubao" (default) or "aliyun"
+  # ASR provider: "doubao" (default)
   provider: "doubao"
 
   # Doubao (豆包) Streaming ASR 2.0 (优化版双向流式)
@@ -679,14 +660,6 @@ asr:
     enable_itn: true     # 文本规范化 (数字、日期等)
     enable_punc: true    # 自动标点
     enable_nonstream: true  # 二遍识别 (流式+非流式, 提升准确率)
-
-  # Aliyun (阿里云) Qwen3-ASR-Realtime
-  # 模型: qwen3-asr-flash-realtime (低延迟, 平均 187ms)
-  aliyun:
-    api_key: ""          # DashScope API Key (sk-xxx)
-    language: "zh"       # 语言: zh, en, ja, ko 等 (支持 27 种语言)
-    connect_timeout_ms: 3000
-    final_wait_timeout_ms: 5000
 
 llm:
   enabled: true        # set to false to skip LLM correction entirely
@@ -745,7 +718,11 @@ mod tests {
     #[test]
     fn normalize_hotkey_config_backfills_missing_cancel_key() {
         let path = temp_config_path("hotkey-config");
-        fs::write(&path, "hotkey:\n  trigger_key: left_option\n").unwrap();
+        fs::write(
+            &path,
+            "hotkey:\n  trigger_key: left_option\n",
+        )
+        .unwrap();
 
         let config = Config {
             hotkey: HotkeySection {
@@ -768,26 +745,11 @@ mod tests {
     #[test]
     fn default_cancel_key_cycles_through_all_keys() {
         assert_eq!(default_cancel_key_for_trigger("fn"), "left_option");
-        assert_eq!(
-            default_cancel_key_for_trigger("left_option"),
-            "right_option"
-        );
-        assert_eq!(
-            default_cancel_key_for_trigger("right_option"),
-            "left_command"
-        );
-        assert_eq!(
-            default_cancel_key_for_trigger("left_command"),
-            "right_command"
-        );
-        assert_eq!(
-            default_cancel_key_for_trigger("right_command"),
-            "left_control"
-        );
-        assert_eq!(
-            default_cancel_key_for_trigger("left_control"),
-            "right_control"
-        );
+        assert_eq!(default_cancel_key_for_trigger("left_option"), "right_option");
+        assert_eq!(default_cancel_key_for_trigger("right_option"), "left_command");
+        assert_eq!(default_cancel_key_for_trigger("left_command"), "right_command");
+        assert_eq!(default_cancel_key_for_trigger("right_command"), "left_control");
+        assert_eq!(default_cancel_key_for_trigger("left_control"), "right_control");
         assert_eq!(default_cancel_key_for_trigger("right_control"), "fn");
     }
 

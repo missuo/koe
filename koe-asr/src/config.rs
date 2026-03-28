@@ -5,7 +5,7 @@ pub struct AsrConfig {
     pub url: String,
     /// X-Api-App-Key (App ID from Volcengine console)
     pub app_key: String,
-    /// X-Api-Access-Key (Access Token from Volcengine console) or API Key for Aliyun
+    /// X-Api-Access-Key (Access Token from Volcengine console) or API Key for Qwen
     pub access_key: String,
     /// X-Api-Resource-Id (e.g. "volc.bigasr.sauc.duration")
     pub resource_id: String,
@@ -25,7 +25,7 @@ pub struct AsrConfig {
     pub enable_nonstream: bool,
     /// Hotwords for improved recognition accuracy
     pub hotwords: Vec<String>,
-    /// Language code for ASR (e.g. "zh", "en") - used by Aliyun Qwen ASR
+    /// Language code for ASR (e.g. "zh", "en") - used by Qwen ASR
     pub language: Option<String>,
 }
 

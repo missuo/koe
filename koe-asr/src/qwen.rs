@@ -25,20 +25,20 @@ const VAD_SILENCE_DURATION_MS: u32 = 400;
 // prefix_padding_ms: 语音开始前保留的音频时长，用于捕捉语音起始部分
 const VAD_PREFIX_PADDING_MS: u32 = 100;
 
-/// 阿里云 DashScope 实时语音识别 Provider (Qwen-ASR-Realtime)
+/// Qwen DashScope 实时语音识别 Provider (Qwen-ASR-Realtime)
 ///
-/// 协议参考阿里云官方 WebSocket Realtime API：
+/// 协议参考Qwen官方 WebSocket Realtime API：
 /// 1. 连接建立后等待 `session.created`
 /// 2. 发送 `session.update`
 /// 3. 使用 `input_audio_buffer.append` 追加 Base64 音频
 /// 4. 音频结束后发送 `session.finish`
-pub struct AliyunAsrProvider {
+pub struct QwenAsrProvider {
     ws: Option<WsStream>,
     input_finished: bool,
     pending_events: VecDeque<AsrEvent>,
 }
 
-impl AliyunAsrProvider {
+impl QwenAsrProvider {
     pub fn new() -> Self {
         Self {
             ws: None,
@@ -90,7 +90,7 @@ impl AliyunAsrProvider {
     }
 
     fn parse_server_event(&mut self, text: &str) -> Result<Vec<AsrEvent>> {
-        log::debug!("[Aliyun ASR] Received: {}", text);
+        log::debug!("[Qwen ASR] Received: {}", text);
 
         let raw_json: serde_json::Value = serde_json::from_str(text)
             .map_err(|e| AsrError::Protocol(format!("parse server event: {e}")))?;
@@ -104,23 +104,23 @@ impl AliyunAsrProvider {
 
         match event_type {
             "session.created" => {
-                log::info!("[Aliyun ASR] Session created");
+                log::info!("[Qwen ASR] Session created");
             }
             "session.updated" => {
-                log::info!("[Aliyun ASR] Session updated");
+                log::info!("[Qwen ASR] Session updated");
                 events.push(AsrEvent::Connected);
             }
             "input_audio_buffer.speech_started" => {
-                log::debug!("[Aliyun ASR] Speech started");
+                log::debug!("[Qwen ASR] Speech started");
             }
             "input_audio_buffer.speech_stopped" => {
-                log::debug!("[Aliyun ASR] Speech stopped");
+                log::debug!("[Qwen ASR] Speech stopped");
             }
             "input_audio_buffer.committed" => {
-                log::debug!("[Aliyun ASR] Audio buffer committed");
+                log::debug!("[Qwen ASR] Audio buffer committed");
             }
             "conversation.item.created" => {
-                log::debug!("[Aliyun ASR] Conversation item created");
+                log::debug!("[Qwen ASR] Conversation item created");
             }
             "conversation.item.input_audio_transcription.text" => {
                 let text = raw_json.get("text").and_then(|v| v.as_str()).unwrap_or("");
@@ -146,13 +146,13 @@ impl AliyunAsrProvider {
                     .unwrap_or("");
 
                 if !transcript.is_empty() {
-                    log::info!("[Aliyun ASR] Final: {}", transcript);
+                    log::info!("[Qwen ASR] Final: {}", transcript);
                     events.push(AsrEvent::Definite(transcript.to_string()));
                     events.push(AsrEvent::Final(transcript.to_string()));
                 }
             }
             "session.finished" => {
-                log::info!("[Aliyun ASR] Session finished");
+                log::info!("[Qwen ASR] Session finished");
                 events.push(AsrEvent::Closed);
             }
             "error" => {
@@ -161,11 +161,11 @@ impl AliyunAsrProvider {
                     .and_then(|e| e.get("message"))
                     .and_then(|m| m.as_str())
                     .unwrap_or("Unknown error");
-                log::error!("[Aliyun ASR] Error: {}", error_msg);
+                log::error!("[Qwen ASR] Error: {}", error_msg);
                 events.push(AsrEvent::Error(error_msg.to_string()));
             }
             other => {
-                log::debug!("[Aliyun ASR] Ignoring event type: {}", other);
+                log::debug!("[Qwen ASR] Ignoring event type: {}", other);
             }
         }
 
@@ -205,21 +205,21 @@ impl AliyunAsrProvider {
     }
 }
 
-impl Default for AliyunAsrProvider {
+impl Default for QwenAsrProvider {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait::async_trait]
-impl AsrProvider for AliyunAsrProvider {
+impl AsrProvider for QwenAsrProvider {
     async fn connect(&mut self, config: &AsrConfig) -> Result<()> {
         let api_key = config.access_key.clone();
         if api_key.is_empty() {
             return Err(AsrError::Connection("api_key is required".into()));
         }
 
-        log::info!("Connecting to Aliyun ASR: {}", DASHSCOPE_WS_URL);
+        log::info!("Connecting to Qwen ASR: {}", DASHSCOPE_WS_URL);
 
         let mut request = DASHSCOPE_WS_URL
             .into_client_request()
@@ -241,7 +241,7 @@ impl AsrProvider for AliyunAsrProvider {
             .await
             .map_err(|_| AsrError::Connection("connection timed out".into()))??;
 
-        log::info!("[Aliyun ASR] WebSocket connected: {}", response.status());
+        log::info!("[Qwen ASR] WebSocket connected: {}", response.status());
         self.ws = Some(ws_stream);
 
         if let Some(ref mut ws) = self.ws {
@@ -277,12 +277,12 @@ impl AsrProvider for AliyunAsrProvider {
                     ))
                 }
                 AsrEvent::Interim(_) | AsrEvent::Definite(_) | AsrEvent::Final(_) => {
-                    log::debug!("[Aliyun ASR] Received transcript before session.updated");
+                    log::debug!("[Qwen ASR] Received transcript before session.updated");
                 }
             }
         }
 
-        log::info!("Aliyun ASR connected and configured");
+        log::info!("Qwen ASR connected and configured");
         Ok(())
     }
 
@@ -322,7 +322,7 @@ impl AsrProvider for AliyunAsrProvider {
                 Some(Ok(Message::Close(_))) => Ok(AsrEvent::Closed),
                 Some(Ok(Message::Binary(data))) => {
                     log::debug!(
-                        "[Aliyun ASR] Ignoring binary message ({} bytes)",
+                        "[Qwen ASR] Ignoring binary message ({} bytes)",
                         data.len()
                     );
                     Ok(AsrEvent::Interim(String::new()))
@@ -396,12 +396,12 @@ mod base64 {
 
 #[cfg(test)]
 mod tests {
-    use super::AliyunAsrProvider;
+    use super::QwenAsrProvider;
     use crate::event::AsrEvent;
 
     #[test]
     fn parses_interim_preview_from_text_and_stash() {
-        let mut provider = AliyunAsrProvider::new();
+        let mut provider = QwenAsrProvider::new();
         let events = provider
             .parse_server_event(
                 r#"{
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn parses_final_transcript() {
-        let mut provider = AliyunAsrProvider::new();
+        let mut provider = QwenAsrProvider::new();
         let events = provider
             .parse_server_event(
                 r#"{

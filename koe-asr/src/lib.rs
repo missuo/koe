@@ -1,6 +1,6 @@
 //! # koe-asr
 //!
-//! Streaming ASR (Automatic Speech Recognition) client for Volcengine/Doubao and Aliyun.
+//! Streaming ASR (Automatic Speech Recognition) client for Volcengine/Doubao and Qwen.
 //!
 //! ## Quick Start (Doubao)
 //!
@@ -38,15 +38,15 @@
 //! # }
 //! ```
 
-pub mod aliyun;
 pub mod config;
 pub mod doubao;
 pub mod error;
 pub mod event;
 pub mod provider;
+pub mod qwen;
 pub mod transcript;
 
-pub use aliyun::AliyunAsrProvider;
+pub use qwen::QwenAsrProvider;
 pub use config::AsrConfig;
 pub use doubao::DoubaoWsProvider;
 pub use error::AsrError;
