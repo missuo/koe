@@ -826,7 +826,7 @@ pub extern "C" fn sp_core_supported_local_providers() -> *mut c_char {
 /// Caller must free the returned string with sp_core_free_string().
 #[no_mangle]
 pub extern "C" fn sp_core_scan_models_json() -> *mut c_char {
-    let models = model_manager::scan_models();
+    let models = model_manager::scan_supported_models();
     let json: Vec<serde_json::Value> = models
         .iter()
         .map(|m| {

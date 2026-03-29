@@ -71,16 +71,21 @@ pub fn supported_providers() -> &'static [&'static str] {
 }
 
 /// Scan ~/.koe/models/**/.koe-manifest.json and return all discovered models.
-/// Only returns models whose provider is supported by this build.
 pub fn scan_models() -> Vec<DiscoveredModel> {
     let dir = models_dir();
     if !dir.exists() {
         return Vec::new();
     }
 
-    let supported = supported_providers();
     let mut models = Vec::new();
     scan_dir_recursive(&dir, &mut models);
+    models
+}
+
+/// Scan models filtered to providers supported by this build.
+pub fn scan_supported_models() -> Vec<DiscoveredModel> {
+    let supported = supported_providers();
+    let mut models = scan_models();
     models.retain(|m| supported.contains(&m.manifest.provider.as_str()));
     models
 }
