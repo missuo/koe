@@ -18,21 +18,32 @@ typealias MLXEventCallback = @convention(c) (
 /// Manages Qwen3-ASR model loading and streaming inference via MLX.
 class MLXAsrManager {
     private var model: Qwen3ASRModel?
+    private var loadedModelPath: String?
     private var session: StreamingInferenceSession?
     private var eventTask: Task<Void, Never>?
     private var callback: MLXEventCallback?
     private var callbackCtx: UnsafeMutableRawPointer?
+    private let callbackLock = NSLock()
 
     /// Load a Qwen3-ASR model from a local directory (blocking).
+    /// Skips loading if the same path is already loaded.
     func loadModel(path: String) -> Bool {
+        if model != nil && loadedModelPath == path {
+            NSLog("KoeMLX: model already loaded from %@, reusing", path)
+            return true
+        }
+
         let semaphore = DispatchSemaphore(value: 0)
         var success = false
         Task {
             do {
-                model = try await Self.loadModelFromLocal(path: path)
+                self.model = try await Self.loadModelFromLocal(path: path)
+                self.loadedModelPath = path
                 success = true
             } catch {
                 NSLog("KoeMLX: failed to load model at %@: %@", path, error.localizedDescription)
+                self.model = nil
+                self.loadedModelPath = nil
             }
             semaphore.signal()
         }
@@ -111,6 +122,14 @@ class MLXAsrManager {
 
     /// Cancel the session immediately.
     func cancel() {
+        // Clear callback context under lock FIRST so any in-flight or
+        // subsequent invokeCallback sees nil and never touches the pointer.
+        // Rust's close() reclaims the pointer only after this returns.
+        callbackLock.lock()
+        callback = nil
+        callbackCtx = nil
+        callbackLock.unlock()
+
         session?.cancel()
         eventTask?.cancel()
         eventTask = nil
@@ -121,11 +140,14 @@ class MLXAsrManager {
     func unloadModel() {
         cancel()
         model = nil
+        loadedModelPath = nil
     }
 
     // MARK: - Private
 
     private func invokeCallback(eventType: Int32, text: String) {
+        callbackLock.lock()
+        defer { callbackLock.unlock() }
         guard let cb = callback, let ctx = callbackCtx else { return }
         text.withCString { cstr in
             cb(ctx, eventType, cstr)

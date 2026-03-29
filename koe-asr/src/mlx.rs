@@ -175,6 +175,9 @@ impl crate::provider::AsrProvider for MlxProvider {
     }
 
     async fn close(&mut self) -> Result<()> {
+        // SAFETY: koe_mlx_cancel() synchronously clears the callback context on
+        // the Swift side (under a lock), ensuring no further calls through the
+        // callback pointer after this returns.  Safe to reclaim the sender afterward.
         unsafe {
             koe_mlx_cancel();
         }

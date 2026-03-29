@@ -260,16 +260,24 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
     // Create session
     let session = Session::new(context.mode, bundle_id, context.frontmost_pid);
     let session_id = session.id.clone();
+    let session_token = context.session_token;
     let mode = context.mode;
 
-    // Audio channel
+    // Abort any still-running old session: signal its cancelled flag and close
+    // its audio channel.  The old task holds its own Arc clones and will see the
+    // cancellation; its cleanup_session writes to the OLD Arc, not the new one.
+    core.cancelled.store(true, Ordering::SeqCst);
+    core.audio_tx = None;
+
+    // Create fresh per-session Arcs so old and new tasks are fully isolated
+    core.cancelled = Arc::new(AtomicBool::new(false));
+    core.session = Arc::new(Mutex::new(None));
+
+    // Audio channel for new session
     let (audio_tx, audio_rx) = mpsc::channel::<Vec<u8>>(1024);
     core.audio_tx = Some(audio_tx);
 
-    // Reset cancelled flag for new session
-    core.cancelled.store(false, Ordering::SeqCst);
     let cancelled = core.cancelled.clone();
-
     let session_arc = core.session.clone();
     {
         let mut s = session_arc.lock().unwrap();
@@ -408,6 +416,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
         run_session(
             session_arc,
             session_id,
+            session_token,
             mode,
             audio_rx,
             asr_config,
@@ -527,6 +536,7 @@ pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
 async fn run_session(
     session_arc: Arc<Mutex<Option<Session>>>,
     session_id: String,
+    session_token: u64,
     mode: SPSessionMode,
     mut audio_rx: mpsc::Receiver<Vec<u8>>,
     asr_config: AsrConfig,
@@ -556,15 +566,15 @@ async fn run_session(
             let _ = session.transition(recording_state);
         }
     }
-    invoke_state_changed(&recording_state.to_string());
-    invoke_session_ready();
+    invoke_state_changed(session_token,&recording_state.to_string());
+    invoke_session_ready(session_token);
 
     // --- Connect ASR ---
     log::info!("[{session_id}] Using ASR provider: {asr_provider}");
     if let Err(e) = asr.connect(&asr_config).await {
         log::error!("[{session_id}] ASR connection failed: {e}");
-        invoke_session_error(&e.to_string());
-        invoke_state_changed("failed");
+        invoke_session_error(session_token,&e.to_string());
+        invoke_state_changed(session_token,"failed");
         cleanup_session(&session_arc);
         return;
     }
@@ -599,16 +609,16 @@ async fn run_session(
                     Ok(AsrEvent::Interim(text)) => {
                         if !text.is_empty() {
                             aggregator.update_interim(&text);
-                            invoke_interim_text(&text);
+                            invoke_interim_text(session_token,&text);
                         }
                     }
                     Ok(AsrEvent::Definite(text)) => {
                         aggregator.update_definite(&text);
-                        invoke_interim_text(&aggregator.best_text());
+                        invoke_interim_text(session_token,&aggregator.best_text());
                     }
                     Ok(AsrEvent::Final(text)) => {
                         aggregator.update_final(&text);
-                        invoke_interim_text(&text);
+                        invoke_interim_text(session_token,&text);
                     }
                     Ok(AsrEvent::Closed) => {
                         asr_done = true;
@@ -634,9 +644,9 @@ async fn run_session(
     if cancelled.load(Ordering::SeqCst) {
         log::info!("[{session_id}] session cancelled by user");
         let _ = asr.close().await;
-        invoke_state_changed("cancelled");
+        invoke_state_changed(session_token,"cancelled");
         cleanup_session(&session_arc);
-        invoke_state_changed("idle");
+        invoke_state_changed(session_token,"idle");
         return;
     }
 
@@ -647,13 +657,13 @@ async fn run_session(
             let _ = session.transition(SessionState::FinalizingAsr);
         }
     }
-    invoke_state_changed("finalizing_asr");
+    invoke_state_changed(session_token,"finalizing_asr");
 
     // Wait for final result if we haven't received one yet
     if !aggregator.has_final_result() && !asr_done {
         let wait_result = timeout(
             Duration::from_millis(final_wait_timeout_ms),
-            wait_for_final(asr.as_mut(), &mut aggregator),
+            wait_for_final(session_token, asr.as_mut(), &mut aggregator),
         )
         .await;
 
@@ -668,8 +678,8 @@ async fn run_session(
     if asr_text.is_empty() {
         let error_msg = asr_error.unwrap_or_else(|| "no speech recognized".to_string());
         log::warn!("[{session_id}] no ASR text available: {error_msg}");
-        invoke_session_error(&error_msg);
-        invoke_state_changed("failed");
+        invoke_session_error(session_token, &error_msg);
+        invoke_state_changed(session_token, "failed");
         cleanup_session(&session_arc);
         return;
     }
@@ -690,6 +700,16 @@ async fn run_session(
     }
 
     // --- LLM Correction ---
+    // Check cancellation before the (potentially slow) LLM call so that an
+    // aborted old session exits quickly when a new session has started.
+    if cancelled.load(Ordering::SeqCst) {
+        log::info!("[{session_id}] session cancelled before LLM correction");
+        invoke_state_changed(session_token,"cancelled");
+        cleanup_session(&session_arc);
+        invoke_state_changed(session_token,"idle");
+        return;
+    }
+
     let llm_enabled = llm_is_ready(&llm_config);
 
     let final_text = if llm_enabled {
@@ -699,7 +719,7 @@ async fn run_session(
                 let _ = session.transition(SessionState::Correcting);
             }
         }
-        invoke_state_changed("correcting");
+        invoke_state_changed(session_token,"correcting");
 
         let llm = OpenAiCompatibleProvider::new(
             llm_http_client,
@@ -746,7 +766,7 @@ async fn run_session(
             }
             Err(e) => {
                 log::warn!("[{session_id}] LLM failed, falling back to ASR text: {e}");
-                invoke_session_warning(&format!("LLM correction failed: {e}"));
+                invoke_session_warning(session_token,&format!("LLM correction failed: {e}"));
                 asr_text
             }
         }
@@ -759,6 +779,16 @@ async fn run_session(
         asr_text
     };
 
+    // Check cancellation after LLM (which may have taken seconds) to avoid
+    // pasting stale text from an aborted session into the new session's window.
+    if cancelled.load(Ordering::SeqCst) {
+        log::info!("[{session_id}] session cancelled after LLM correction");
+        invoke_state_changed(session_token,"cancelled");
+        cleanup_session(&session_arc);
+        invoke_state_changed(session_token,"idle");
+        return;
+    }
+
     // Store corrected text
     {
         let mut s = session_arc.lock().unwrap();
@@ -767,10 +797,10 @@ async fn run_session(
             let _ = session.transition(SessionState::PreparingPaste);
         }
     }
-    invoke_state_changed("preparing_paste");
+    invoke_state_changed(session_token,"preparing_paste");
 
     // --- Deliver result to Obj-C ---
-    invoke_final_text_ready(&final_text);
+    invoke_final_text_ready(session_token,&final_text);
 
     // Session complete
     {
@@ -782,30 +812,34 @@ async fn run_session(
             let _ = session.transition(SessionState::Completed);
         }
     }
-    invoke_state_changed("completed");
+    invoke_state_changed(session_token,"completed");
 
     log::info!("[{session_id}] session completed");
     cleanup_session(&session_arc);
-    invoke_state_changed("idle");
+    invoke_state_changed(session_token,"idle");
 }
 
-async fn wait_for_final(asr: &mut dyn AsrProvider, aggregator: &mut TranscriptAggregator) {
+async fn wait_for_final(
+    session_token: u64,
+    asr: &mut dyn AsrProvider,
+    aggregator: &mut TranscriptAggregator,
+) {
     loop {
         match asr.next_event().await {
             Ok(AsrEvent::Final(text)) => {
                 aggregator.update_final(&text);
-                invoke_interim_text(&text);
+                invoke_interim_text(session_token,&text);
                 return;
             }
             Ok(AsrEvent::Interim(text)) => {
                 if !text.is_empty() {
                     aggregator.update_interim(&text);
-                    invoke_interim_text(&text);
+                    invoke_interim_text(session_token,&text);
                 }
             }
             Ok(AsrEvent::Definite(text)) => {
                 aggregator.update_definite(&text);
-                invoke_interim_text(&aggregator.best_text());
+                invoke_interim_text(session_token,&aggregator.best_text());
             }
             Ok(AsrEvent::Closed) => return,
             Ok(_) => {}

@@ -17,6 +17,10 @@ typedef NS_ENUM(NSInteger, SPSessionModeObjC) {
 
 @interface SPRustBridge : NSObject
 
+/// Monotonic token identifying the current session.
+/// Use this to guard delayed blocks against stale execution.
+@property (nonatomic, readonly) uint64_t currentSessionToken;
+
 - (instancetype)initWithDelegate:(id<SPRustBridgeDelegate>)delegate;
 
 /// Initialize the Rust core library.

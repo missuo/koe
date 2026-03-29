@@ -6,40 +6,48 @@
 
 static __weak id<SPRustBridgeDelegate> _bridgeDelegate = nil;
 
-static void bridge_on_session_ready(void) {
+/// Monotonic token that tracks the current session.
+/// Callbacks carrying a stale token are discarded on the main thread.
+static uint64_t _currentSessionToken = 0;
+
+static void bridge_on_session_ready(uint64_t token) {
     id<SPRustBridgeDelegate> delegate = _bridgeDelegate;
     if (delegate) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (token != _currentSessionToken) return;
             [delegate rustBridgeDidBecomeReady];
         });
     }
 }
 
-static void bridge_on_session_error(const char *message) {
+static void bridge_on_session_error(uint64_t token, const char *message) {
     NSString *msg = message ? [NSString stringWithUTF8String:message] : @"unknown error";
     id<SPRustBridgeDelegate> delegate = _bridgeDelegate;
     if (delegate) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (token != _currentSessionToken) return;
             [delegate rustBridgeDidEncounterError:msg];
         });
     }
 }
 
-static void bridge_on_session_warning(const char *message) {
+static void bridge_on_session_warning(uint64_t token, const char *message) {
     NSString *msg = message ? [NSString stringWithUTF8String:message] : @"unknown warning";
     id<SPRustBridgeDelegate> delegate = _bridgeDelegate;
     if (delegate) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (token != _currentSessionToken) return;
             [delegate rustBridgeDidReceiveWarning:msg];
         });
     }
 }
 
-static void bridge_on_final_text_ready(const char *text) {
+static void bridge_on_final_text_ready(uint64_t token, const char *text) {
     NSString *txt = text ? [NSString stringWithUTF8String:text] : @"";
     id<SPRustBridgeDelegate> delegate = _bridgeDelegate;
     if (delegate) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (token != _currentSessionToken) return;
             [delegate rustBridgeDidReceiveFinalText:txt];
         });
     }
@@ -57,21 +65,23 @@ static void bridge_on_log_event(int level, const char *message) {
     NSLog(@"[Koe/Rust][%@] %@", levelStr, msg);
 }
 
-static void bridge_on_state_changed(const char *state) {
+static void bridge_on_state_changed(uint64_t token, const char *state) {
     NSString *stateStr = state ? [NSString stringWithUTF8String:state] : @"unknown";
     id<SPRustBridgeDelegate> delegate = _bridgeDelegate;
     if (delegate) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (token != _currentSessionToken) return;
             [delegate rustBridgeDidChangeState:stateStr];
         });
     }
 }
 
-static void bridge_on_interim_text(const char *text) {
+static void bridge_on_interim_text(uint64_t token, const char *text) {
     NSString *txt = text ? [NSString stringWithUTF8String:text] : @"";
     id<SPRustBridgeDelegate> delegate = _bridgeDelegate;
     if (delegate) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (token != _currentSessionToken) return;
             [delegate rustBridgeDidReceiveInterimText:txt];
         });
     }
@@ -93,6 +103,10 @@ static void bridge_on_interim_text(const char *text) {
 @end
 
 @implementation SPRustBridge
+
+- (uint64_t)currentSessionToken {
+    return _currentSessionToken;
+}
 
 - (instancetype)initWithDelegate:(id<SPRustBridgeDelegate>)delegate {
     self = [super init];
@@ -132,10 +146,13 @@ static void bridge_on_interim_text(const char *text) {
     const char *bundleId = frontApp.bundleIdentifier.UTF8String;
     pid_t pid = frontApp.processIdentifier;
 
+    _currentSessionToken++;
+
     struct SPSessionContext context = {
         .mode = (enum SPSessionMode)mode,
         .frontmost_bundle_id = bundleId,
         .frontmost_pid = (int)pid,
+        .session_token = _currentSessionToken,
     };
 
     int32_t result = sp_core_session_begin(context);
