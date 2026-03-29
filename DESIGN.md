@@ -1643,6 +1643,56 @@ The final recommended implementation approach is as follows:
 - Permissions: Microphone + Input Monitoring + Accessibility
 - Distribution: standard app bundle, signed, notarized, no visible GUI
 
-## 30. One-Sentence Summary
+## 30. Local ASR Support
 
-This project is an Objective-C background macOS Agent App + Rust core library + YAML configuration + TXT dictionary + SQLite usage statistics + a voice input pipeline with configurable trigger/cancel hotkeys, a provider-based ASR config, and Doubao two-pass recognition feeding an OpenAI-compatible LLM for correction.
+### 30.1 Provider Architecture
+
+The `AsrProvider` trait defines a uniform interface for all ASR backends:
+
+- **Cloud providers**: Doubao (WebSocket binary protocol), Qwen (WebSocket JSON protocol)
+- **Local providers**: MLX (Swift FFI to KoeMLX package, Apple Silicon), sherpa-onnx (dedicated worker thread, CPU)
+
+All providers emit the same event types (`Connected`, `Interim`, `Definite`, `Final`, `Closed`, `Error`), making them interchangeable via `config.yaml`.
+
+Local providers receive configuration through their constructor (`new(config)`), not through the shared `AsrConfig` parameter in `connect()`. This avoids polluting the cloud-oriented `AsrConfig` with local-specific fields.
+
+### 30.2 Model Management
+
+Models are stored under `~/.koe/models/` and discovered via `.koe-manifest.json` files:
+
+```
+~/.koe/models/<any-path>/.koe-manifest.json
+```
+
+Each manifest describes the provider, model files, sizes, sha256 checksums, and download URLs. The model directory path serves as the unique identifier — no separate id field is needed.
+
+Default manifests are embedded in the binary and installed on first launch via `ensure_defaults()`. The `koe` CLI provides `model list`, `model pull`, `model status`, and `manifest generate` commands for model management.
+
+### 30.3 Setup Wizard Integration
+
+The Setup Wizard's ASR pane includes local provider support. When the user selects MLX or Sherpa-ONNX as the provider:
+
+- Cloud credential fields (App Key, Access Key, API Key) are hidden
+- A **Model dropdown** appears, populated by scanning `~/.koe/models/` for manifests matching the selected provider
+- A **status label** shows the installation state of the selected model (Installed / Incomplete / Not installed)
+- A **download button** (right of the model dropdown) starts an async download with a progress bar; during download, it becomes a stop button
+- A **delete button** (right of the status label) removes downloaded files while keeping the manifest
+- Both buttons are always visible but grayed out when not applicable (e.g., download is disabled when installed, delete is disabled when not installed)
+- A **progress bar** with bytes/total display appears below the status row during downloads
+- Multiple models can be downloaded concurrently; switching models in the dropdown shows the correct status and progress for each
+- On save, if the selected model is not installed, a confirmation alert warns the user that ASR will not work
+
+Model management is exposed from Rust to Objective-C via C FFI functions (`sp_core_scan_models_json`, `sp_core_check_model_status`, `sp_core_download_model`, etc.) wrapped by `SPRustBridge`.
+
+### 30.4 Feature Flags
+
+Local ASR providers are compile-time gated:
+
+- `mlx` — MLX provider (no Rust crate dependency; resolved at link time via KoeMLX Swift package)
+- `sherpa-onnx` — sherpa-onnx provider (`sherpa-onnx` crate dependency)
+
+Both are enabled by default in `koe-core`. Builds without local ASR can use `--no-default-features`.
+
+## 31. One-Sentence Summary
+
+This project is an Objective-C background macOS Agent App + Rust core library + Swift MLX package + YAML configuration + TXT dictionary + SQLite usage statistics + a voice input pipeline with configurable trigger/cancel hotkeys, multi-provider ASR (cloud: Doubao/Qwen, local: MLX/sherpa-onnx), and an OpenAI-compatible LLM for correction.
