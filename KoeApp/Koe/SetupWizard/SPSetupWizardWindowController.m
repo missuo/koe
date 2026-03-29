@@ -406,13 +406,14 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     self = [super initWithWindow:window];
     if (self) {
         [self setupToolbar];
-        [self switchToPane:kToolbarASR];
-        [self loadCurrentValues];
     }
     return self;
 }
 
 - (void)showWindow:(id)sender {
+    if (!self.currentPaneIdentifier) {
+        [self switchToPane:kToolbarASR];
+    }
     [self loadCurrentValues];
     [self.window center];
     [self.window makeKeyAndOrderFront:sender];
