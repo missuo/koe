@@ -423,6 +423,7 @@
 }
 
 - (void)statusBarDidSelectQuit {
+    self.hotkeyMonitor.suspended = YES;
     [self.hotkeyMonitor stop];
     [NSApp terminate:nil];
 }

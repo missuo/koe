@@ -21,6 +21,7 @@ typedef NS_ENUM(NSInteger, SPHotkeyState) {
 @property (nonatomic, assign) CFRunLoopSourceRef runLoopSource;
 @property (nonatomic, strong) id globalMonitorRef;
 @property (nonatomic, strong) id localMonitorRef;
+@property (nonatomic, assign) BOOL running;
 
 - (void)handleFlagsChangedEvent:(CGEventRef)event;
 - (BOOL)isTargetKeyCode:(NSInteger)keyCode;
@@ -90,6 +91,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
 - (void)start {
     if (self.globalMonitorRef) return;
+    self.running = YES;
 
     __weak typeof(self) weakSelf = self;
 
@@ -239,6 +241,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
     [self cancelHoldTimer];
     self.state = SPHotkeyStateIdle;
+    self.running = NO;
     NSLog(@"[Koe] Hotkey monitor stopped");
 }
 
@@ -283,6 +286,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 }
 
 - (void)handleTriggerDown {
+    if (!self.running) return;
     NSLog(@"[Koe] Trigger DOWN (state=%ld)", (long)self.state);
     switch (self.state) {
         case SPHotkeyStateIdle:
@@ -301,6 +305,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 }
 
 - (void)handleTriggerUp {
+    if (!self.running) return;
     NSLog(@"[Koe] Trigger UP (state=%ld)", (long)self.state);
     switch (self.state) {
         case SPHotkeyStatePending:
