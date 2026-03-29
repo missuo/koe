@@ -68,12 +68,17 @@ impl OpenAiCompatibleProvider {
             })?;
 
         let status = response.status();
-        let _ = response.bytes().await;
-        if !status.is_success() {
-            log::debug!("LLM warmup completed with HTTP {status}");
+        match response.bytes().await {
+            Ok(_) => {
+                if !status.is_success() {
+                    log::debug!("LLM warmup completed with HTTP {status}");
+                }
+                Ok(())
+            }
+            Err(e) => Err(KoeError::LlmFailed(format!(
+                "warmup read response body: {e}"
+            ))),
         }
-
-        Ok(())
     }
 }
 
