@@ -617,6 +617,7 @@ async fn run_session(
                     Ok(AsrEvent::Error(msg)) => {
                         log::error!("[{session_id}] ASR error event: {msg}");
                         asr_error = Some(msg);
+                        break;
                     }
                     Ok(AsrEvent::Connected) => {}
                     Err(e) => {
