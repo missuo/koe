@@ -582,6 +582,7 @@ async fn run_session(
     // --- Stream audio to ASR + collect results ---
     let mut aggregator = TranscriptAggregator::new();
     let mut asr_done = false;
+    let mut asr_error: Option<String> = None;
 
     // Stream audio frames until the channel is closed (session_end drops the sender)
     loop {
@@ -591,6 +592,7 @@ async fn run_session(
                     Some(data) => {
                         if let Err(e) = asr.send_audio(&data).await {
                             log::error!("[{session_id}] ASR send error: {e}");
+                            asr_error = Some(format!("ASR send error: {e}"));
                             break;
                         }
                     }
@@ -624,10 +626,13 @@ async fn run_session(
                     }
                     Ok(AsrEvent::Error(msg)) => {
                         log::error!("[{session_id}] ASR error event: {msg}");
+                        asr_error = Some(msg);
+                        break;
                     }
                     Ok(AsrEvent::Connected) => {}
                     Err(e) => {
                         log::error!("[{session_id}] ASR read error: {e}");
+                        asr_error = Some(format!("ASR error: {e}"));
                         break;
                     }
                 }
@@ -671,9 +676,10 @@ async fn run_session(
 
     let asr_text = aggregator.best_text().to_string();
     if asr_text.is_empty() {
-        log::warn!("[{session_id}] no ASR text available");
-        invoke_session_error(session_token,"no speech recognized");
-        invoke_state_changed(session_token,"failed");
+        let error_msg = asr_error.unwrap_or_else(|| "no speech recognized".to_string());
+        log::warn!("[{session_id}] no ASR text available: {error_msg}");
+        invoke_session_error(session_token, &error_msg);
+        invoke_state_changed(session_token, "failed");
         cleanup_session(&session_arc);
         return;
     }
