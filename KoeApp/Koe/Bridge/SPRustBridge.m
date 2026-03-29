@@ -104,6 +104,10 @@ static void bridge_on_interim_text(uint64_t token, const char *text) {
 
 @implementation SPRustBridge
 
+- (uint64_t)currentSessionToken {
+    return _currentSessionToken;
+}
+
 - (instancetype)initWithDelegate:(id<SPRustBridgeDelegate>)delegate {
     self = [super init];
     if (self) {

@@ -320,10 +320,14 @@
     [self.clipboardManager backup];
     [self.clipboardManager writeText:text];
 
+    // Capture token so the async completion can detect a stale session
+    uint64_t token = self.rustBridge.currentSessionToken;
+
     // Check if accessibility is available for auto-paste
     if ([self.permissionManager isAccessibilityGranted]) {
         [self.pasteManager simulatePasteWithCompletion:^{
             [self.clipboardManager scheduleRestoreAfterDelay:1500];
+            if (token != self.rustBridge.currentSessionToken) return;
             [self.statusBarManager updateState:@"idle"];
             [self.overlayPanel updateState:@"idle"];
         }];
@@ -345,9 +349,12 @@
     // Send system notification with error details
     [self sendErrorNotification:message];
 
-    // Brief error display, then back to idle
+    // Brief error display, then back to idle.
+    // Guard with session token so a new session isn't reset to idle.
+    uint64_t token = self.rustBridge.currentSessionToken;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
+        if (token != self.rustBridge.currentSessionToken) return;
         [self.statusBarManager updateState:@"idle"];
         [self.overlayPanel updateState:@"idle"];
     });
@@ -416,8 +423,10 @@
     [self.overlayPanel updateState:@"error"];
     [self sendErrorNotification:reason];
 
+    uint64_t token = self.rustBridge.currentSessionToken;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
+        if (token != self.rustBridge.currentSessionToken) return;
         [self.statusBarManager updateState:@"idle"];
         [self.overlayPanel updateState:@"idle"];
     });
