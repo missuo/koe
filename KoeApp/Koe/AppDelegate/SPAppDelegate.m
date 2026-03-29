@@ -19,6 +19,7 @@
 @interface SPAppDelegate () <SPAudioDeviceManagerDelegate>
 @property (nonatomic, strong) NSDate *recordingStartTime;
 @property (nonatomic, assign) time_t lastConfigModTime;
+@property (nonatomic, copy) dispatch_block_t pendingSessionEndBlock;
 @end
 
 @implementation SPAppDelegate
@@ -206,8 +207,18 @@
 
 #pragma mark - SPHotkeyMonitorDelegate
 
+- (void)cancelPendingSessionEnd {
+    if (self.pendingSessionEndBlock) {
+        dispatch_block_cancel(self.pendingSessionEndBlock);
+        self.pendingSessionEndBlock = nil;
+    }
+}
+
 - (void)hotkeyMonitorDidDetectHoldStart {
     NSLog(@"[Koe] Hold start detected");
+    [self cancelPendingSessionEnd];
+    [self.audioCaptureManager stopCapture];
+
     self.recordingStartTime = [NSDate date];
     [self.cuePlayer reloadFeedbackConfig];
     [self.cuePlayer playStart];
@@ -226,17 +237,25 @@
     NSLog(@"[Koe] Hold end detected");
     [self.cuePlayer playStop];
 
-    // Keep recording for 800ms after Fn release to capture trailing speech,
-    // then stop mic and end session
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(300 * NSEC_PER_MSEC)),
-                   dispatch_get_main_queue(), ^{
+    // Keep recording for 300ms after Fn release to capture trailing speech,
+    // then stop mic and end session.  Use a cancellable block so a rapid
+    // re-press can prevent the stale endSession from killing the new session.
+    [self cancelPendingSessionEnd];
+    dispatch_block_t block = dispatch_block_create(0, ^{
+        self.pendingSessionEndBlock = nil;
         [self.audioCaptureManager stopCapture];
         [self.rustBridge endSession];
     });
+    self.pendingSessionEndBlock = block;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(300 * NSEC_PER_MSEC)),
+                   dispatch_get_main_queue(), block);
 }
 
 - (void)hotkeyMonitorDidDetectTapStart {
     NSLog(@"[Koe] Tap start detected");
+    [self cancelPendingSessionEnd];
+    [self.audioCaptureManager stopCapture];
+
     self.recordingStartTime = [NSDate date];
     [self.cuePlayer reloadFeedbackConfig];
     [self.cuePlayer playStart];
@@ -254,17 +273,22 @@
     NSLog(@"[Koe] Tap end detected");
     [self.cuePlayer playStop];
 
-    // Keep recording for 800ms after tap-end to capture trailing speech,
-    // then stop mic and end session
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(300 * NSEC_PER_MSEC)),
-                   dispatch_get_main_queue(), ^{
+    // Keep recording for 300ms after tap-end to capture trailing speech,
+    // then stop mic and end session.  Use a cancellable block (same as hold).
+    [self cancelPendingSessionEnd];
+    dispatch_block_t block = dispatch_block_create(0, ^{
+        self.pendingSessionEndBlock = nil;
         [self.audioCaptureManager stopCapture];
         [self.rustBridge endSession];
     });
+    self.pendingSessionEndBlock = block;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(300 * NSEC_PER_MSEC)),
+                   dispatch_get_main_queue(), block);
 }
 
 - (void)hotkeyMonitorDidDetectCancel {
     NSLog(@"[Koe] Cancel detected");
+    [self cancelPendingSessionEnd];
     [self.audioCaptureManager stopCapture];
     [self.rustBridge cancelSession];
     self.recordingStartTime = nil;

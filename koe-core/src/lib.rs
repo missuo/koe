@@ -262,14 +262,21 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
     let session_id = session.id.clone();
     let mode = context.mode;
 
-    // Audio channel
+    // Abort any still-running old session: signal its cancelled flag and close
+    // its audio channel.  The old task holds its own Arc clones and will see the
+    // cancellation; its cleanup_session writes to the OLD Arc, not the new one.
+    core.cancelled.store(true, Ordering::SeqCst);
+    core.audio_tx = None;
+
+    // Create fresh per-session Arcs so old and new tasks are fully isolated
+    core.cancelled = Arc::new(AtomicBool::new(false));
+    core.session = Arc::new(Mutex::new(None));
+
+    // Audio channel for new session
     let (audio_tx, audio_rx) = mpsc::channel::<Vec<u8>>(1024);
     core.audio_tx = Some(audio_tx);
 
-    // Reset cancelled flag for new session
-    core.cancelled.store(false, Ordering::SeqCst);
     let cancelled = core.cancelled.clone();
-
     let session_arc = core.session.clone();
     {
         let mut s = session_arc.lock().unwrap();
@@ -684,6 +691,16 @@ async fn run_session(
     }
 
     // --- LLM Correction ---
+    // Check cancellation before the (potentially slow) LLM call so that an
+    // aborted old session exits quickly when a new session has started.
+    if cancelled.load(Ordering::SeqCst) {
+        log::info!("[{session_id}] session cancelled before LLM correction");
+        invoke_state_changed("cancelled");
+        cleanup_session(&session_arc);
+        invoke_state_changed("idle");
+        return;
+    }
+
     let llm_enabled = llm_is_ready(&llm_config);
 
     let final_text = if llm_enabled {
