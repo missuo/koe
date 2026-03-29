@@ -432,6 +432,7 @@
     if (!self.setupWizard) {
         self.setupWizard = [[SPSetupWizardWindowController alloc] init];
         self.setupWizard.delegate = self;
+        self.setupWizard.rustBridge = self.rustBridge;
     }
     [self.setupWizard showWindow:nil];
 }

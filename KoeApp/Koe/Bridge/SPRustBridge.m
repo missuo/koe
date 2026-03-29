@@ -77,6 +77,15 @@ static void bridge_on_interim_text(const char *text) {
     }
 }
 
+// ─── Download callback context ─────────────────────────────────────
+
+@interface _KoeDownloadContext : NSObject
+@property (copy) void (^progressBlock)(NSUInteger, NSUInteger, uint64_t, uint64_t, NSString *);
+@property (copy) void (^completionBlock)(BOOL, NSString *);
+@end
+@implementation _KoeDownloadContext
+@end
+
 // ─── SPRustBridge Implementation ────────────────────────────────────
 
 @interface SPRustBridge ()
@@ -149,6 +158,107 @@ static void bridge_on_interim_text(const char *text) {
 
 - (void)reloadConfig {
     sp_core_reload_config();
+}
+
+// ─── Model Management ──────────────────────────────────────────────
+
+- (NSArray<NSString *> *)supportedLocalProviders {
+    char *json = sp_core_supported_local_providers();
+    if (!json) return @[];
+    NSString *jsonStr = [NSString stringWithUTF8String:json];
+    sp_core_free_string(json);
+    NSData *data = [jsonStr dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data) return @[];
+    NSArray *result = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    return [result isKindOfClass:[NSArray class]] ? result : @[];
+}
+
+- (NSArray<NSDictionary *> *)scanModels {
+    char *json = sp_core_scan_models_json();
+    if (!json) return @[];
+
+    NSString *jsonStr = [NSString stringWithUTF8String:json];
+    sp_core_free_string(json);
+
+    NSData *data = [jsonStr dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data) return @[];
+
+    NSError *error = nil;
+    NSArray *result = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+    if (error || ![result isKindOfClass:[NSArray class]]) return @[];
+
+    return result;
+}
+
+- (NSInteger)checkModelStatus:(NSString *)modelPath {
+    return sp_core_check_model_status(modelPath.UTF8String);
+}
+
+- (NSInteger)verifyModelStatus:(NSString *)modelPath {
+    return sp_core_verify_model_status(modelPath.UTF8String);
+}
+
+static void download_progress_cb(void *ctx, uint32_t file_index, uint32_t file_count,
+                                  uint64_t downloaded, uint64_t total, const char *filename) {
+    _KoeDownloadContext *dctx = (__bridge _KoeDownloadContext *)ctx;
+    void (^block)(NSUInteger, NSUInteger, uint64_t, uint64_t, NSString *) = dctx.progressBlock;
+    if (!block) return;
+    NSString *name = filename ? [NSString stringWithUTF8String:filename] : @"";
+    dispatch_async(dispatch_get_main_queue(), ^{
+        block(file_index, file_count, downloaded, total, name);
+    });
+}
+
+static void download_status_cb(void *ctx, int32_t status, const char *message) {
+    // status 0 = started — download still in progress
+    if (status == 0) return;
+
+    // Cleanup must happen on main queue (FIFO with progress dispatches)
+    // to avoid racing with in-flight progress callbacks.
+    NSString *msg = message ? [NSString stringWithUTF8String:message] : @"";
+    BOOL success = (status == 1);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        _KoeDownloadContext *dctx = (__bridge_transfer _KoeDownloadContext *)ctx;
+        void (^completionBlock)(BOOL, NSString *) = dctx.completionBlock;
+        dctx.progressBlock = nil;
+        dctx.completionBlock = nil;
+        if (completionBlock) completionBlock(success, msg);
+    });
+}
+
+- (void)downloadModel:(NSString *)modelPath
+             progress:(void (^)(NSUInteger, NSUInteger, uint64_t, uint64_t, NSString *))progressBlock
+           completion:(void (^)(BOOL, NSString *))completionBlock {
+    _KoeDownloadContext *dctx = [[_KoeDownloadContext alloc] init];
+    dctx.progressBlock = progressBlock;
+    dctx.completionBlock = completionBlock;
+
+    // Retain for C callback lifetime — transferred back in download_status_cb
+    void *ctx = (__bridge_retained void *)dctx;
+
+    int32_t result = sp_core_download_model(
+        modelPath.UTF8String,
+        download_progress_cb,
+        download_status_cb,
+        ctx
+    );
+
+    if (result != 0) {
+        // Transfer back so ARC releases
+        (void)(__bridge_transfer _KoeDownloadContext *)ctx;
+        NSString *msg = (result == -1) ? @"Already downloading" : @"Failed to start download";
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completionBlock(NO, msg);
+        });
+    }
+}
+
+- (void)cancelDownload:(NSString *)modelPath {
+    sp_core_cancel_download(modelPath.UTF8String);
+}
+
+- (NSInteger)removeModelFiles:(NSString *)modelPath {
+    return sp_core_remove_model_files(modelPath.UTF8String);
 }
 
 @end

@@ -21,7 +21,7 @@ pub struct Config {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AsrSection {
-    /// Which ASR provider to use: "doubao" (default), "qwen", future: "openai", etc.
+    /// Which ASR provider to use: "doubao" (default), "qwen", "mlx", "sherpa-onnx"
     #[serde(default = "default_asr_provider")]
     pub provider: String,
 
@@ -32,6 +32,14 @@ pub struct AsrSection {
     /// Qwen ASR configuration
     #[serde(default)]
     pub qwen: QwenAsrConfig,
+
+    /// MLX local ASR configuration (Apple Silicon only)
+    #[serde(default)]
+    pub mlx: MlxAsrConfig,
+
+    /// Sherpa-ONNX local ASR configuration (CPU)
+    #[serde(rename = "sherpa-onnx", default)]
+    pub sherpa_onnx: SherpaOnnxAsrConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -85,6 +93,56 @@ pub struct DoubaoAsrConfig {
     pub enable_punc: bool,
     #[serde(default = "default_true")]
     pub enable_nonstream: bool,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct MlxAsrConfig {
+    /// Model directory name under ~/.koe/models/mlx/
+    #[serde(default = "default_mlx_model")]
+    pub model: String,
+    /// Delay preset: "realtime", "agent", "subtitle"
+    #[serde(default = "default_mlx_delay_preset")]
+    pub delay_preset: String,
+    /// Language: "auto", "zh", "en"
+    #[serde(default = "default_mlx_language")]
+    pub language: String,
+}
+
+impl Default for MlxAsrConfig {
+    fn default() -> Self {
+        Self {
+            model: default_mlx_model(),
+            delay_preset: default_mlx_delay_preset(),
+            language: default_mlx_language(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct SherpaOnnxAsrConfig {
+    /// Model directory name under ~/.koe/models/sherpa-onnx/
+    #[serde(default = "default_sherpa_onnx_model")]
+    pub model: String,
+    /// Number of threads for inference (default: 2)
+    #[serde(default = "default_sherpa_onnx_num_threads")]
+    pub num_threads: i32,
+    /// Hotwords score boost (default: 1.5)
+    #[serde(default = "default_sherpa_onnx_hotwords_score")]
+    pub hotwords_score: f32,
+    /// Trailing silence for endpoint detection in seconds (default: 1.2)
+    #[serde(default = "default_sherpa_onnx_endpoint_silence")]
+    pub endpoint_silence: f32,
+}
+
+impl Default for SherpaOnnxAsrConfig {
+    fn default() -> Self {
+        Self {
+            model: default_sherpa_onnx_model(),
+            num_threads: default_sherpa_onnx_num_threads(),
+            hotwords_score: default_sherpa_onnx_hotwords_score(),
+            endpoint_silence: default_sherpa_onnx_endpoint_silence(),
+        }
+    }
 }
 
 // ─── Other Sections (unchanged) ─────────────────────────────────────
@@ -324,6 +382,27 @@ fn default_qwen_model() -> String {
 fn default_qwen_language() -> String {
     "zh".into()
 }
+fn default_mlx_model() -> String {
+    "mlx/Qwen3-ASR-0.6B-4bit".into()
+}
+fn default_mlx_delay_preset() -> String {
+    "realtime".into()
+}
+fn default_mlx_language() -> String {
+    "auto".into()
+}
+fn default_sherpa_onnx_model() -> String {
+    "sherpa-onnx/bilingual-zh-en".into()
+}
+fn default_sherpa_onnx_num_threads() -> i32 {
+    2
+}
+fn default_sherpa_onnx_hotwords_score() -> f32 {
+    1.5
+}
+fn default_sherpa_onnx_endpoint_silence() -> f32 {
+    1.2
+}
 fn default_asr_url() -> String {
     "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async".into()
 }
@@ -440,6 +519,17 @@ fn resolve_path(p: &str) -> PathBuf {
         path.to_path_buf()
     } else {
         config_dir().join(path)
+    }
+}
+
+/// Resolve a model directory path.
+/// Absolute paths are used directly; relative paths are resolved under ~/.koe/models/.
+pub fn resolve_model_dir(model: &str) -> PathBuf {
+    let path = Path::new(model);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        crate::model_manager::models_dir().join(model)
     }
 }
 
@@ -711,6 +801,21 @@ pub fn ensure_defaults() -> Result<bool> {
         }
     }
 
+    // Install default model manifests into ~/.koe/models/
+    let models_dir = crate::model_manager::models_dir();
+    for (rel_path, content) in DEFAULT_MANIFESTS {
+        let manifest_dir = models_dir.join(rel_path);
+        let manifest_file = manifest_dir.join(".koe-manifest.json");
+        if !manifest_file.exists() {
+            std::fs::create_dir_all(&manifest_dir)
+                .map_err(|e| KoeError::Config(format!("create {}: {e}", manifest_dir.display())))?;
+            std::fs::write(&manifest_file, content)
+                .map_err(|e| KoeError::Config(format!("write {}: {e}", manifest_file.display())))?;
+            log::info!("installed manifest: {}", manifest_file.display());
+            created = true;
+        }
+    }
+
     Ok(created)
 }
 
@@ -742,6 +847,19 @@ asr:
     language: "zh"
     connect_timeout_ms: 3000
     final_wait_timeout_ms: 5000
+
+  # MLX local ASR (Apple Silicon only)
+  mlx:
+    model: "mlx/Qwen3-ASR-0.6B-4bit"       # relative to ~/.koe/models/, or absolute path
+    delay_preset: "realtime"    # realtime | agent | subtitle
+    language: "auto"            # auto | zh | en
+
+  # Sherpa-ONNX local ASR (CPU)
+  sherpa-onnx:
+    model: "sherpa-onnx/bilingual-zh-en"    # relative to ~/.koe/models/, or absolute path
+    num_threads: 2
+    hotwords_score: 1.5         # dictionary term boost
+    endpoint_silence: 1.2       # trailing silence for sentence boundary (seconds)
 
 llm:
   enabled: true        # set to false to skip LLM correction entirely
@@ -784,6 +902,21 @@ const DEFAULT_DICTIONARY_TXT: &str = r#"# Koe User Dictionary
 const DEFAULT_SYSTEM_PROMPT: &str = include_str!("default_system_prompt.txt");
 
 const DEFAULT_USER_PROMPT: &str = include_str!("default_user_prompt.txt");
+
+/// Default model manifests: (relative_path, json_content).
+/// relative_path maps to ~/.koe/models/<relative_path>/.koe-manifest.json
+macro_rules! manifest {
+    ($path:literal) => {
+        ($path, include_str!(concat!("manifests/", $path, ".json")))
+    };
+}
+const DEFAULT_MANIFESTS: &[(&str, &str)] = &[
+    manifest!("mlx/Qwen3-ASR-0.6B-4bit"),
+    manifest!("mlx/Qwen3-ASR-1.7B-4bit"),
+    manifest!("sherpa-onnx/bilingual-zh-en"),
+    manifest!("sherpa-onnx/multilingual-8lang"),
+    manifest!("sherpa-onnx/zh-xlarge"),
+];
 
 #[cfg(test)]
 mod tests {

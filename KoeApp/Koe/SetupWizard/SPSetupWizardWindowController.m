@@ -1,4 +1,5 @@
 #import "SPSetupWizardWindowController.h"
+#import "SPRustBridge.h"
 #import <Cocoa/Cocoa.h>
 
 static NSString *const kConfigDir = @".koe";
@@ -353,6 +354,16 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 @property (nonatomic, strong) NSButton *asrTestButton;
 @property (nonatomic, strong) NSTextField *asrTestResultLabel;
 
+// Local ASR model selection
+@property (nonatomic, strong) NSPopUpButton *localModelPopup;
+@property (nonatomic, strong) NSTextField *localModelLabel;
+@property (nonatomic, strong) NSTextField *modelStatusLabel;
+@property (nonatomic, strong) NSButton *modelDownloadButton;
+@property (nonatomic, strong) NSButton *modelDeleteButton;
+@property (nonatomic, strong) NSProgressIndicator *modelProgressBar;
+@property (nonatomic, strong) NSTextField *modelProgressSizeLabel;
+@property (nonatomic, strong) NSMutableSet<NSString *> *downloadingModels;
+
 // LLM fields
 @property (nonatomic, strong) NSButton *llmEnabledCheckbox;
 @property (nonatomic, strong) NSTextField *llmBaseUrlField;
@@ -541,6 +552,16 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     [self.asrProviderPopup itemAtIndex:0].representedObject = @"doubao";
     [self.asrProviderPopup addItemWithTitle:@"Qwen (\u963f\u91cc\u4e91)"];
     [self.asrProviderPopup itemAtIndex:1].representedObject = @"qwen";
+    // Add local providers supported by this build
+    NSDictionary *localProviderLabels = @{
+        @"mlx": @"MLX (Apple Silicon)",
+        @"sherpa-onnx": @"Sherpa-ONNX",
+    };
+    for (NSString *provider in [self.rustBridge supportedLocalProviders]) {
+        NSString *label = localProviderLabels[provider] ?: provider;
+        [self.asrProviderPopup addItemWithTitle:label];
+        [self.asrProviderPopup lastItem].representedObject = provider;
+    }
     [self.asrProviderPopup setTarget:self];
     [self.asrProviderPopup setAction:@selector(asrProviderChanged:)];
     [pane addSubview:self.asrProviderPopup];
@@ -558,28 +579,99 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     NSTextField *appKeyLabel = [self formLabel:@"App Key" frame:NSMakeRect(16, y, labelW, 22)];
     appKeyLabel.tag = 1001;
     [pane addSubview:appKeyLabel];
+
+    // Row 1: Model popup + Download button (Local providers, same row as App Key)
+    self.localModelLabel = [self formLabel:@"Model" frame:NSMakeRect(16, y, labelW, 22)];
+    self.localModelLabel.tag = 1004;
+    self.localModelLabel.hidden = YES;
+    [pane addSubview:self.localModelLabel];
+    self.localModelPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, fieldW - 26, 26) pullsDown:NO];
+    self.localModelPopup.hidden = YES;
+    [self.localModelPopup setTarget:self];
+    [self.localModelPopup setAction:@selector(localModelChanged:)];
+    [pane addSubview:self.localModelPopup];
+
+    // Download button (right of model popup, same style as eye button)
+    self.modelDownloadButton = [[NSButton alloc] initWithFrame:NSMakeRect(fieldX + fieldW - 20, y + 1, 20, 20)];
+    self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
+                                                  accessibilityDescription:@"Download"];
+    self.modelDownloadButton.bezelStyle = NSBezelStyleInline;
+    self.modelDownloadButton.bordered = NO;
+    self.modelDownloadButton.imageScaling = NSImageScaleProportionallyUpOrDown;
+    self.modelDownloadButton.target = self;
+    self.modelDownloadButton.action = @selector(downloadSelectedModel:);
+    self.modelDownloadButton.hidden = YES;
+    [pane addSubview:self.modelDownloadButton];
+
     y -= rowH;
 
-    // Access Key (Doubao)
+    // Row 2: Status + Delete button
+    self.modelStatusLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(fieldX, y + 2, fieldW - 32, 18)];
+    self.modelStatusLabel.bezeled = NO;
+    self.modelStatusLabel.drawsBackground = NO;
+    self.modelStatusLabel.editable = NO;
+    self.modelStatusLabel.selectable = NO;
+    self.modelStatusLabel.font = [NSFont systemFontOfSize:12];
+    self.modelStatusLabel.hidden = YES;
+    [pane addSubview:self.modelStatusLabel];
+
+    // Delete button (right end of status row, same style as eye button)
+    self.modelDeleteButton = [[NSButton alloc] initWithFrame:NSMakeRect(fieldX + fieldW - 20, y + 1, 20, 20)];
+    self.modelDeleteButton.image = [NSImage imageWithSystemSymbolName:@"trash"
+                                                accessibilityDescription:@"Delete"];
+    self.modelDeleteButton.bezelStyle = NSBezelStyleInline;
+    self.modelDeleteButton.bordered = NO;
+    self.modelDeleteButton.imageScaling = NSImageScaleProportionallyUpOrDown;
+    self.modelDeleteButton.target = self;
+    self.modelDeleteButton.action = @selector(deleteSelectedModel:);
+    self.modelDeleteButton.hidden = YES;
+    [pane addSubview:self.modelDeleteButton];
+
+    y -= rowH;
+
+    // Row 3: Progress bar + size label
+    self.modelProgressBar = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(fieldX, y + 10, fieldW - 120, 10)];
+    self.modelProgressBar.controlSize = NSControlSizeMini;
+    self.modelProgressBar.style = NSProgressIndicatorStyleBar;
+    self.modelProgressBar.minValue = 0;
+    self.modelProgressBar.maxValue = 100;
+    self.modelProgressBar.indeterminate = NO;
+    self.modelProgressBar.hidden = YES;
+    [pane addSubview:self.modelProgressBar];
+
+    self.modelProgressSizeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(fieldX + fieldW - 114, y + 2, 114, 18)];
+    self.modelProgressSizeLabel.bezeled = NO;
+    self.modelProgressSizeLabel.drawsBackground = NO;
+    self.modelProgressSizeLabel.editable = NO;
+    self.modelProgressSizeLabel.selectable = NO;
+    self.modelProgressSizeLabel.alignment = NSTextAlignmentRight;
+    self.modelProgressSizeLabel.font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular];
+    self.modelProgressSizeLabel.textColor = [NSColor secondaryLabelColor];
+    self.modelProgressSizeLabel.hidden = YES;
+    [pane addSubview:self.modelProgressSizeLabel];
+
+    y -= rowH;
+
+    // Access Key (Doubao) — fixed at row 2 (same as Qwen API Key)
+    CGFloat accessKeyY = contentHeight - 48 - 52 - rowH - rowH;
     CGFloat eyeW = 28;
     CGFloat secFieldW = fieldW - eyeW - 4;
 
-    self.asrAccessKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, y, secFieldW, 22)];
+    self.asrAccessKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, accessKeyY, secFieldW, 22)];
     self.asrAccessKeySecureField.placeholderString = @"Volcengine Access Token";
     self.asrAccessKeySecureField.font = [NSFont systemFontOfSize:13];
     [pane addSubview:self.asrAccessKeySecureField];
-    self.asrAccessKeyField = [self formTextField:NSMakeRect(fieldX, y, secFieldW, 22) placeholder:@"Volcengine Access Token"];
+    self.asrAccessKeyField = [self formTextField:NSMakeRect(fieldX, accessKeyY, secFieldW, 22) placeholder:@"Volcengine Access Token"];
     self.asrAccessKeyField.hidden = YES;
     [pane addSubview:self.asrAccessKeyField];
-    self.asrAccessKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, y - 1, eyeW, 24)
+    self.asrAccessKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, accessKeyY - 1, eyeW, 24)
                                                 action:@selector(toggleAsrAccessKeyVisibility:)];
     [pane addSubview:self.asrAccessKeyToggle];
-    NSTextField *accessKeyLabel = [self formLabel:@"Access Key" frame:NSMakeRect(16, y, labelW, 22)];
+    NSTextField *accessKeyLabel = [self formLabel:@"Access Key" frame:NSMakeRect(16, accessKeyY, labelW, 22)];
     accessKeyLabel.tag = 1002;
     [pane addSubview:accessKeyLabel];
-    y -= rowH;
 
-    // Qwen API Key
+    // Qwen API Key — fixed at row 1 (same position as App Key)
     CGFloat qwenY = contentHeight - 48 - 52 - rowH;
     self.asrQwenApiKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, qwenY, secFieldW, 22)];
     self.asrQwenApiKeySecureField.placeholderString = @"DashScope API Key (sk-xxx)";
@@ -980,6 +1072,8 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 - (void)asrProviderChanged:(NSPopUpButton *)sender {
     NSString *selectedProvider = sender.selectedItem.representedObject ?: @"doubao";
     BOOL isDoubao = [selectedProvider isEqualToString:@"doubao"];
+    BOOL isQwen = [selectedProvider isEqualToString:@"qwen"];
+    BOOL isLocal = !isDoubao && !isQwen;
 
     // Show/hide Doubao fields
     for (NSView *view in self.currentPaneView.subviews) {
@@ -995,16 +1089,207 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     // Show/hide Qwen fields
     for (NSView *view in self.currentPaneView.subviews) {
         if (view.tag == 1003) { // Qwen API Key label
-            view.hidden = isDoubao;
+            view.hidden = !isQwen;
         }
     }
     self.asrQwenApiKeyField.hidden = YES; // Always start hidden (secure mode)
-    self.asrQwenApiKeySecureField.hidden = isDoubao;
-    self.asrQwenApiKeyToggle.hidden = isDoubao;
+    self.asrQwenApiKeySecureField.hidden = !isQwen;
+    self.asrQwenApiKeyToggle.hidden = !isQwen;
+
+    // Show/hide local model popup, status, and download button
+    self.localModelPopup.hidden = !isLocal;
+    self.modelStatusLabel.hidden = !isLocal;
+    if (!isLocal) {
+        self.modelDownloadButton.hidden = YES;
+        self.modelDeleteButton.hidden = YES;
+        self.modelProgressBar.hidden = YES;
+        self.modelProgressSizeLabel.hidden = YES;
+    } else {
+        self.modelDownloadButton.hidden = NO;
+        self.modelDeleteButton.hidden = NO;
+    }
+    for (NSView *view in self.currentPaneView.subviews) {
+        if (view.tag == 1004) { // Model label
+            view.hidden = !isLocal;
+        }
+    }
+    if (isLocal) {
+        [self populateLocalModelPopup:selectedProvider];
+        [self updateModelStatusLabel];
+    }
+
+    // Hide test button for local providers (no remote connection to test)
+    self.asrTestButton.hidden = isLocal;
+    self.asrTestResultLabel.hidden = isLocal;
 
     // Clear test result when switching provider
     self.asrTestResultLabel.stringValue = @"";
     self.asrTestButton.enabled = YES;
+}
+
+- (void)localModelChanged:(id)sender {
+    [self updateModelStatusLabel];
+}
+
+- (void)updateModelStatusLabel {
+    NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
+    if (!modelPath) {
+        self.modelStatusLabel.stringValue = @"";
+        self.modelDownloadButton.enabled = NO;
+        self.modelDeleteButton.enabled = NO;
+        self.modelProgressBar.hidden = YES;
+        self.modelProgressSizeLabel.hidden = YES;
+        return;
+    }
+
+    // If selected model is currently downloading, show progress UI
+    if ([self.downloadingModels containsObject:modelPath]) {
+        self.modelStatusLabel.stringValue = @"Downloading";
+        self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
+        self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"stop.circle"
+                                                     accessibilityDescription:@"Stop"];
+        self.modelDownloadButton.enabled = YES;
+        self.modelDeleteButton.enabled = NO;
+        self.modelProgressBar.hidden = NO;
+        self.modelProgressSizeLabel.hidden = NO;
+        return;
+    }
+
+    // Not downloading — show normal status, hide progress
+    self.modelProgressBar.hidden = YES;
+    self.modelProgressSizeLabel.hidden = YES;
+    self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
+                                                 accessibilityDescription:@"Download"];
+
+    NSInteger status = [self.rustBridge checkModelStatus:modelPath];
+    switch (status) {
+        case 2:
+            self.modelStatusLabel.stringValue = @"● Installed";
+            self.modelStatusLabel.textColor = [NSColor systemGreenColor];
+            self.modelDownloadButton.enabled = NO;
+            self.modelDeleteButton.enabled = YES;
+            break;
+        case 1:
+            self.modelStatusLabel.stringValue = @"◐ Incomplete";
+            self.modelStatusLabel.textColor = [NSColor systemOrangeColor];
+            self.modelDownloadButton.enabled = YES;
+            self.modelDeleteButton.enabled = YES;
+            break;
+        default:
+            self.modelStatusLabel.stringValue = @"○ Not installed";
+            self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
+            self.modelDownloadButton.enabled = YES;
+            self.modelDeleteButton.enabled = NO;
+            break;
+    }
+}
+
+- (void)downloadSelectedModel:(id)sender {
+    NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
+    if (!modelPath) return;
+
+    // If this model is downloading, cancel it
+    if ([self.downloadingModels containsObject:modelPath]) {
+        [self.rustBridge cancelDownload:modelPath];
+        return;
+    }
+
+    if (!self.downloadingModels) {
+        self.downloadingModels = [NSMutableSet new];
+    }
+    [self.downloadingModels addObject:modelPath];
+
+    // Switch to stop icon and show progress bar
+    self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"stop.circle"
+                                                 accessibilityDescription:@"Stop"];
+    self.modelDownloadButton.hidden = NO;
+    self.modelStatusLabel.stringValue = @"Downloading...";
+    self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
+    self.modelProgressBar.hidden = NO;
+    self.modelProgressBar.doubleValue = 0;
+    self.modelProgressSizeLabel.hidden = NO;
+    self.modelProgressSizeLabel.stringValue = @"";
+
+    // Get total size from scan_models data
+    __block uint64_t totalBytesAllFiles = 0;
+    for (NSDictionary *m in [self.rustBridge scanModels]) {
+        if ([m[@"path"] isEqualToString:modelPath]) {
+            totalBytesAllFiles = [m[@"total_size"] unsignedLongLongValue];
+            break;
+        }
+    }
+    __block NSMutableDictionary<NSNumber *, NSNumber *> *fileDownloaded = [NSMutableDictionary new];
+
+    __weak typeof(self) weakSelf = self;
+    [self.rustBridge downloadModel:modelPath
+        progress:^(NSUInteger fileIndex, NSUInteger fileCount,
+                   uint64_t downloaded, uint64_t total, NSString *filename) {
+            typeof(self) strongSelf = weakSelf;
+            if (!strongSelf) return;
+
+            // Only update UI if this model is still selected
+            NSString *selected = strongSelf.localModelPopup.selectedItem.representedObject;
+            if (![modelPath isEqualToString:selected]) return;
+
+            fileDownloaded[@(fileIndex)] = @(downloaded);
+
+            uint64_t totalDownloaded = 0;
+            for (NSNumber *v in fileDownloaded.allValues) totalDownloaded += v.unsignedLongLongValue;
+
+            double pct = (totalBytesAllFiles > 0)
+                ? (double)totalDownloaded / (double)totalBytesAllFiles * 100.0 : 0;
+            strongSelf.modelProgressBar.doubleValue = pct;
+            strongSelf.modelStatusLabel.stringValue = @"Downloading";
+            strongSelf.modelProgressSizeLabel.stringValue =
+                [NSString stringWithFormat:@"%.1f / %.1f MB",
+                    (double)totalDownloaded / 1048576.0,
+                    (double)totalBytesAllFiles / 1048576.0];
+        }
+        completion:^(BOOL success, NSString *message) {
+            typeof(self) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            [strongSelf.downloadingModels removeObject:modelPath];
+            [strongSelf updateModelStatusLabel];
+        }];
+}
+
+- (void)deleteSelectedModel:(id)sender {
+    NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
+    if (!modelPath) return;
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Remove Model Files?";
+    alert.informativeText = @"Downloaded model files will be deleted. The model can be re-downloaded later.";
+    [alert addButtonWithTitle:@"Remove"];
+    [alert addButtonWithTitle:@"Cancel"];
+    alert.alertStyle = NSAlertStyleWarning;
+
+    if ([alert runModal] == NSAlertFirstButtonReturn) {
+        [self.rustBridge removeModelFiles:modelPath];
+        [self updateModelStatusLabel];
+    }
+}
+
+- (void)populateLocalModelPopup:(NSString *)provider {
+    [self.localModelPopup removeAllItems];
+
+    NSArray<NSDictionary *> *models = [self.rustBridge scanModels];
+    for (NSDictionary *model in models) {
+        if (![model[@"provider"] isEqualToString:provider]) continue;
+
+        NSString *path = model[@"path"];
+        NSString *title = model[@"description"] ?: path;
+
+        [self.localModelPopup addItemWithTitle:title];
+        [self.localModelPopup lastItem].representedObject = path;
+    }
+
+    if (self.localModelPopup.numberOfItems == 0) {
+        [self.localModelPopup addItemWithTitle:@"No models found"];
+        self.localModelPopup.enabled = NO;
+    } else {
+        self.localModelPopup.enabled = YES;
+    }
 }
 
 - (void)toggleLlmApiKeyVisibility:(NSButton *)sender {
@@ -1054,6 +1339,22 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         self.asrQwenApiKeyField.stringValue = qwenApiKey;
         // Reset visibility based on selected provider
         [self asrProviderChanged:self.asrProviderPopup];
+        // Select current local model if applicable
+        NSString *currentModel = nil;
+        if ([provider isEqualToString:@"mlx"]) {
+            currentModel = yamlRead(yaml, @"asr.mlx.model");
+        } else if ([provider isEqualToString:@"sherpa-onnx"]) {
+            currentModel = yamlRead(yaml, @"asr.sherpa-onnx.model");
+        }
+        if (currentModel.length > 0) {
+            for (NSInteger i = 0; i < self.localModelPopup.numberOfItems; i++) {
+                if ([[self.localModelPopup itemAtIndex:i].representedObject isEqualToString:currentModel]) {
+                    [self.localModelPopup selectItemAtIndex:i];
+                    break;
+                }
+            }
+            [self updateModelStatusLabel];
+        }
         // Clear test result when loading
         self.asrTestResultLabel.stringValue = @"";
         self.asrTestButton.enabled = YES;
@@ -1133,6 +1434,29 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 }
 
 - (void)saveConfig:(id)sender {
+    // Warn if a local provider is selected but the model is not installed
+    if (self.asrProviderPopup) {
+        NSString *provider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
+        BOOL isLocal = ![provider isEqualToString:@"doubao"] && ![provider isEqualToString:@"qwen"];
+        if (isLocal) {
+            NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
+            if (modelPath) {
+                NSInteger status = [self.rustBridge checkModelStatus:modelPath];
+                if (status != 2) { // not installed
+                    NSAlert *alert = [[NSAlert alloc] init];
+                    alert.messageText = @"Model Not Installed";
+                    alert.informativeText = @"The selected model has not been downloaded yet. ASR will not work until the model is installed.";
+                    [alert addButtonWithTitle:@"Save Anyway"];
+                    [alert addButtonWithTitle:@"Cancel"];
+                    alert.alertStyle = NSAlertStyleWarning;
+                    if ([alert runModal] != NSAlertFirstButtonReturn) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     NSString *dir = configDirPath();
 
     // Ensure directory exists
@@ -1156,6 +1480,14 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         // Save Qwen fields
         NSString *qwenApiKey = self.asrQwenApiKeyToggle.tag == 1 ? self.asrQwenApiKeyField.stringValue : self.asrQwenApiKeySecureField.stringValue;
         yaml = yamlWrite(yaml, @"asr.qwen.api_key", qwenApiKey);
+        // Save local model selection
+        if ([selectedProvider isEqualToString:@"mlx"]) {
+            NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
+            if (modelPath) yaml = yamlWrite(yaml, @"asr.mlx.model", modelPath);
+        } else if ([selectedProvider isEqualToString:@"sherpa-onnx"]) {
+            NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
+            if (modelPath) yaml = yamlWrite(yaml, @"asr.sherpa-onnx.model", modelPath);
+        }
     }
 
     // Update LLM fields

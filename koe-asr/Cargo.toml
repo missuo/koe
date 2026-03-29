@@ -17,6 +17,12 @@ log = "0.4"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 async-trait = "0.1"
+sherpa-onnx = { version = "1.12", optional = true }
+
+[features]
+default = []
+mlx = []
+sherpa-onnx = ["dep:sherpa-onnx"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
