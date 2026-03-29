@@ -678,9 +678,7 @@ async fn run_session(
     }
 
     // --- LLM Correction ---
-    let llm_enabled = llm_config.enabled
-        && !llm_config.base_url.is_empty()
-        && !llm_config.api_key.is_empty();
+    let llm_enabled = llm_is_ready(&llm_config);
 
     let final_text = if llm_enabled {
         {
