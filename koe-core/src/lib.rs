@@ -15,7 +15,9 @@ use crate::ffi::{
     invoke_session_ready, invoke_session_warning, invoke_state_changed, SPCallbacks,
     SPFeedbackConfig, SPHotkeyConfig, SPSessionContext, SPSessionMode,
 };
-use crate::llm::openai_compatible::{build_http_client, OpenAiCompatibleProvider};
+use crate::llm::openai_compatible::{
+    build_http_client, OpenAiCompatibleProvider, LLM_HTTP_POOL_IDLE_TIMEOUT,
+};
 use crate::llm::{CorrectionRequest, LlmProvider};
 use crate::session::{Session, SessionState};
 use koe_asr::{AsrConfig, AsrEvent, AsrProvider, DoubaoWsProvider, QwenAsrProvider, TranscriptAggregator};
@@ -28,9 +30,22 @@ use reqwest::Client;
 use std::ffi::c_char;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 use tokio::time::{timeout, Duration};
+
+const LLM_WARMUP_SAFETY_MARGIN: Duration = Duration::from_secs(20);
+const LLM_WARMUP_TTL: Duration = match LLM_HTTP_POOL_IDLE_TIMEOUT.checked_sub(LLM_WARMUP_SAFETY_MARGIN) {
+    Some(duration) => duration,
+    None => Duration::from_secs(0),
+};
+
+#[derive(Default)]
+struct LlmWarmupState {
+    in_flight: bool,
+    last_touched: Option<Instant>,
+}
 
 /// Global core state
 struct Core {
@@ -43,6 +58,7 @@ struct Core {
     system_prompt: String,
     user_prompt_template: String,
     llm_http_client: Client,
+    llm_warmup_state: Arc<Mutex<LlmWarmupState>>,
 }
 
 static CORE: Mutex<Option<Core>> = Mutex::new(None);
@@ -117,6 +133,7 @@ pub extern "C" fn sp_core_create(config_path: *const c_char) -> i32 {
         system_prompt,
         user_prompt_template,
         llm_http_client,
+        llm_warmup_state: Arc::new(Mutex::new(LlmWarmupState::default())),
     };
 
     let mut global = CORE.lock().unwrap();
@@ -362,10 +379,19 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
     };
     let llm_config = cfg.llm.clone();
     let llm_http_client = core.llm_http_client.clone();
+    let llm_warmup_state = core.llm_warmup_state.clone();
     let dictionary = core.dictionary.clone();
     let dictionary_max_candidates = cfg.llm.dictionary_max_candidates;
     let system_prompt = core.system_prompt.clone();
     let user_prompt_template = core.user_prompt_template.clone();
+
+    start_llm_warmup_if_needed(
+        &core.runtime,
+        &session_id,
+        &llm_config,
+        llm_http_client.clone(),
+        llm_warmup_state.clone(),
+    );
 
     // Spawn the session task
     core.runtime.spawn(async move {
@@ -379,6 +405,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
             asr,
             llm_config,
             llm_http_client,
+            llm_warmup_state,
             dictionary,
             dictionary_max_candidates,
             system_prompt,
@@ -501,6 +528,7 @@ async fn run_session(
     mut asr: Box<dyn AsrProvider>,
     llm_config: config::LlmSection,
     llm_http_client: Client,
+    llm_warmup_state: Arc<Mutex<LlmWarmupState>>,
     dictionary: Vec<String>,
     dictionary_max_candidates: usize,
     system_prompt: String,
@@ -697,6 +725,7 @@ async fn run_session(
 
         match llm.correct(&request).await {
             Ok(corrected) => {
+                mark_llm_connection_touched(&llm_warmup_state);
                 log::info!("[{session_id}] LLM corrected: {} chars", corrected.len());
                 corrected
             }
@@ -776,6 +805,76 @@ async fn wait_for_final(
 fn cleanup_session(session_arc: &Arc<Mutex<Option<Session>>>) {
     let mut s = session_arc.lock().unwrap();
     *s = None;
+}
+
+fn llm_is_ready(cfg: &config::LlmSection) -> bool {
+    cfg.enabled && !cfg.base_url.is_empty() && !cfg.api_key.is_empty() && !cfg.model.is_empty()
+}
+
+fn start_llm_warmup_if_needed(
+    runtime: &Runtime,
+    session_id: &str,
+    llm_config: &config::LlmSection,
+    llm_http_client: Client,
+    llm_warmup_state: Arc<Mutex<LlmWarmupState>>,
+) {
+    if !llm_is_ready(llm_config) {
+        return;
+    }
+
+    {
+        let mut state = llm_warmup_state.lock().unwrap();
+        if state.in_flight {
+            log::debug!("[{session_id}] skipping LLM warmup; already in flight");
+            return;
+        }
+        if state
+            .last_touched
+            .is_some_and(|instant| instant.elapsed() < LLM_WARMUP_TTL)
+        {
+            log::debug!("[{session_id}] skipping LLM warmup; connection recently used");
+            return;
+        }
+        state.in_flight = true;
+    }
+
+    let warmup_session_id = session_id.to_string();
+    let warmup_cfg = llm_config.clone();
+    runtime.spawn(async move {
+        log::info!("[{warmup_session_id}] starting LLM warmup");
+        let llm = OpenAiCompatibleProvider::new(
+            llm_http_client,
+            warmup_cfg.base_url,
+            warmup_cfg.api_key,
+            warmup_cfg.model,
+            warmup_cfg.temperature,
+            warmup_cfg.top_p,
+            warmup_cfg.max_output_tokens,
+            warmup_cfg.max_token_parameter,
+        );
+
+        let warmup_ok = match llm.warmup().await {
+            Ok(()) => {
+                log::info!("[{warmup_session_id}] LLM warmup completed");
+                true
+            }
+            Err(err) => {
+                log::debug!("[{warmup_session_id}] LLM warmup failed: {err}");
+                false
+            }
+        };
+
+        let mut state = llm_warmup_state.lock().unwrap();
+        state.in_flight = false;
+        if warmup_ok {
+            state.last_touched = Some(Instant::now());
+        }
+    });
+}
+
+fn mark_llm_connection_touched(llm_warmup_state: &Arc<Mutex<LlmWarmupState>>) {
+    let mut state = llm_warmup_state.lock().unwrap();
+    state.last_touched = Some(Instant::now());
 }
 
 // ─── Model Manager FFI ─────────────────────────────────────────────

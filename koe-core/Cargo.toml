@@ -25,6 +25,7 @@ log = "0.4"
 env_logger = "0.11"
 uuid = { version = "1", features = ["v4"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+urlencoding = "2"
 
 [build-dependencies]
 cbindgen = "0.27"

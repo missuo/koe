@@ -4,6 +4,9 @@ use crate::llm::{CorrectionRequest, LlmProvider};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::time::Duration;
+use urlencoding::encode;
+
+pub const LLM_HTTP_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// LLM provider compatible with the OpenAI chat completions API.
 pub struct OpenAiCompatibleProvider {
@@ -39,12 +42,45 @@ impl OpenAiCompatibleProvider {
             max_token_parameter,
         }
     }
+
+    pub async fn warmup(&self) -> Result<()> {
+        let model = encode(&self.model);
+        let url = format!(
+            "{}/models/{}",
+            self.base_url.trim_end_matches('/'),
+            model
+        );
+
+        log::debug!("LLM warmup request to {url}");
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    KoeError::LlmTimeout
+                } else {
+                    KoeError::LlmFailed(e.to_string())
+                }
+            })?;
+
+        let status = response.status();
+        let _ = response.bytes().await;
+        if !status.is_success() {
+            log::debug!("LLM warmup completed with HTTP {status}");
+        }
+
+        Ok(())
+    }
 }
 
 pub fn build_http_client(timeout_ms: u64) -> std::result::Result<Client, reqwest::Error> {
     Client::builder()
         .timeout(Duration::from_millis(timeout_ms))
-        .pool_idle_timeout(Duration::from_secs(90))
+        .pool_idle_timeout(LLM_HTTP_POOL_IDLE_TIMEOUT)
         .pool_max_idle_per_host(2)
         .tcp_keepalive(Some(Duration::from_secs(30)))
         .http2_keep_alive_interval(Duration::from_secs(30))
