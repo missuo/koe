@@ -770,6 +770,16 @@ async fn run_session(
         asr_text
     };
 
+    // Check cancellation after LLM (which may have taken seconds) to avoid
+    // pasting stale text from an aborted session into the new session's window.
+    if cancelled.load(Ordering::SeqCst) {
+        log::info!("[{session_id}] session cancelled after LLM correction");
+        invoke_state_changed("cancelled");
+        cleanup_session(&session_arc);
+        invoke_state_changed("idle");
+        return;
+    }
+
     // Store corrected text
     {
         let mut s = session_arc.lock().unwrap();
