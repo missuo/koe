@@ -1,19 +1,23 @@
 name: Koe
 options:
   deploymentTarget:
-    macOS: "13.0"
+    macOS: "14.0"
   xcodeVersion: "16.0"
   defaultConfig: Release
+
+packages:
+  KoeMLX:
+    path: ../Packages/KoeMLX
 
 settings:
   base:
     PRODUCT_BUNDLE_IDENTIFIER: nz.owo.koe
-    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
     ENABLE_HARDENED_RUNTIME: YES
     APP_UPDATE_FEED_URL: "https://raw.githubusercontent.com/missuo/koe/main/docs/update-feed.json"
 
-targets:
-  Koe:
+targetTemplates:
+  KoeApp:
     type: application
     platform: macOS
     sources:
@@ -30,11 +34,10 @@ targets:
           - "$(SRCROOT)/../koe-core/target"
         LIBRARY_SEARCH_PATHS:
           - "$(inherited)"
-          - "$(SRCROOT)/../target/aarch64-apple-darwin/release"
-          - "$(SRCROOT)/../target/x86_64-apple-darwin/release"
           - "$(SRCROOT)/../target/release"
         OTHER_LDFLAGS:
           - "-lkoe_core"
+          - "-lc++"
           - "-lSystem"
           - "-lresolv"
           - "-framework Security"
@@ -42,19 +45,6 @@ targets:
           - "-framework UserNotifications"
         ENABLE_APP_SANDBOX: NO
         CLANG_ENABLE_OBJC_ARC: YES
-    dependencies: []
-    preBuildScripts:
-      - name: Build Rust Library
-        script: |
-          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-          cd "${SRCROOT}/.."
-          if [ "$ARCHS" = "x86_64" ]; then
-            RUST_TARGET="x86_64-apple-darwin"
-          else
-            RUST_TARGET="aarch64-apple-darwin"
-          fi
-          cargo build --manifest-path koe-core/Cargo.toml --release --target "$RUST_TARGET"
-        basedOnDependencyAnalysis: false
     frameworks:
       - AVFoundation
       - AppKit
@@ -65,3 +55,39 @@ targets:
       - ServiceManagement
       - UserNotifications
       - sdk: libsqlite3.tbd
+
+targets:
+  Koe:
+    templates:
+      - KoeApp
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
+    dependencies:
+      - package: KoeMLX
+        product: KoeMLX
+    preBuildScripts:
+      - name: Build Rust Library
+        script: |
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+          cd "${SRCROOT}/.."
+          RUST_TARGET="aarch64-apple-darwin"
+          cargo build --manifest-path koe-core/Cargo.toml --release --target "$RUST_TARGET"
+          mkdir -p "${SRCROOT}/../target/release"
+          ln -sf "${SRCROOT}/../target/${RUST_TARGET}/release/libkoe_core.a" "${SRCROOT}/../target/release/libkoe_core.a"
+        basedOnDependencyAnalysis: false
+
+  Koe-x86:
+    templates:
+      - KoeApp
+    dependencies: []
+    preBuildScripts:
+      - name: Build Rust Library
+        script: |
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+          cd "${SRCROOT}/.."
+          RUST_TARGET="x86_64-apple-darwin"
+          cargo build --manifest-path koe-core/Cargo.toml --release --target "$RUST_TARGET" --no-default-features --features sherpa-onnx
+          mkdir -p "${SRCROOT}/../target/release"
+          ln -sf "${SRCROOT}/../target/${RUST_TARGET}/release/libkoe_core.a" "${SRCROOT}/../target/release/libkoe_core.a"
+        basedOnDependencyAnalysis: false
