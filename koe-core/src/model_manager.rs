@@ -305,12 +305,13 @@ where
 
     // Already complete?
     if let Ok(meta) = std::fs::metadata(&dest) {
-        if meta.len() == file.size {
+        let size_ok = file.size == 0 || meta.len() == file.size;
+        if size_ok {
             on_progress(DownloadProgress {
                 file_index,
                 file_count,
                 filename: file.name.clone(),
-                bytes_downloaded: file.size,
+                bytes_downloaded: meta.len(),
                 bytes_total: file.size,
                 already_exists: true,
             });
@@ -397,14 +398,27 @@ where
         .map_err(|e| KoeError::Config(format!("flush {}: {e}", file.name)))?;
     drop(out);
 
-    // Verify sha256
-    let actual_sha = sha256_file(&part_path)?;
-    if actual_sha != file.sha256 {
-        let _ = std::fs::remove_file(&part_path);
-        return Err(KoeError::Config(format!(
-            "sha256 mismatch for {}: expected {}, got {}",
-            file.name, file.sha256, actual_sha
-        )));
+    // Verify integrity: use sha256 when available, otherwise check file size
+    if !file.sha256.is_empty() {
+        let actual_sha = sha256_file(&part_path)?;
+        if actual_sha != file.sha256 {
+            let _ = std::fs::remove_file(&part_path);
+            return Err(KoeError::Config(format!(
+                "sha256 mismatch for {}: expected {}, got {}",
+                file.name, file.sha256, actual_sha
+            )));
+        }
+    } else if file.size > 0 {
+        let actual_size = std::fs::metadata(&part_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        if actual_size != file.size {
+            let _ = std::fs::remove_file(&part_path);
+            return Err(KoeError::Config(format!(
+                "size mismatch for {}: expected {}, got {}",
+                file.name, file.size, actual_size
+            )));
+        }
     }
 
     // Rename .part → final
