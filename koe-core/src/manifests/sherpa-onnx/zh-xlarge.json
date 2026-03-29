@@ -1,0 +1,31 @@
+{
+    "provider": "sherpa-onnx",
+    "description": "Chinese extra-large (2025, best accuracy)",
+    "repo": "csukuangfj/sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30",
+    "files": [
+        {
+            "name": "decoder.onnx",
+            "size": 8533022,
+            "sha256": "8f9c903da2818f207304a3f30b9eeb30028e30398f333c1e95e12c97704173e6",
+            "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30/resolve/main/decoder.onnx"
+        },
+        {
+            "name": "encoder.int8.onnx",
+            "size": 761133737,
+            "sha256": "f2c543a0330e1ed0bd09c82e4ae7d3f1cbee10a15feca638fcc4f88083a36b8a",
+            "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30/resolve/main/encoder.int8.onnx"
+        },
+        {
+            "name": "joiner.int8.onnx",
+            "size": 1545417,
+            "sha256": "f76ffce14b6ef80098cfdbce8846896ff68133970abc314eafab632f910df0d7",
+            "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30/resolve/main/joiner.int8.onnx"
+        },
+        {
+            "name": "tokens.txt",
+            "size": 18626,
+            "sha256": "6722bd1585f46f84456b29c3550a343a3cc375b971645773c02ed8e0b4e2405c",
+            "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30/resolve/main/tokens.txt"
+        }
+    ]
+}

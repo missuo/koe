@@ -1,0 +1,31 @@
+{
+    "provider": "sherpa-onnx",
+    "description": "Bilingual Chinese-English model",
+    "repo": "csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20",
+    "files": [
+        {
+            "name": "decoder-epoch-99-avg-1.int8.onnx",
+            "size": 13091040,
+            "sha256": "1a70c593d71e53f023f5f55b0b4cfff5055abb786ee3992e5f63dc2e273cc4fa",
+            "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main/decoder-epoch-99-avg-1.int8.onnx"
+        },
+        {
+            "name": "encoder-epoch-99-avg-1.int8.onnx",
+            "size": 181895032,
+            "sha256": "8fa764187a261844f859d7143ebaa563af5d10adfece4c18a8f414c88cba2a9b",
+            "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main/encoder-epoch-99-avg-1.int8.onnx"
+        },
+        {
+            "name": "joiner-epoch-99-avg-1.int8.onnx",
+            "size": 3228404,
+            "sha256": "1ed689c5ed19dbaa725d9d191bb4822b5f4855a39e1ffd28cbc1f340d25b2ee0",
+            "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main/joiner-epoch-99-avg-1.int8.onnx"
+        },
+        {
+            "name": "tokens.txt",
+            "size": 56317,
+            "sha256": "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3",
+            "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main/tokens.txt"
+        }
+    ]
+}

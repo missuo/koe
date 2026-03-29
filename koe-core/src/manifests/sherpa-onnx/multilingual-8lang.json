@@ -1,0 +1,31 @@
+{
+    "provider": "sherpa-onnx",
+    "description": "Multilingual 8-language (2025)",
+    "repo": "csukuangfj/sherpa-onnx-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10",
+    "files": [
+        {
+            "name": "decoder-epoch-75-avg-11-chunk-16-left-128.onnx",
+            "size": 33837085,
+            "sha256": "7ebc63f34b21c8efb4a41a5a2eee7fe1448829ce0230ecc5369e67fc14d90d48",
+            "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10/resolve/main/decoder-epoch-75-avg-11-chunk-16-left-128.onnx"
+        },
+        {
+            "name": "encoder-epoch-75-avg-11-chunk-16-left-128.int8.onnx",
+            "size": 296583597,
+            "sha256": "f9001ed7a9e46d0294438c1a30cd7c72d1cc4bdd4e7880edbcda36f67081e32e",
+            "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10/resolve/main/encoder-epoch-75-avg-11-chunk-16-left-128.int8.onnx"
+        },
+        {
+            "name": "joiner-epoch-75-avg-11-chunk-16-left-128.int8.onnx",
+            "size": 8257421,
+            "sha256": "db88e3172323551abaa99b91b18fb422a27ea4a834fd0db10389f9478816f917",
+            "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10/resolve/main/joiner-epoch-75-avg-11-chunk-16-left-128.int8.onnx"
+        },
+        {
+            "name": "tokens.txt",
+            "size": 195244,
+            "sha256": "784f24950f6bcce1b0021035632dd60fd4617ecd8ca0581ab57d7b39d77ba5ab",
+            "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-ar_en_id_ja_ru_th_vi_zh-2025-02-10/resolve/main/tokens.txt"
+        }
+    ]
+}
