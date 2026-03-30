@@ -166,17 +166,8 @@ fn load_manifest(model_dir: &Path) -> Option<DiscoveredModel> {
 
 // ─── Status ─────────────────────────────────────────────────────────
 
-/// Quick status check (size only, no sha256). Suitable for `list`.
-pub fn check_model_status(model_dir: &Path) -> ModelStatus {
-    check_status_inner(model_dir, false)
-}
-
-/// Full verification (size + sha256 when available). Suitable for `status` and `pull`.
-pub fn verify_model_status(model_dir: &Path) -> ModelStatus {
-    check_status_inner(model_dir, true)
-}
-
-fn check_status_inner(model_dir: &Path, verify_sha: bool) -> ModelStatus {
+/// Unified model status check with configurable verification depth.
+pub fn model_status(model_dir: &Path, mode: VerifyMode) -> ModelStatus {
     let model = match load_manifest(model_dir) {
         Some(m) => m,
         None => return ModelStatus::NotInstalled,
@@ -186,23 +177,25 @@ fn check_status_inner(model_dir: &Path, verify_sha: bool) -> ModelStatus {
         return ModelStatus::Installed;
     }
 
+    let cache_path = model_dir.join(CHECKSUM_CACHE_FILE);
+    let cache: HashMap<String, ChecksumEntry> = match mode {
+        VerifyMode::ForceVerify => HashMap::new(),
+        _ => load_checksum_cache(&cache_path).unwrap_or_default(),
+    };
+
     let mut found = 0usize;
     let total = model.manifest.files.len();
+    let mut new_cache = cache.clone();
+    let mut cache_dirty = false;
 
     for file in &model.manifest.files {
-        let file_path = model_dir.join(&file.name);
-        if let Ok(meta) = std::fs::metadata(&file_path) {
-            if meta.len() != file.size {
-                continue;
-            }
-            if verify_sha && !file.sha256.is_empty() {
-                match sha256_file(&file_path) {
-                    Ok(hash) if hash == file.sha256 => {}
-                    _ => continue,
-                }
-            }
+        if check_file(model_dir, file, mode, &cache, &mut new_cache, &mut cache_dirty) {
             found += 1;
         }
+    }
+
+    if cache_dirty && mode != VerifyMode::CacheOnly {
+        let _ = write_checksum_cache(&cache_path, &new_cache);
     }
 
     if found == total {
@@ -211,6 +204,72 @@ fn check_status_inner(model_dir: &Path, verify_sha: bool) -> ModelStatus {
         ModelStatus::Incomplete
     } else {
         ModelStatus::NotInstalled
+    }
+}
+
+// Temporary wrappers for backward compatibility — removed in next commit.
+pub fn check_model_status(model_dir: &Path) -> ModelStatus {
+    model_status(model_dir, VerifyMode::Normal)
+}
+pub fn verify_model_status(model_dir: &Path) -> ModelStatus {
+    model_status(model_dir, VerifyMode::Normal)
+}
+
+/// Check a single file against its manifest entry.
+fn check_file(
+    model_dir: &Path,
+    file: &ModelFile,
+    mode: VerifyMode,
+    cache: &HashMap<String, ChecksumEntry>,
+    new_cache: &mut HashMap<String, ChecksumEntry>,
+    cache_dirty: &mut bool,
+) -> bool {
+    let file_path = model_dir.join(&file.name);
+    let meta = match std::fs::metadata(&file_path) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+
+    // manifest 有 size → 比较
+    if file.size > 0 && meta.len() != file.size {
+        return false;
+    }
+
+    // manifest 无 sha → size 通过即可
+    if file.sha256.is_empty() {
+        return true;
+    }
+
+    // manifest 有 sha → 需要验证
+    let mtime = mtime_secs(&meta);
+
+    // 检查缓存（ForceVerify 传入空 cache，不会命中）
+    if let Some(entry) = cache.get(&file.name) {
+        if entry.mtime == mtime {
+            return entry.sha256 == file.sha256;
+        }
+    }
+
+    // 缓存无效
+    if mode == VerifyMode::CacheOnly {
+        return false;
+    }
+
+    // 计算 sha256
+    match sha256_file(&file_path) {
+        Ok(hash) => {
+            let ok = hash == file.sha256;
+            new_cache.insert(
+                file.name.clone(),
+                ChecksumEntry {
+                    mtime,
+                    sha256: hash,
+                },
+            );
+            *cache_dirty = true;
+            ok
+        }
+        Err(_) => false,
     }
 }
 
@@ -567,31 +626,39 @@ mod tests {
     }
 
     #[test]
-    fn check_model_status_accepts_same_size_corrupted_file() {
-        // BUG: check_model_status only checks size, not sha256
-        // A corrupted file with matching size is reported as Installed
+    fn cache_only_does_not_detect_corruption() {
+        // CacheOnly without prior verification: sha is uncached, returns false
         let (tmp, _) = setup_corrupted_model();
 
-        let status = check_model_status(&tmp);
-        // This passes — documenting the bug: size-only check is fooled
-        assert_eq!(status, ModelStatus::Installed);
-
-        let _ = fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn verify_model_status_detects_corruption() {
-        // verify_model_status checks sha256 and correctly detects corruption
-        let (tmp, _) = setup_corrupted_model();
-
-        let status = verify_model_status(&tmp);
+        let status = model_status(&tmp, VerifyMode::CacheOnly);
+        // CacheOnly can't verify — no cache yet, so files with sha fail
         assert_ne!(status, ModelStatus::Installed);
 
         let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
-    fn check_model_status_valid_file() {
+    fn normal_mode_detects_corruption() {
+        let (tmp, _) = setup_corrupted_model();
+
+        let status = model_status(&tmp, VerifyMode::Normal);
+        assert_ne!(status, ModelStatus::Installed);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn force_verify_detects_corruption() {
+        let (tmp, _) = setup_corrupted_model();
+
+        let status = model_status(&tmp, VerifyMode::ForceVerify);
+        assert_ne!(status, ModelStatus::Installed);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn normal_mode_valid_file() {
         let tmp = std::env::temp_dir().join(format!(
             "koe-model-test-valid-{}",
             std::time::SystemTime::now()
@@ -627,15 +694,14 @@ mod tests {
         .unwrap();
         fs::write(tmp.join("model.bin"), content).unwrap();
 
-        assert_eq!(check_model_status(&tmp), ModelStatus::Installed);
-        assert_eq!(verify_model_status(&tmp), ModelStatus::Installed);
+        assert_eq!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
+        assert_eq!(model_status(&tmp, VerifyMode::ForceVerify), ModelStatus::Installed);
 
         let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
-    fn check_model_status_no_sha256_size_only() {
-        // When manifest has no sha256, both check and verify should accept by size
+    fn no_sha256_all_modes_accept_by_size() {
         let tmp = std::env::temp_dir().join(format!(
             "koe-model-test-nosha-{}",
             std::time::SystemTime::now()
@@ -665,8 +731,69 @@ mod tests {
         .unwrap();
         fs::write(tmp.join("model.bin"), content).unwrap();
 
-        assert_eq!(check_model_status(&tmp), ModelStatus::Installed);
-        assert_eq!(verify_model_status(&tmp), ModelStatus::Installed);
+        assert_eq!(model_status(&tmp, VerifyMode::CacheOnly), ModelStatus::Installed);
+        assert_eq!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn normal_writes_cache_then_cache_only_hits() {
+        let (tmp, _) = setup_corrupted_model();
+
+        // Normal computes sha and writes cache
+        let status1 = model_status(&tmp, VerifyMode::Normal);
+        assert_ne!(status1, ModelStatus::Installed); // corrupted
+
+        // Cache file should exist now
+        assert!(tmp.join(CHECKSUM_CACHE_FILE).exists());
+
+        // CacheOnly should hit the cache and return same result
+        let status2 = model_status(&tmp, VerifyMode::CacheOnly);
+        assert_eq!(status1, status2);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn cache_hit_for_valid_model() {
+        let tmp = std::env::temp_dir().join(format!(
+            "koe-model-test-cache-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        let content = b"valid cached model";
+        let sha = {
+            let mut hasher = Sha256::new();
+            hasher.update(content);
+            format!("{:x}", hasher.finalize())
+        };
+
+        let manifest = ModelManifest {
+            provider: "test".into(),
+            description: "test".into(),
+            repo: "test/model".into(),
+            files: vec![ModelFile {
+                name: "model.bin".into(),
+                size: content.len() as u64,
+                sha256: sha,
+                url: String::new(),
+            }],
+        };
+
+        fs::write(tmp.join(MANIFEST_FILE), serde_json::to_string(&manifest).unwrap()).unwrap();
+        fs::write(tmp.join("model.bin"), content).unwrap();
+
+        // Normal: compute + cache
+        assert_eq!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
+        assert!(tmp.join(CHECKSUM_CACHE_FILE).exists());
+
+        // CacheOnly: cache hit
+        assert_eq!(model_status(&tmp, VerifyMode::CacheOnly), ModelStatus::Installed);
 
         let _ = fs::remove_dir_all(&tmp);
     }
