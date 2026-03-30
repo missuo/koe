@@ -207,14 +207,6 @@ pub fn model_status(model_dir: &Path, mode: VerifyMode) -> ModelStatus {
     }
 }
 
-// Temporary wrappers for backward compatibility — removed in next commit.
-pub fn check_model_status(model_dir: &Path) -> ModelStatus {
-    model_status(model_dir, VerifyMode::Normal)
-}
-pub fn verify_model_status(model_dir: &Path) -> ModelStatus {
-    model_status(model_dir, VerifyMode::Normal)
-}
-
 /// Check a single file against its manifest entry.
 fn check_file(
     model_dir: &Path,

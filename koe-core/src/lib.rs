@@ -988,7 +988,7 @@ pub extern "C" fn sp_core_scan_models_json() -> *mut c_char {
                 "description": m.manifest.description,
                 "repo": m.manifest.repo,
                 "total_size": m.manifest.files.iter().map(|f| f.size).sum::<u64>(),
-                "status": model_manager::check_model_status(&m.path) as i32,
+                "status": model_manager::model_status(&m.path, model_manager::VerifyMode::Normal) as i32,
             })
         })
         .collect();
@@ -1054,32 +1054,25 @@ pub unsafe extern "C" fn sp_core_free_string(s: *mut c_char) {
     }
 }
 
-/// Check model status (quick, size only): 0=not installed, 1=incomplete, 2=installed
+/// Model status check with configurable verification mode.
+/// mode: 0=Normal (cached sha256), 1=CacheOnly (no compute), 2=ForceVerify (always compute)
+/// Returns: 0=not installed, 1=incomplete, 2=installed
 ///
 /// # Safety
 /// `model_path` must be a valid null-terminated C string.
 #[no_mangle]
-pub unsafe extern "C" fn sp_core_check_model_status(model_path: *const c_char) -> i32 {
+pub unsafe extern "C" fn sp_model_status(model_path: *const c_char, mode: i32) -> i32 {
     let path = match unsafe { cstr_to_str(model_path) } {
         Some(s) => s,
-        None => return -1,
+        None => return 0,
+    };
+    let verify_mode = match mode {
+        1 => model_manager::VerifyMode::CacheOnly,
+        2 => model_manager::VerifyMode::ForceVerify,
+        _ => model_manager::VerifyMode::Normal,
     };
     let model_dir = config::resolve_model_dir(path);
-    model_manager::check_model_status(&model_dir) as i32
-}
-
-/// Verify model status (thorough, size + sha256): 0=not installed, 1=incomplete, 2=installed
-///
-/// # Safety
-/// `model_path` must be a valid null-terminated C string.
-#[no_mangle]
-pub unsafe extern "C" fn sp_core_verify_model_status(model_path: *const c_char) -> i32 {
-    let path = match unsafe { cstr_to_str(model_path) } {
-        Some(s) => s,
-        None => return -1,
-    };
-    let model_dir = config::resolve_model_dir(path);
-    model_manager::verify_model_status(&model_dir) as i32
+    model_manager::model_status(&model_dir, verify_mode) as i32
 }
 
 /// Start downloading a model. Returns 0=started, -1=already downloading, -2=error.

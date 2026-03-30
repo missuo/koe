@@ -51,6 +51,9 @@ enum ModelCommands {
     Status {
         /// Model path (relative to ~/.koe/models/ or absolute)
         model: String,
+        /// Verification mode: normal (default), cache-only, force
+        #[arg(long, default_value = "normal")]
+        verify_mode: String,
     },
     /// Download model files
     Pull {
@@ -74,7 +77,7 @@ async fn main() {
     let result = match cli.command {
         Commands::Model { action } => match action {
             ModelCommands::List => list(),
-            ModelCommands::Status { model } => status(&model),
+            ModelCommands::Status { model, verify_mode } => status(&model, &verify_mode),
             ModelCommands::Pull { model } => pull(&model).await,
             ModelCommands::Remove { model } => remove(&model),
         },
@@ -103,7 +106,7 @@ fn list() -> Result<(), String> {
     }
 
     for model in &models {
-        let status = model_manager::check_model_status(&model.path);
+        let status = model_manager::model_status(&model.path, model_manager::VerifyMode::CacheOnly);
         let tag = match status {
             model_manager::ModelStatus::Installed => "installed",
             model_manager::ModelStatus::Incomplete => "incomplete",
@@ -126,15 +129,21 @@ fn list() -> Result<(), String> {
     Ok(())
 }
 
-fn status(model: &str) -> Result<(), String> {
+fn status(model: &str, verify_mode_str: &str) -> Result<(), String> {
     let model_dir = koe_core::config::resolve_model_dir(model);
 
     if !model_dir.exists() {
         return Err(format!("model directory not found: {}", model_dir.display()));
     }
 
+    let mode = match verify_mode_str {
+        "cache-only" => model_manager::VerifyMode::CacheOnly,
+        "force" => model_manager::VerifyMode::ForceVerify,
+        _ => model_manager::VerifyMode::Normal,
+    };
+
     println!("Verifying {model}...");
-    let status = model_manager::verify_model_status(&model_dir);
+    let status = model_manager::model_status(&model_dir, mode);
     match status {
         model_manager::ModelStatus::Installed => {
             println!("{model} — installed (verified)");
@@ -230,7 +239,7 @@ async fn pull(model: &str) -> Result<(), String> {
 
     // Verify after download
     eprint!("\nVerifying...");
-    let status = model_manager::verify_model_status(&model_dir);
+    let status = model_manager::model_status(&model_dir, model_manager::VerifyMode::ForceVerify);
     match status {
         model_manager::ModelStatus::Installed => {
             eprintln!(" ok");
