@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ use crate::config;
 use crate::errors::{KoeError, Result};
 
 const MANIFEST_FILE: &str = ".koe-manifest.json";
+const CHECKSUM_CACHE_FILE: &str = ".koe-checksum.json";
 
 // ─── Data Structures ────────────────────────────────────────────────
 
@@ -49,6 +51,47 @@ pub enum ModelStatus {
     Incomplete = 1,
     /// Manifest exists, all files present with correct sizes.
     Installed = 2,
+}
+
+/// Controls how `model_status()` verifies file integrity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerifyMode {
+    /// Use cached sha256 if valid (mtime matches), compute on cache miss, write back.
+    Normal,
+    /// Use cached sha256 if valid, return false on cache miss (never compute).
+    CacheOnly,
+    /// Ignore cache, always compute sha256, write back.
+    ForceVerify,
+}
+
+/// Per-file checksum cache entry stored in `.koe-checksum.json`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct ChecksumEntry {
+    /// File mtime (seconds since epoch) at the time sha256 was computed.
+    mtime: i64,
+    /// Hex-encoded sha256 hash.
+    sha256: String,
+}
+
+fn load_checksum_cache(path: &Path) -> Option<HashMap<String, ChecksumEntry>> {
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+fn write_checksum_cache(path: &Path, cache: &HashMap<String, ChecksumEntry>) -> Result<()> {
+    let json = serde_json::to_string_pretty(cache)
+        .map_err(|e| KoeError::Config(format!("serialize checksum cache: {e}")))?;
+    std::fs::write(path, json)
+        .map_err(|e| KoeError::Config(format!("write checksum cache: {e}")))?;
+    Ok(())
+}
+
+fn mtime_secs(meta: &std::fs::Metadata) -> i64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 // ─── Models Directory ───────────────────────────────────────────────
