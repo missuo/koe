@@ -687,11 +687,20 @@ async fn run_session(
 
     let _ = asr.close().await;
 
+    // If ASR reported an error, fail the session even if partial text was accumulated.
+    // Continuing with truncated/unconfirmed text would paste garbage into the user's app.
+    if let Some(error_msg) = asr_error {
+        log::warn!("[{session_id}] ASR failed (discarding partial text): {error_msg}");
+        invoke_session_error(session_token, &error_msg);
+        invoke_state_changed(session_token, "failed");
+        cleanup_session(&session_arc);
+        return;
+    }
+
     let asr_text = aggregator.best_text().to_string();
     if asr_text.is_empty() {
-        let error_msg = asr_error.unwrap_or_else(|| "no speech recognized".to_string());
-        log::warn!("[{session_id}] no ASR text available: {error_msg}");
-        invoke_session_error(session_token, &error_msg);
+        log::warn!("[{session_id}] no ASR text available: no speech recognized");
+        invoke_session_error(session_token, "no speech recognized");
         invoke_state_changed(session_token, "failed");
         cleanup_session(&session_arc);
         return;
@@ -1312,50 +1321,33 @@ mod tests {
     // ── Main loop error-with-partial-text tests ─────────────────────────
 
     /// Simulates the post-ASR decision: should the session fail?
-    /// Extracts the logic from run_session lines 684-692.
-    fn should_fail_session(_asr_error: &Option<String>, asr_text: &str) -> bool {
-        // Current (buggy) logic: only fail if text is empty
-        // asr_error is not checked — it's only used as a fallback message
-        asr_text.is_empty()
+    /// Mirrors the logic from run_session after asr.close().
+    fn should_fail_session(asr_error: &Option<String>, asr_text: &str) -> bool {
+        // Fail if there was an error (regardless of accumulated text)
+        // or if there's no text at all
+        asr_error.is_some() || asr_text.is_empty()
     }
 
     #[test]
     fn error_with_no_text_fails_session() {
         let asr_error = Some("ASR error: connection lost".into());
-        assert!(
-            should_fail_session(&asr_error, ""),
-            "session should fail when error + no text"
-        );
+        assert!(should_fail_session(&asr_error, ""));
     }
 
     #[test]
-    fn error_with_partial_text_should_fail_but_doesnt() {
-        // BUG: current logic proceeds to LLM when there's partial text,
-        // even if ASR reported an error — truncated text gets pasted
+    fn error_with_partial_text_fails_session() {
+        // ASR error should fail the session even with accumulated partial text
         let asr_error = Some("ASR error: connection lost".into());
-        let partial_text = "hello wor"; // truncated due to error
-
-        // Current behavior: does NOT fail (bug)
-        assert!(
-            !should_fail_session(&asr_error, partial_text),
-            "BUG: session continues to LLM with truncated text after error"
-        );
-        // After fix: should_fail_session should return true when asr_error.is_some()
+        assert!(should_fail_session(&asr_error, "hello wor"));
     }
 
     #[test]
     fn no_error_with_text_proceeds() {
-        assert!(
-            !should_fail_session(&None, "hello world"),
-            "session should proceed when no error and text present"
-        );
+        assert!(!should_fail_session(&None, "hello world"));
     }
 
     #[test]
     fn no_error_no_text_fails() {
-        assert!(
-            should_fail_session(&None, ""),
-            "session should fail when no error and no text"
-        );
+        assert!(should_fail_session(&None, ""));
     }
 }
