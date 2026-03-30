@@ -1399,11 +1399,15 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     }
 
     NSString *tokenParam = self.maxTokenParamPopup.selectedItem.representedObject ?: @"max_completion_tokens";
-    NSDictionary *body = @{
+    NSMutableDictionary *body = [@{
         @"model": model,
         @"messages": @[@{@"role": @"user", @"content": @"Hi"}],
         tokenParam: @(10),
-    };
+    } mutableCopy];
+    // Match runtime behavior: send reasoning_effort when using max_completion_tokens
+    if ([tokenParam isEqualToString:@"max_completion_tokens"]) {
+        body[@"reasoning_effort"] = @"none";
+    }
     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
