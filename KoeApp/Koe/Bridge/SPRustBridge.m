@@ -207,12 +207,8 @@ static void bridge_on_interim_text(uint64_t token, const char *text) {
     return result;
 }
 
-- (NSInteger)checkModelStatus:(NSString *)modelPath {
-    return sp_core_check_model_status(modelPath.UTF8String);
-}
-
-- (NSInteger)verifyModelStatus:(NSString *)modelPath {
-    return sp_core_verify_model_status(modelPath.UTF8String);
+- (NSInteger)modelStatus:(NSString *)modelPath mode:(SPModelVerifyMode)mode {
+    return sp_model_status(modelPath.UTF8String, (int32_t)mode);
 }
 
 static void download_progress_cb(void *ctx, uint32_t file_index, uint32_t file_count,

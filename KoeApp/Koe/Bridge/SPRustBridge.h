@@ -53,11 +53,14 @@ typedef NS_ENUM(NSInteger, SPSessionModeObjC) {
 /// Each dict: path, provider, description, repo, total_size, status (0/1/2)
 - (NSArray<NSDictionary *> *)scanModels;
 
-/// Quick status check (size only): 0=not installed, 1=incomplete, 2=installed
-- (NSInteger)checkModelStatus:(NSString *)modelPath;
+typedef NS_ENUM(NSInteger, SPModelVerifyMode) {
+    SPModelVerifyNormal = 0,      // cached sha256, compute on miss
+    SPModelVerifyCacheOnly = 1,   // cache hit only, no compute
+    SPModelVerifyForce = 2,       // ignore cache, always compute
+};
 
-/// Full verification (size + sha256): 0=not installed, 1=incomplete, 2=installed
-- (NSInteger)verifyModelStatus:(NSString *)modelPath;
+/// Model status with configurable verification: 0=not installed, 1=incomplete, 2=installed
+- (NSInteger)modelStatus:(NSString *)modelPath mode:(SPModelVerifyMode)mode;
 
 /// Download a model asynchronously.
 - (void)downloadModel:(NSString *)modelPath
