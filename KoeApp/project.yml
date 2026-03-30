@@ -8,6 +8,8 @@ options:
 packages:
   KoeMLX:
     path: ../Packages/KoeMLX
+  KoeAppleSpeech:
+    path: ../Packages/KoeAppleSpeech
 
 settings:
   base:
@@ -54,6 +56,7 @@ targetTemplates:
       - CoreAudio
       - AudioToolbox
       - ServiceManagement
+      - Speech
       - UserNotifications
       - sdk: libsqlite3.tbd
 
@@ -67,6 +70,8 @@ targets:
     dependencies:
       - package: KoeMLX
         product: KoeMLX
+      - package: KoeAppleSpeech
+        product: KoeAppleSpeech
     preBuildScripts:
       - name: Build Rust Library
         script: |
@@ -81,14 +86,16 @@ targets:
   Koe-x86:
     templates:
       - KoeApp
-    dependencies: []
+    dependencies:
+      - package: KoeAppleSpeech
+        product: KoeAppleSpeech
     preBuildScripts:
       - name: Build Rust Library
         script: |
           export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
           cd "${SRCROOT}/.."
           RUST_TARGET="x86_64-apple-darwin"
-          cargo build --manifest-path koe-core/Cargo.toml --release --target "$RUST_TARGET" --no-default-features --features sherpa-onnx
+          cargo build --manifest-path koe-core/Cargo.toml --release --target "$RUST_TARGET" --no-default-features --features "sherpa-onnx,apple-speech"
           mkdir -p "${SRCROOT}/../target/release"
           ln -sf "${SRCROOT}/../target/${RUST_TARGET}/release/libkoe_core.a" "${SRCROOT}/../target/release/libkoe_core.a"
         basedOnDependencyAnalysis: false

@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Koe needs microphone access to capture your speech for voice input.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Koe uses on-device speech recognition to transcribe your voice input.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>SPUpdateFeedURL</key>
