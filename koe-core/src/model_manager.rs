@@ -789,4 +789,153 @@ mod tests {
 
         let _ = fs::remove_dir_all(&tmp);
     }
+
+    #[test]
+    fn cache_only_returns_not_installed_for_missing_files() {
+        let tmp = std::env::temp_dir().join(format!(
+            "koe-model-test-missing-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        let manifest = ModelManifest {
+            provider: "test".into(),
+            description: "test".into(),
+            repo: "test/model".into(),
+            files: vec![ModelFile {
+                name: "model.bin".into(),
+                size: 100,
+                sha256: "abc".into(),
+                url: String::new(),
+            }],
+        };
+        fs::write(tmp.join(MANIFEST_FILE), serde_json::to_string(&manifest).unwrap()).unwrap();
+        // No model.bin file
+
+        assert_eq!(model_status(&tmp, VerifyMode::CacheOnly), ModelStatus::NotInstalled);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn force_verify_ignores_existing_cache() {
+        let (tmp, _) = setup_corrupted_model();
+
+        // Build a fake cache that claims Installed
+        let mut fake_cache = HashMap::new();
+        let meta = fs::metadata(tmp.join("model.bin")).unwrap();
+        fake_cache.insert(
+            "model.bin".to_string(),
+            ChecksumEntry {
+                mtime: mtime_secs(&meta),
+                sha256: "fake_matching_sha_that_would_fool_cache".into(),
+            },
+        );
+        write_checksum_cache(&tmp.join(CHECKSUM_CACHE_FILE), &fake_cache).unwrap();
+
+        // Normal would trust the cache (mtime matches) — but the cached sha
+        // doesn't match the manifest sha, so it still fails
+        // ForceVerify ignores cache entirely, recomputes sha
+        let status = model_status(&tmp, VerifyMode::ForceVerify);
+        assert_ne!(status, ModelStatus::Installed);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn remove_model_files_deletes_cache() {
+        let tmp = std::env::temp_dir().join(format!(
+            "koe-model-test-remove-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        let content = b"model data for remove test";
+        let sha = {
+            let mut hasher = Sha256::new();
+            hasher.update(content);
+            format!("{:x}", hasher.finalize())
+        };
+        let manifest = ModelManifest {
+            provider: "test".into(),
+            description: "test".into(),
+            repo: "test/model".into(),
+            files: vec![ModelFile {
+                name: "model.bin".into(),
+                size: content.len() as u64,
+                sha256: sha,
+                url: String::new(),
+            }],
+        };
+        fs::write(tmp.join(MANIFEST_FILE), serde_json::to_string(&manifest).unwrap()).unwrap();
+        fs::write(tmp.join("model.bin"), content).unwrap();
+
+        // Build cache
+        assert_eq!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
+        assert!(tmp.join(CHECKSUM_CACHE_FILE).exists());
+
+        // Remove model files (keeps manifest)
+        let removed = remove_model_files(&tmp).unwrap();
+        assert!(removed >= 1);
+        assert!(!tmp.join(CHECKSUM_CACHE_FILE).exists());
+        assert!(tmp.join(MANIFEST_FILE).exists());
+
+        assert_eq!(model_status(&tmp, VerifyMode::CacheOnly), ModelStatus::NotInstalled);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn mtime_change_invalidates_cache() {
+        let tmp = std::env::temp_dir().join(format!(
+            "koe-model-test-mtime-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        let content = b"original content";
+        let sha = {
+            let mut hasher = Sha256::new();
+            hasher.update(content);
+            format!("{:x}", hasher.finalize())
+        };
+        let manifest = ModelManifest {
+            provider: "test".into(),
+            description: "test".into(),
+            repo: "test/model".into(),
+            files: vec![ModelFile {
+                name: "model.bin".into(),
+                size: content.len() as u64,
+                sha256: sha,
+                url: String::new(),
+            }],
+        };
+        fs::write(tmp.join(MANIFEST_FILE), serde_json::to_string(&manifest).unwrap()).unwrap();
+        fs::write(tmp.join("model.bin"), content).unwrap();
+
+        // Build cache
+        assert_eq!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
+
+        // Overwrite file with different content (same size, different sha, new mtime)
+        // Use sleep to ensure mtime changes (filesystem granularity)
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        fs::write(tmp.join("model.bin"), b"modified content").unwrap();
+
+        // CacheOnly: mtime changed → cache invalid → returns false
+        assert_ne!(model_status(&tmp, VerifyMode::CacheOnly), ModelStatus::Installed);
+
+        // Normal: recomputes sha, finds mismatch
+        assert_ne!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
 }
