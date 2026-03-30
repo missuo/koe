@@ -565,11 +565,7 @@ pub fn resolve_user_prompt_path(config: &Config) -> PathBuf {
 fn substitute_env_vars(input: &str) -> String {
     let mut result = input.to_string();
     // Simple regex-free approach
-    loop {
-        let start = match result.find("${") {
-            Some(pos) => pos,
-            None => break,
-        };
+    while let Some(start) = result.find("${") {
         let end = match result[start + 2..].find('}') {
             Some(pos) => start + 2 + pos,
             None => break,
