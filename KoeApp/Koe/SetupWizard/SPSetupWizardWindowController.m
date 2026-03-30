@@ -29,8 +29,8 @@ static NSString *configGet(NSString *keyPath) {
     return result;
 }
 
-static void configSet(NSString *keyPath, NSString *value) {
-    sp_config_set(keyPath.UTF8String, (value ?: @"").UTF8String);
+static BOOL configSet(NSString *keyPath, NSString *value) {
+    return sp_config_set(keyPath.UTF8String, (value ?: @"").UTF8String) == 0;
 }
 
 static BOOL isNumericKeycode(NSString *value) {
@@ -1233,37 +1233,40 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
                                                attributes:nil
                                                     error:nil];
 
+    // Track whether any config write fails
+    BOOL saveOk = YES;
+
     // Update ASR fields (always save — fields may be nil if pane not visited, check first)
     if (self.asrAppKeyField) {
         NSString *selectedProvider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
-        configSet(@"asr.provider", selectedProvider);
+        saveOk &= configSet(@"asr.provider", selectedProvider);
         // Save Doubao fields
-        configSet(@"asr.doubao.app_key", self.asrAppKeyField.stringValue);
+        saveOk &= configSet(@"asr.doubao.app_key", self.asrAppKeyField.stringValue);
         NSString *accessKey = self.asrAccessKeyToggle.tag == 1 ? self.asrAccessKeyField.stringValue : self.asrAccessKeySecureField.stringValue;
-        configSet(@"asr.doubao.access_key", accessKey);
+        saveOk &= configSet(@"asr.doubao.access_key", accessKey);
         // Save Qwen fields
         NSString *qwenApiKey = self.asrQwenApiKeyToggle.tag == 1 ? self.asrQwenApiKeyField.stringValue : self.asrQwenApiKeySecureField.stringValue;
-        configSet(@"asr.qwen.api_key", qwenApiKey);
+        saveOk &= configSet(@"asr.qwen.api_key", qwenApiKey);
         // Save local model selection
         if ([selectedProvider isEqualToString:@"mlx"]) {
             NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
-            if (modelPath) configSet(@"asr.mlx.model", modelPath);
+            if (modelPath) saveOk &= configSet(@"asr.mlx.model", modelPath);
         } else if ([selectedProvider isEqualToString:@"sherpa-onnx"]) {
             NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
-            if (modelPath) configSet(@"asr.sherpa-onnx.model", modelPath);
+            if (modelPath) saveOk &= configSet(@"asr.sherpa-onnx.model", modelPath);
         }
     }
 
     // Update LLM fields
     if (self.llmEnabledCheckbox) {
         NSString *enabledStr = (self.llmEnabledCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
-        configSet(@"llm.enabled", enabledStr);
-        configSet(@"llm.base_url", self.llmBaseUrlField.stringValue);
+        saveOk &= configSet(@"llm.enabled", enabledStr);
+        saveOk &= configSet(@"llm.base_url", self.llmBaseUrlField.stringValue);
         NSString *llmApiKey = self.llmApiKeyToggle.tag == 1 ? self.llmApiKeyField.stringValue : self.llmApiKeySecureField.stringValue;
-        configSet(@"llm.api_key", llmApiKey);
-        configSet(@"llm.model", self.llmModelField.stringValue);
+        saveOk &= configSet(@"llm.api_key", llmApiKey);
+        saveOk &= configSet(@"llm.model", self.llmModelField.stringValue);
         NSString *selectedTokenParam = self.maxTokenParamPopup.selectedItem.representedObject ?: @"max_completion_tokens";
-        configSet(@"llm.max_token_parameter", selectedTokenParam);
+        saveOk &= configSet(@"llm.max_token_parameter", selectedTokenParam);
     }
 
     // Update hotkey
@@ -1275,16 +1278,21 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
                        info:@"Choose two different keys for starting and cancelling voice input."];
             return;
         }
-        configSet(@"hotkey.trigger_key", selectedTriggerHotkey);
-        configSet(@"hotkey.cancel_key", selectedCancelHotkey);
+        saveOk &= configSet(@"hotkey.trigger_key", selectedTriggerHotkey);
+        saveOk &= configSet(@"hotkey.cancel_key", selectedCancelHotkey);
     }
     if (self.startSoundCheckbox) {
         NSString *startSound = (self.startSoundCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
         NSString *stopSound = (self.stopSoundCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
         NSString *errorSound = (self.errorSoundCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
-        configSet(@"feedback.start_sound", startSound);
-        configSet(@"feedback.stop_sound", stopSound);
-        configSet(@"feedback.error_sound", errorSound);
+        saveOk &= configSet(@"feedback.start_sound", startSound);
+        saveOk &= configSet(@"feedback.stop_sound", stopSound);
+        saveOk &= configSet(@"feedback.error_sound", errorSound);
+    }
+
+    if (!saveOk) {
+        [self showAlert:@"Some settings failed to save"
+                   info:@"Check that ~/.koe/config.yaml is writable and try again."];
     }
 
     // Write dictionary.txt
