@@ -1040,53 +1040,6 @@ mod tests {
     }
 
     #[test]
-    fn config_set_fails_on_corrupted_yaml() {
-        // Temporarily redirect HOME to a temp dir with corrupted config
-        let tmp = std::env::temp_dir().join(format!(
-            "koe-test-{}",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
-        ));
-        let koe_dir = tmp.join(".koe");
-        fs::create_dir_all(&koe_dir).unwrap();
-        fs::write(koe_dir.join("config.yaml"), "{{{{invalid yaml").unwrap();
-
-        let orig_home = std::env::var("HOME").unwrap();
-        unsafe { std::env::set_var("HOME", &tmp) };
-
-        let result = config_set("test.key", "value");
-
-        unsafe { std::env::set_var("HOME", &orig_home) };
-        let _ = fs::remove_dir_all(&tmp);
-
-        assert!(result.is_err(), "config_set should fail on corrupted YAML");
-    }
-
-    #[test]
-    fn config_set_succeeds_on_valid_yaml() {
-        let tmp = std::env::temp_dir().join(format!(
-            "koe-test-{}",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
-        ));
-        let koe_dir = tmp.join(".koe");
-        fs::create_dir_all(&koe_dir).unwrap();
-        fs::write(koe_dir.join("config.yaml"), "asr:\n  provider: doubao\n").unwrap();
-
-        let orig_home = std::env::var("HOME").unwrap();
-        unsafe { std::env::set_var("HOME", &tmp) };
-
-        let result = config_set("llm.enabled", "true");
-
-        unsafe { std::env::set_var("HOME", &orig_home) };
-
-        assert!(result.is_ok(), "config_set should succeed on valid YAML");
-
-        let content = fs::read_to_string(koe_dir.join("config.yaml")).unwrap();
-        assert!(content.contains("enabled: true"));
-
-        let _ = fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
     fn normalize_hotkey_config_backfills_missing_cancel_key() {
         let path = temp_config_path("hotkey-config");
         fs::write(&path, "hotkey:\n  trigger_key: left_option\n").unwrap();
@@ -1107,5 +1060,45 @@ mod tests {
         assert!(output.contains("cancel_key: right_option"));
 
         let _ = fs::remove_file(path);
+    }
+
+    // config_set tests are combined into one function because they mutate
+    // the HOME env var, which is process-global and races with parallel tests.
+    #[test]
+    fn config_set_error_and_success() {
+        let orig_home = std::env::var("HOME").unwrap();
+
+        // --- corrupted YAML should fail ---
+        let tmp1 = std::env::temp_dir().join(format!(
+            "koe-test-bad-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let koe_dir1 = tmp1.join(".koe");
+        fs::create_dir_all(&koe_dir1).unwrap();
+        fs::write(koe_dir1.join("config.yaml"), "{{{{invalid yaml").unwrap();
+
+        unsafe { std::env::set_var("HOME", &tmp1) };
+        let bad_result = config_set("test.key", "value");
+        unsafe { std::env::set_var("HOME", &orig_home) };
+        let _ = fs::remove_dir_all(&tmp1);
+        assert!(bad_result.is_err(), "config_set should fail on corrupted YAML");
+
+        // --- valid YAML should succeed ---
+        let tmp2 = std::env::temp_dir().join(format!(
+            "koe-test-ok-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let koe_dir2 = tmp2.join(".koe");
+        fs::create_dir_all(&koe_dir2).unwrap();
+        fs::write(koe_dir2.join("config.yaml"), "asr:\n  provider: doubao\n").unwrap();
+
+        unsafe { std::env::set_var("HOME", &tmp2) };
+        let ok_result = config_set("llm.enabled", "true");
+        unsafe { std::env::set_var("HOME", &orig_home) };
+
+        assert!(ok_result.is_ok(), "config_set should succeed on valid YAML");
+        let content = fs::read_to_string(koe_dir2.join("config.yaml")).unwrap();
+        assert!(content.contains("enabled: true"));
+        let _ = fs::remove_dir_all(&tmp2);
     }
 }
