@@ -307,15 +307,40 @@ where
     if let Ok(meta) = std::fs::metadata(&dest) {
         let size_ok = file.size == 0 || meta.len() == file.size;
         if size_ok {
-            on_progress(DownloadProgress {
-                file_index,
-                file_count,
-                filename: file.name.clone(),
-                bytes_downloaded: meta.len(),
-                bytes_total: file.size,
-                already_exists: true,
-            });
-            return Ok(());
+            // Verify sha256 if available — catches same-size corruption
+            if !file.sha256.is_empty() {
+                if let Ok(hash) = sha256_file(&dest) {
+                    if hash != file.sha256 {
+                        log::warn!(
+                            "file {} has correct size but wrong sha256, re-downloading",
+                            file.name
+                        );
+                        let _ = std::fs::remove_file(&dest);
+                        // fall through to download
+                    } else {
+                        on_progress(DownloadProgress {
+                            file_index,
+                            file_count,
+                            filename: file.name.clone(),
+                            bytes_downloaded: meta.len(),
+                            bytes_total: file.size,
+                            already_exists: true,
+                        });
+                        return Ok(());
+                    }
+                }
+                // sha256 read failed — fall through to re-download
+            } else {
+                on_progress(DownloadProgress {
+                    file_index,
+                    file_count,
+                    filename: file.name.clone(),
+                    bytes_downloaded: meta.len(),
+                    bytes_total: file.size,
+                    already_exists: true,
+                });
+                return Ok(());
+            }
         }
     }
 
