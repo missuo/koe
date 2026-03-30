@@ -993,7 +993,7 @@ pub extern "C" fn sp_core_scan_models_json() -> *mut c_char {
 /// Returns a heap-allocated C string that must be freed with sp_core_free_string().
 /// Returns an empty string if the key is not found.
 #[no_mangle]
-pub extern "C" fn sp_config_get(key_path: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn sp_config_get(key_path: *const c_char) -> *mut c_char {
     let key = match unsafe { cstr_to_str(key_path) } {
         Some(s) => s,
         None => return CString::new("").unwrap().into_raw(),
@@ -1010,7 +1010,7 @@ pub extern "C" fn sp_config_get(key_path: *const c_char) -> *mut c_char {
 /// Set a config value by dot-separated key path. Reads, modifies, and writes config.yaml.
 /// Returns 0 on success, -1 on error.
 #[no_mangle]
-pub extern "C" fn sp_config_set(key_path: *const c_char, value: *const c_char) -> i32 {
+pub unsafe extern "C" fn sp_config_set(key_path: *const c_char, value: *const c_char) -> i32 {
     let key = match unsafe { cstr_to_str(key_path) } {
         Some(s) => s,
         None => return -1,
@@ -1030,7 +1030,7 @@ pub extern "C" fn sp_config_set(key_path: *const c_char, value: *const c_char) -
 
 /// Free a string returned by sp_core_scan_models_json().
 #[no_mangle]
-pub extern "C" fn sp_core_free_string(s: *mut c_char) {
+pub unsafe extern "C" fn sp_core_free_string(s: *mut c_char) {
     if !s.is_null() {
         unsafe {
             drop(CString::from_raw(s));
@@ -1040,7 +1040,7 @@ pub extern "C" fn sp_core_free_string(s: *mut c_char) {
 
 /// Check model status (quick, size only): 0=not installed, 1=incomplete, 2=installed
 #[no_mangle]
-pub extern "C" fn sp_core_check_model_status(model_path: *const c_char) -> i32 {
+pub unsafe extern "C" fn sp_core_check_model_status(model_path: *const c_char) -> i32 {
     let path = match unsafe { cstr_to_str(model_path) } {
         Some(s) => s,
         None => return -1,
@@ -1051,7 +1051,7 @@ pub extern "C" fn sp_core_check_model_status(model_path: *const c_char) -> i32 {
 
 /// Verify model status (thorough, size + sha256): 0=not installed, 1=incomplete, 2=installed
 #[no_mangle]
-pub extern "C" fn sp_core_verify_model_status(model_path: *const c_char) -> i32 {
+pub unsafe extern "C" fn sp_core_verify_model_status(model_path: *const c_char) -> i32 {
     let path = match unsafe { cstr_to_str(model_path) } {
         Some(s) => s,
         None => return -1,
@@ -1062,7 +1062,7 @@ pub extern "C" fn sp_core_verify_model_status(model_path: *const c_char) -> i32 
 
 /// Start downloading a model. Returns 0=started, -1=already downloading, -2=error.
 #[no_mangle]
-pub extern "C" fn sp_core_download_model(
+pub unsafe extern "C" fn sp_core_download_model(
     model_path: *const c_char,
     progress_cb: ModelProgressCallback,
     status_cb: ModelStatusCallback,
@@ -1146,7 +1146,7 @@ pub extern "C" fn sp_core_download_model(
 
 /// Cancel an active download. Returns 1 if cancelled, 0 if not found.
 #[no_mangle]
-pub extern "C" fn sp_core_cancel_download(model_path: *const c_char) -> i32 {
+pub unsafe extern "C" fn sp_core_cancel_download(model_path: *const c_char) -> i32 {
     let path = match unsafe { cstr_to_str(model_path) } {
         Some(s) => s,
         None => return 0,
@@ -1163,7 +1163,7 @@ pub extern "C" fn sp_core_cancel_download(model_path: *const c_char) -> i32 {
 
 /// Remove downloaded model files (keep manifest). Returns number of files removed, -1 on error.
 #[no_mangle]
-pub extern "C" fn sp_core_remove_model_files(model_path: *const c_char) -> i32 {
+pub unsafe extern "C" fn sp_core_remove_model_files(model_path: *const c_char) -> i32 {
     let path = match unsafe { cstr_to_str(model_path) } {
         Some(s) => s,
         None => return -1,
