@@ -614,7 +614,7 @@ async fn run_session(
                     }
                     Ok(AsrEvent::Definite(text)) => {
                         aggregator.update_definite(&text);
-                        invoke_interim_text(session_token,&aggregator.best_text());
+                        invoke_interim_text(session_token, aggregator.best_text());
                     }
                     Ok(AsrEvent::Final(text)) => {
                         aggregator.update_final(&text);
@@ -839,7 +839,7 @@ async fn wait_for_final(
             }
             Ok(AsrEvent::Definite(text)) => {
                 aggregator.update_definite(&text);
-                invoke_interim_text(session_token,&aggregator.best_text());
+                invoke_interim_text(session_token, aggregator.best_text());
             }
             Ok(AsrEvent::Closed) => return,
             Ok(_) => {}
