@@ -551,9 +551,9 @@ fn sha256_file(path: &Path) -> Result<String> {
     use std::io::{BufReader, Read};
     let f =
         std::fs::File::open(path).map_err(|e| KoeError::Config(format!("open for sha256: {e}")))?;
-    let mut reader = BufReader::with_capacity(1024 * 1024, f);
+    let mut reader = BufReader::with_capacity(128 * 1024, f);
     let mut hasher = Sha256::new();
-    let mut buf = [0u8; 1024 * 1024];
+    let mut buf = vec![0u8; 128 * 1024]; // heap-allocated, safe for GCD worker threads
     loop {
         let n = reader
             .read(&mut buf)
@@ -935,6 +935,53 @@ mod tests {
 
         // Normal: recomputes sha, finds mismatch
         assert_ne!(model_status(&tmp, VerifyMode::Normal), ModelStatus::Installed);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn cache_only_no_cache_file_does_not_panic() {
+        // Simulates what scan_models_json does: CacheOnly on a model
+        // directory that has never been verified (no .koe-checksum.json).
+        let tmp = std::env::temp_dir().join(format!(
+            "koe-model-test-nocache-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        let content = b"installed model data";
+        let sha = {
+            let mut hasher = Sha256::new();
+            hasher.update(content);
+            format!("{:x}", hasher.finalize())
+        };
+        let manifest = ModelManifest {
+            provider: "test".into(),
+            description: "test".into(),
+            repo: "test/model".into(),
+            files: vec![ModelFile {
+                name: "model.bin".into(),
+                size: content.len() as u64,
+                sha256: sha,
+                url: String::new(),
+            }],
+        };
+        fs::write(tmp.join(MANIFEST_FILE), serde_json::to_string(&manifest).unwrap()).unwrap();
+        fs::write(tmp.join("model.bin"), content).unwrap();
+
+        // No .koe-checksum.json exists
+        assert!(!tmp.join(CHECKSUM_CACHE_FILE).exists());
+
+        // CacheOnly should NOT panic — returns NotInstalled because
+        // cache miss for files with sha256 in manifest
+        let status = model_status(&tmp, VerifyMode::CacheOnly);
+        assert_eq!(status, ModelStatus::NotInstalled);
+
+        // No cache file should have been written
+        assert!(!tmp.join(CHECKSUM_CACHE_FILE).exists());
 
         let _ = fs::remove_dir_all(&tmp);
     }
