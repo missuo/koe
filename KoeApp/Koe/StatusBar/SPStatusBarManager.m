@@ -2,6 +2,7 @@
 #import "SPPermissionManager.h"
 #import "SPAudioDeviceManager.h"
 #import "SPHistoryManager.h"
+#import "koe_core.h"
 #import <Cocoa/Cocoa.h>
 #import <ServiceManagement/ServiceManagement.h>
 #import <UserNotifications/UserNotifications.h>
@@ -339,52 +340,12 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
 }
 
 - (void)refreshHotkeyDisplay {
-    NSString *configPath = [NSHomeDirectory() stringByAppendingPathComponent:@".koe/config.yaml"];
-    NSString *yaml = [NSString stringWithContentsOfFile:configPath encoding:NSUTF8StringEncoding error:nil];
-
-    NSString *triggerKey = @"fn";
-    NSString *cancelKey = @"left_option";
-    if (yaml) {
-        NSArray<NSString *> *lines = [yaml componentsSeparatedByString:@"\n"];
-        for (NSString *line in lines) {
-            NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-            if ([trimmed hasPrefix:@"trigger_key:"]) {
-                NSString *value = [trimmed substringFromIndex:@"trigger_key:".length];
-                value = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                // Strip double or single quotes
-                if (value.length >= 2 &&
-                    (([value hasPrefix:@"\""] && [value hasSuffix:@"\""]) ||
-                     ([value hasPrefix:@"'"] && [value hasSuffix:@"'"]))) {
-                    value = [value substringWithRange:NSMakeRange(1, value.length - 2)];
-                }
-                // Strip inline comment for unquoted values
-                NSRange commentRange = [value rangeOfString:@" #"];
-                if (commentRange.location != NSNotFound) {
-                    value = [[value substringToIndex:commentRange.location]
-                             stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                }
-                if (value.length > 0) triggerKey = value;
-            } else if ([trimmed hasPrefix:@"cancel_key:"]) {
-                NSString *value = [trimmed substringFromIndex:@"cancel_key:".length];
-                value = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                if (value.length >= 2 &&
-                    (([value hasPrefix:@"\""] && [value hasSuffix:@"\""]) ||
-                     ([value hasPrefix:@"'"] && [value hasSuffix:@"'"]))) {
-                    value = [value substringWithRange:NSMakeRange(1, value.length - 2)];
-                }
-                NSRange commentRange = [value rangeOfString:@" #"];
-                if (commentRange.location != NSNotFound) {
-                    value = [[value substringToIndex:commentRange.location]
-                             stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-                }
-                if (value.length > 0) cancelKey = value;
-            }
-        }
-    }
-
-    if ([triggerKey isEqualToString:cancelKey]) {
-        cancelKey = [triggerKey isEqualToString:@"fn"] ? @"left_option" : @"fn";
-    }
+    char *t = sp_config_resolved_trigger_key();
+    char *c = sp_config_resolved_cancel_key();
+    NSString *triggerKey = t ? @(t) : @"fn";
+    NSString *cancelKey  = c ? @(c) : @"left_option";
+    sp_core_free_string(t);
+    sp_core_free_string(c);
 
     self.hotkeyDisplayItem.title = [NSString stringWithFormat:@"Hotkeys: %@ / %@",
                                     displayNameForHotkeyValue(triggerKey),
