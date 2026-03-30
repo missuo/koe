@@ -855,8 +855,15 @@ async fn wait_for_final(
                 invoke_interim_text(session_token, aggregator.best_text());
             }
             Ok(AsrEvent::Closed) => return None,
-            Ok(_) => {}            // BUG: swallows AsrEvent::Error
-            Err(_) => return None, // BUG: swallows read errors
+            Ok(AsrEvent::Error(msg)) => {
+                log::error!("ASR error in wait_for_final: {msg}");
+                return Some(msg);
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log::error!("ASR read error in wait_for_final: {e}");
+                return Some(format!("ASR error: {e}"));
+            }
         }
     }
 }
@@ -1281,34 +1288,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wait_for_final_on_error_event() {
-        // BUG: wait_for_final currently swallows AsrEvent::Error via Ok(_) => {}
-        // The error falls through to the wildcard arm, which loops forever.
-        // After the mock runs out of events, next_event returns Closed, breaking the loop.
-        // Expected after fix: returns Some("provider error")
+    async fn wait_for_final_returns_error_on_error_event() {
         let mut mock = MockAsrProvider::new(vec![
             Ok(AsrEvent::Interim("partial".into())),
             Ok(AsrEvent::Error("provider error".into())),
         ]);
         let mut agg = TranscriptAggregator::new();
         let result = wait_for_final(0, &mut mock, &mut agg).await;
-        // Currently returns None (bug: error is swallowed, loop continues until Closed)
-        // After fix, this should be: assert_eq!(result, Some("provider error".into()));
-        assert!(result.is_none(), "BUG: error event is swallowed");
+        assert_eq!(result, Some("provider error".into()));
     }
 
     #[tokio::test]
-    async fn wait_for_final_on_read_error() {
-        // BUG: wait_for_final returns None on Err, losing the error message
-        // Expected after fix: returns Some with error description
+    async fn wait_for_final_returns_error_on_read_error() {
         let mut mock = MockAsrProvider::new(vec![
             Err(AsrError::Connection("connection lost".into())),
         ]);
         let mut agg = TranscriptAggregator::new();
         let result = wait_for_final(0, &mut mock, &mut agg).await;
-        // Currently returns None (bug: read error is silently discarded)
-        // After fix: assert!(result.is_some());
-        assert!(result.is_none(), "BUG: read error is silently discarded");
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("connection"));
     }
 
     // ── Main loop error-with-partial-text tests ─────────────────────────
