@@ -1041,6 +1041,28 @@ pub unsafe extern "C" fn sp_config_set(key_path: *const c_char, value: *const c_
     }
 }
 
+/// Returns the resolved trigger hotkey name after normalization and dedup.
+/// The caller must free the returned string with sp_core_free_string().
+#[no_mangle]
+pub extern "C" fn sp_config_resolved_trigger_key() -> *mut c_char {
+    let key = match config::load_config() {
+        Ok(cfg) => cfg.hotkey.normalized_keys().0,
+        Err(_) => "fn".into(),
+    };
+    CString::new(key).unwrap_or_default().into_raw()
+}
+
+/// Returns the resolved cancel hotkey name after normalization and dedup.
+/// The caller must free the returned string with sp_core_free_string().
+#[no_mangle]
+pub extern "C" fn sp_config_resolved_cancel_key() -> *mut c_char {
+    let key = match config::load_config() {
+        Ok(cfg) => cfg.hotkey.normalized_keys().1,
+        Err(_) => "left_option".into(),
+    };
+    CString::new(key).unwrap_or_default().into_raw()
+}
+
 /// Free a string returned by sp_core_scan_models_json().
 ///
 /// # Safety
