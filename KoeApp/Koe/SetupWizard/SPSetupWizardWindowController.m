@@ -132,6 +132,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 @property (nonatomic, strong) NSProgressIndicator *modelProgressBar;
 @property (nonatomic, strong) NSTextField *modelProgressSizeLabel;
 @property (nonatomic, strong) NSMutableSet<NSString *> *downloadingModels;
+@property (nonatomic, copy) NSString *pendingVerificationPath;
 
 // LLM fields
 @property (nonatomic, strong) NSButton *llmEnabledCheckbox;
@@ -161,7 +162,9 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 
 @end
 
-@implementation SPSetupWizardWindowController
+@implementation SPSetupWizardWindowController {
+    dispatch_queue_t _verifyQueue;
+}
 
 - (instancetype)init {
     NSWindow *window = [[NSWindow alloc]
@@ -174,6 +177,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 
     self = [super initWithWindow:window];
     if (self) {
+        _verifyQueue = dispatch_queue_create("koe.model.verify", DISPATCH_QUEUE_SERIAL);
         [self setupToolbar];
     }
     return self;
@@ -925,23 +929,47 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         return;
     }
 
-    // Not downloading — show normal status, hide progress
+    // 1. Cache-only lookup (~1ms)
+    NSInteger cachedStatus = [self.rustBridge modelStatus:modelPath mode:SPModelVerifyCacheOnly];
+    if (cachedStatus == 2) {
+        [self applyModelStatus:cachedStatus];
+        return;
+    }
+
+    // 2. Cache miss or incomplete — show "Verifying…" and dispatch async
+    [self applyModelStatus:(cachedStatus > 0 ? cachedStatus : 1) verifying:YES];
+    self.pendingVerificationPath = modelPath;
+
+    dispatch_async(_verifyQueue, ^{
+        NSInteger verified = [self.rustBridge modelStatus:modelPath mode:SPModelVerifyNormal];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if ([self.pendingVerificationPath isEqualToString:modelPath]) {
+                self.pendingVerificationPath = nil;
+                [self applyModelStatus:verified];
+            }
+        });
+    });
+}
+
+- (void)applyModelStatus:(NSInteger)status {
+    [self applyModelStatus:status verifying:NO];
+}
+
+- (void)applyModelStatus:(NSInteger)status verifying:(BOOL)verifying {
     self.modelProgressBar.hidden = YES;
     self.modelProgressSizeLabel.hidden = YES;
     self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
                                                  accessibilityDescription:@"Download"];
-
-    NSInteger status = [self.rustBridge modelStatus:modelPath mode:SPModelVerifyNormal];
     switch (status) {
         case 2:
-            self.modelStatusLabel.stringValue = @"● Installed";
-            self.modelStatusLabel.textColor = [NSColor systemGreenColor];
+            self.modelStatusLabel.stringValue = verifying ? @"● Verifying…" : @"● Installed";
+            self.modelStatusLabel.textColor = verifying ? [NSColor secondaryLabelColor] : [NSColor systemGreenColor];
             self.modelDownloadButton.enabled = NO;
             self.modelDeleteButton.enabled = YES;
             break;
         case 1:
-            self.modelStatusLabel.stringValue = @"◐ Incomplete";
-            self.modelStatusLabel.textColor = [NSColor systemOrangeColor];
+            self.modelStatusLabel.stringValue = verifying ? @"◐ Verifying…" : @"◐ Incomplete";
+            self.modelStatusLabel.textColor = verifying ? [NSColor secondaryLabelColor] : [NSColor systemOrangeColor];
             self.modelDownloadButton.enabled = YES;
             self.modelDeleteButton.enabled = YES;
             break;
@@ -1209,7 +1237,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         if (isLocal) {
             NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
             if (modelPath) {
-                NSInteger status = [self.rustBridge modelStatus:modelPath mode:SPModelVerifyNormal];
+                NSInteger status = [self.rustBridge modelStatus:modelPath mode:SPModelVerifyCacheOnly];
                 if (status != 2) { // not installed
                     NSAlert *alert = [[NSAlert alloc] init];
                     alert.messageText = @"Model Not Installed";
