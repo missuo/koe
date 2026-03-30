@@ -74,8 +74,11 @@ fn llm_http_client_needs_reload(current: &Config, next: &Config) -> bool {
 
 /// Initialize the core. Must be called once before any other function.
 /// `config_path` is reserved for future use (currently loads from ~/.koe/config.yaml).
+///
+/// # Safety
+/// `config_path` must be a valid null-terminated C string or null.
 #[no_mangle]
-pub extern "C" fn sp_core_create(config_path: *const c_char) -> i32 {
+pub unsafe extern "C" fn sp_core_create(config_path: *const c_char) -> i32 {
     telemetry::init_logging();
 
     let _config_path = unsafe { cstr_to_str(config_path) };
@@ -438,8 +441,11 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
 }
 
 /// Push an audio frame into the current session.
+///
+/// # Safety
+/// `frame` must point to at least `len` valid bytes.
 #[no_mangle]
-pub extern "C" fn sp_core_push_audio(frame: *const u8, len: u32, _timestamp: u64) -> i32 {
+pub unsafe extern "C" fn sp_core_push_audio(frame: *const u8, len: u32, _timestamp: u64) -> i32 {
     if frame.is_null() || len == 0 {
         return -1;
     }
@@ -993,6 +999,9 @@ pub extern "C" fn sp_core_scan_models_json() -> *mut c_char {
 /// Get a config value by dot-separated key path (e.g. "asr.doubao.app_key").
 /// Returns a heap-allocated C string that must be freed with sp_core_free_string().
 /// Returns an empty string if the key is not found.
+///
+/// # Safety
+/// `key_path` must be a valid null-terminated C string.
 #[no_mangle]
 pub unsafe extern "C" fn sp_config_get(key_path: *const c_char) -> *mut c_char {
     let key = match unsafe { cstr_to_str(key_path) } {
@@ -1010,6 +1019,9 @@ pub unsafe extern "C" fn sp_config_get(key_path: *const c_char) -> *mut c_char {
 
 /// Set a config value by dot-separated key path. Reads, modifies, and writes config.yaml.
 /// Returns 0 on success, -1 on error.
+///
+/// # Safety
+/// `key_path` and `value` must be valid null-terminated C strings.
 #[no_mangle]
 pub unsafe extern "C" fn sp_config_set(key_path: *const c_char, value: *const c_char) -> i32 {
     let key = match unsafe { cstr_to_str(key_path) } {
@@ -1030,6 +1042,9 @@ pub unsafe extern "C" fn sp_config_set(key_path: *const c_char, value: *const c_
 }
 
 /// Free a string returned by sp_core_scan_models_json().
+///
+/// # Safety
+/// `s` must be a pointer previously returned by this library, or null.
 #[no_mangle]
 pub unsafe extern "C" fn sp_core_free_string(s: *mut c_char) {
     if !s.is_null() {
@@ -1040,6 +1055,9 @@ pub unsafe extern "C" fn sp_core_free_string(s: *mut c_char) {
 }
 
 /// Check model status (quick, size only): 0=not installed, 1=incomplete, 2=installed
+///
+/// # Safety
+/// `model_path` must be a valid null-terminated C string.
 #[no_mangle]
 pub unsafe extern "C" fn sp_core_check_model_status(model_path: *const c_char) -> i32 {
     let path = match unsafe { cstr_to_str(model_path) } {
@@ -1051,6 +1069,9 @@ pub unsafe extern "C" fn sp_core_check_model_status(model_path: *const c_char) -
 }
 
 /// Verify model status (thorough, size + sha256): 0=not installed, 1=incomplete, 2=installed
+///
+/// # Safety
+/// `model_path` must be a valid null-terminated C string.
 #[no_mangle]
 pub unsafe extern "C" fn sp_core_verify_model_status(model_path: *const c_char) -> i32 {
     let path = match unsafe { cstr_to_str(model_path) } {
@@ -1062,6 +1083,9 @@ pub unsafe extern "C" fn sp_core_verify_model_status(model_path: *const c_char) 
 }
 
 /// Start downloading a model. Returns 0=started, -1=already downloading, -2=error.
+///
+/// # Safety
+/// `model_path` must be a valid null-terminated C string. `ctx` is passed through to callbacks.
 #[no_mangle]
 pub unsafe extern "C" fn sp_core_download_model(
     model_path: *const c_char,
@@ -1146,6 +1170,9 @@ pub unsafe extern "C" fn sp_core_download_model(
 }
 
 /// Cancel an active download. Returns 1 if cancelled, 0 if not found.
+///
+/// # Safety
+/// `model_path` must be a valid null-terminated C string.
 #[no_mangle]
 pub unsafe extern "C" fn sp_core_cancel_download(model_path: *const c_char) -> i32 {
     let path = match unsafe { cstr_to_str(model_path) } {
@@ -1163,6 +1190,9 @@ pub unsafe extern "C" fn sp_core_cancel_download(model_path: *const c_char) -> i
 }
 
 /// Remove downloaded model files (keep manifest). Returns number of files removed, -1 on error.
+///
+/// # Safety
+/// `model_path` must be a valid null-terminated C string.
 #[no_mangle]
 pub unsafe extern "C" fn sp_core_remove_model_files(model_path: *const c_char) -> i32 {
     let path = match unsafe { cstr_to_str(model_path) } {
