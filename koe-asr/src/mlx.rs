@@ -9,15 +9,16 @@ use crate::event::AsrEvent;
 #[allow(dead_code)]
 extern "C" {
     fn koe_mlx_load_model(model_path: *const c_char) -> i32;
+    /// Returns session generation (>0) on success, 0 on failure.
     fn koe_mlx_start_session(
         language: *const c_char,
         delay_preset: *const c_char,
         callback: extern "C" fn(ctx: *mut c_void, event_type: i32, text: *const c_char),
         ctx: *mut c_void,
-    ) -> i32;
-    fn koe_mlx_feed_audio(samples: *const f32, count: u32);
-    fn koe_mlx_stop();
-    fn koe_mlx_cancel();
+    ) -> u64;
+    fn koe_mlx_feed_audio(samples: *const f32, count: u32, generation: u64);
+    fn koe_mlx_stop(generation: u64);
+    fn koe_mlx_cancel(generation: u64);
     fn koe_mlx_unload_model();
 }
 
@@ -71,6 +72,10 @@ pub struct MlxProvider {
     /// Leaked sender pointer passed as callback context.
     /// Reclaimed in close()/drop.
     event_tx_ptr: Option<*mut c_void>,
+    /// Session generation returned by the Swift singleton.
+    /// Passed to all subsequent FFI calls so stale operations from an old
+    /// provider are ignored when a new session has already started.
+    session_generation: u64,
 }
 
 // Safety: The raw pointer is only accessed from the callback (which is Send)
@@ -83,6 +88,7 @@ impl MlxProvider {
             config,
             event_rx: None,
             event_tx_ptr: None,
+            session_generation: 0,
         }
     }
 
@@ -127,7 +133,7 @@ impl crate::provider::AsrProvider for MlxProvider {
         let language = CString::new(self.config.language.clone()).unwrap_or_default();
         let delay_preset = CString::new(self.config.delay_preset.clone()).unwrap_or_default();
 
-        let ret = unsafe {
+        let gen = unsafe {
             koe_mlx_start_session(
                 language.as_ptr(),
                 delay_preset.as_ptr(),
@@ -135,12 +141,13 @@ impl crate::provider::AsrProvider for MlxProvider {
                 tx_ptr,
             )
         };
-        if ret != 0 {
+        if gen == 0 {
             self.reclaim_sender();
-            return Err(AsrError::Connection(format!(
-                "failed to start MLX session (code {ret})"
-            )));
+            return Err(AsrError::Connection(
+                "failed to start MLX session".into(),
+            ));
         }
+        self.session_generation = gen;
 
         Ok(())
     }
@@ -152,14 +159,14 @@ impl crate::provider::AsrProvider for MlxProvider {
             .collect();
 
         unsafe {
-            koe_mlx_feed_audio(samples.as_ptr(), samples.len() as u32);
+            koe_mlx_feed_audio(samples.as_ptr(), samples.len() as u32, self.session_generation);
         }
         Ok(())
     }
 
     async fn finish_input(&mut self) -> Result<()> {
         unsafe {
-            koe_mlx_stop();
+            koe_mlx_stop(self.session_generation);
         }
         Ok(())
     }
@@ -178,8 +185,12 @@ impl crate::provider::AsrProvider for MlxProvider {
         // SAFETY: koe_mlx_cancel() synchronously clears the callback context on
         // the Swift side (under a lock), ensuring no further calls through the
         // callback pointer after this returns.  Safe to reclaim the sender afterward.
+        //
+        // The generation parameter ensures that if a new session has already
+        // started on the singleton, this cancel is a no-op — it won't affect
+        // the new session.
         unsafe {
-            koe_mlx_cancel();
+            koe_mlx_cancel(self.session_generation);
         }
         self.event_rx = None;
         self.reclaim_sender();
