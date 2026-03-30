@@ -565,11 +565,7 @@ pub fn resolve_user_prompt_path(config: &Config) -> PathBuf {
 fn substitute_env_vars(input: &str) -> String {
     let mut result = input.to_string();
     // Simple regex-free approach
-    loop {
-        let start = match result.find("${") {
-            Some(pos) => pos,
-            None => break,
-        };
+    while let Some(start) = result.find("${") {
         let end = match result[start + 2..].find('}') {
             Some(pos) => start + 2 + pos,
             None => break,
@@ -617,19 +613,19 @@ fn migrate_config_v1_to_v2(path: &Path) -> Result<bool> {
     };
 
     // If `asr` already has a `provider` key, it's already V2
-    if asr_map.contains_key(&serde_yaml::Value::String("provider".into())) {
+    if asr_map.contains_key(serde_yaml::Value::String("provider".into())) {
         return Ok(false);
     }
 
     // If `asr` has a `doubao` key, it's already V2 (just missing provider field, which defaults)
-    if asr_map.contains_key(&serde_yaml::Value::String("doubao".into())) {
+    if asr_map.contains_key(serde_yaml::Value::String("doubao".into())) {
         return Ok(false);
     }
 
     // Check if any V1-specific key exists
     let has_v1_keys = V1_ASR_KEYS
         .iter()
-        .any(|k| asr_map.contains_key(&serde_yaml::Value::String((*k).into())));
+        .any(|k| asr_map.contains_key(serde_yaml::Value::String((*k).into())));
 
     if !has_v1_keys {
         return Ok(false);

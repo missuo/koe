@@ -351,7 +351,7 @@ impl AsrProvider for DoubaoWsProvider {
 
         let full_request = self.build_full_client_request(config)?;
         if let Some(ref mut ws) = self.ws {
-            ws.send(Message::Binary(full_request.into()))
+            ws.send(Message::Binary(full_request))
                 .await
                 .map_err(|e| AsrError::Connection(format!("send full request: {e}")))?;
         }
@@ -363,7 +363,7 @@ impl AsrProvider for DoubaoWsProvider {
     async fn send_audio(&mut self, frame: &[u8]) -> Result<()> {
         let binary_frame = Self::build_audio_frame(frame, false)?;
         if let Some(ref mut ws) = self.ws {
-            ws.send(Message::Binary(binary_frame.into()))
+            ws.send(Message::Binary(binary_frame))
                 .await
                 .map_err(|e| AsrError::Protocol(format!("send audio: {e}")))?;
         }
@@ -373,7 +373,7 @@ impl AsrProvider for DoubaoWsProvider {
     async fn finish_input(&mut self) -> Result<()> {
         let last_frame = Self::build_audio_frame(&[], true)?;
         if let Some(ref mut ws) = self.ws {
-            ws.send(Message::Binary(last_frame.into()))
+            ws.send(Message::Binary(last_frame))
                 .await
                 .map_err(|e| AsrError::Protocol(format!("send finish: {e}")))?;
         }
