@@ -931,7 +931,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
                                                  accessibilityDescription:@"Download"];
 
-    NSInteger status = [self.rustBridge checkModelStatus:modelPath];
+    NSInteger status = [self.rustBridge verifyModelStatus:modelPath];
     switch (status) {
         case 2:
             self.modelStatusLabel.stringValue = @"● Installed";
@@ -1209,7 +1209,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         if (isLocal) {
             NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
             if (modelPath) {
-                NSInteger status = [self.rustBridge checkModelStatus:modelPath];
+                NSInteger status = [self.rustBridge verifyModelStatus:modelPath];
                 if (status != 2) { // not installed
                     NSAlert *alert = [[NSAlert alloc] init];
                     alert.messageText = @"Model Not Installed";
