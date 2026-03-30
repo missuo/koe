@@ -533,6 +533,7 @@ pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
 
 // ─── Session Task ───────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn run_session(
     session_arc: Arc<Mutex<Option<Session>>>,
     session_id: String,

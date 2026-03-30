@@ -189,6 +189,7 @@ fn find_model_files(
 }
 
 /// Worker thread: runs sherpa-onnx OnlineRecognizer synchronously.
+#[allow(clippy::too_many_arguments)]
 fn worker_loop(
     encoder: String,
     decoder: String,
