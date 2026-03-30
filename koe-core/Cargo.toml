@@ -27,5 +27,8 @@ uuid = { version = "1", features = ["v4"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 urlencoding = "2"
 
+[dev-dependencies]
+async-trait = "0.1"
+
 [build-dependencies]
 cbindgen = "0.27"
