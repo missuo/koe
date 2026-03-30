@@ -446,3 +446,160 @@ fn sha256_file(path: &Path) -> Result<String> {
     }
     Ok(format!("{:x}", hasher.finalize()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// Create a temp model dir with a manifest and a file that has the
+    /// correct size but wrong content (wrong sha256).
+    fn setup_corrupted_model() -> (PathBuf, String) {
+        let tmp = std::env::temp_dir().join(format!(
+            "koe-model-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        let correct_content = b"correct model data here";
+        let corrupt_content = b"corrupt model data xxxx"; // same length, different content
+        assert_eq!(correct_content.len(), corrupt_content.len());
+
+        let correct_sha = {
+            let mut hasher = Sha256::new();
+            hasher.update(correct_content);
+            format!("{:x}", hasher.finalize())
+        };
+
+        let manifest = ModelManifest {
+            provider: "test".into(),
+            description: "test model".into(),
+            repo: "test/model".into(),
+            files: vec![ModelFile {
+                name: "model.bin".into(),
+                size: correct_content.len() as u64,
+                sha256: correct_sha.clone(),
+                url: String::new(),
+            }],
+        };
+
+        fs::write(
+            tmp.join(MANIFEST_FILE),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        // Write the CORRUPTED file (same size, wrong hash)
+        fs::write(tmp.join("model.bin"), corrupt_content).unwrap();
+
+        (tmp, correct_sha)
+    }
+
+    #[test]
+    fn check_model_status_accepts_same_size_corrupted_file() {
+        // BUG: check_model_status only checks size, not sha256
+        // A corrupted file with matching size is reported as Installed
+        let (tmp, _) = setup_corrupted_model();
+
+        let status = check_model_status(&tmp);
+        // This passes — documenting the bug: size-only check is fooled
+        assert_eq!(status, ModelStatus::Installed);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn verify_model_status_detects_corruption() {
+        // verify_model_status checks sha256 and correctly detects corruption
+        let (tmp, _) = setup_corrupted_model();
+
+        let status = verify_model_status(&tmp);
+        assert_ne!(status, ModelStatus::Installed);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn check_model_status_valid_file() {
+        let tmp = std::env::temp_dir().join(format!(
+            "koe-model-test-valid-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        let content = b"valid model content";
+        let sha = {
+            let mut hasher = Sha256::new();
+            hasher.update(content);
+            format!("{:x}", hasher.finalize())
+        };
+
+        let manifest = ModelManifest {
+            provider: "test".into(),
+            description: "test".into(),
+            repo: "test/model".into(),
+            files: vec![ModelFile {
+                name: "model.bin".into(),
+                size: content.len() as u64,
+                sha256: sha,
+                url: String::new(),
+            }],
+        };
+
+        fs::write(
+            tmp.join(MANIFEST_FILE),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
+        fs::write(tmp.join("model.bin"), content).unwrap();
+
+        assert_eq!(check_model_status(&tmp), ModelStatus::Installed);
+        assert_eq!(verify_model_status(&tmp), ModelStatus::Installed);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn check_model_status_no_sha256_size_only() {
+        // When manifest has no sha256, both check and verify should accept by size
+        let tmp = std::env::temp_dir().join(format!(
+            "koe-model-test-nosha-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        let content = b"some model data";
+        let manifest = ModelManifest {
+            provider: "test".into(),
+            description: "test".into(),
+            repo: "test/model".into(),
+            files: vec![ModelFile {
+                name: "model.bin".into(),
+                size: content.len() as u64,
+                sha256: String::new(), // no sha256
+                url: String::new(),
+            }],
+        };
+
+        fs::write(
+            tmp.join(MANIFEST_FILE),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
+        fs::write(tmp.join("model.bin"), content).unwrap();
+
+        assert_eq!(check_model_status(&tmp), ModelStatus::Installed);
+        assert_eq!(verify_model_status(&tmp), ModelStatus::Installed);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+}
