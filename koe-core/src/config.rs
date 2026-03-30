@@ -1040,6 +1040,62 @@ mod tests {
     }
 
     #[test]
+    fn normalized_keys_dedup_fn() {
+        let h = HotkeySection {
+            trigger_key: "fn".into(),
+            cancel_key: "fn".into(),
+        };
+        let (t, c) = h.normalized_keys();
+        assert_eq!(t, "fn");
+        assert_eq!(c, "left_option");
+    }
+
+    #[test]
+    fn normalized_keys_dedup_left_option() {
+        // Status bar used to fallback to "fn" here, but core uses "right_option"
+        let h = HotkeySection {
+            trigger_key: "left_option".into(),
+            cancel_key: "left_option".into(),
+        };
+        let (t, c) = h.normalized_keys();
+        assert_eq!(t, "left_option");
+        assert_eq!(c, "right_option");
+    }
+
+    #[test]
+    fn normalized_keys_dedup_right_option() {
+        let h = HotkeySection {
+            trigger_key: "right_option".into(),
+            cancel_key: "right_option".into(),
+        };
+        let (t, c) = h.normalized_keys();
+        assert_eq!(t, "right_option");
+        assert_eq!(c, "left_command");
+    }
+
+    #[test]
+    fn normalized_keys_distinct_passes_through() {
+        let h = HotkeySection {
+            trigger_key: "fn".into(),
+            cancel_key: "right_command".into(),
+        };
+        let (t, c) = h.normalized_keys();
+        assert_eq!(t, "fn");
+        assert_eq!(c, "right_command");
+    }
+
+    #[test]
+    fn normalized_keys_invalid_trigger_falls_back_to_fn() {
+        let h = HotkeySection {
+            trigger_key: "nonexistent".into(),
+            cancel_key: "left_option".into(),
+        };
+        let (t, c) = h.normalized_keys();
+        assert_eq!(t, "fn");
+        assert_eq!(c, "left_option");
+    }
+
+    #[test]
     fn normalize_hotkey_config_backfills_missing_cancel_key() {
         let path = temp_config_path("hotkey-config");
         fs::write(&path, "hotkey:\n  trigger_key: left_option\n").unwrap();
