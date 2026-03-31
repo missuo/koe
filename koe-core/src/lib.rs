@@ -758,7 +758,8 @@ async fn run_session(
         let candidates =
             prompt::filter_dictionary_candidates(&dictionary, &asr_text, dictionary_max_candidates);
 
-        log::info!("[{session_id}] LLM request — asr_text: \"{}\"", asr_text);
+        log::info!("[{session_id}] LLM request — asr_text_len: {}", asr_text.len());
+        log::debug!("[{session_id}] LLM request — asr_text: \"{}\"", asr_text);
         log::info!(
             "[{session_id}] LLM request — {} dictionary entries, {} interim revisions",
             candidates.len(),
