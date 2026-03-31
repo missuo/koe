@@ -6,6 +6,7 @@
 @property (nonatomic, strong) NSArray<NSPasteboardItem *> *backedUpItems;
 @property (nonatomic, assign) NSInteger backedUpChangeCount;
 @property (nonatomic, assign) NSInteger writtenChangeCount;
+@property (nonatomic, assign) BOOL hasBackup;
 
 @end
 
@@ -28,6 +29,7 @@
         [items addObject:copy];
     }
     self.backedUpItems = items;
+    self.hasBackup = YES;
 }
 
 - (void)writeText:(NSString *)text {
@@ -38,7 +40,7 @@
 }
 
 - (void)scheduleRestoreAfterDelay:(NSUInteger)delayMs {
-    if (!self.backedUpItems) return;
+    if (!self.hasBackup) return;
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delayMs * NSEC_PER_MSEC)),
                    dispatch_get_main_queue(), ^{
@@ -47,22 +49,25 @@
 }
 
 - (void)restoreIfUnchanged {
+    if (!self.hasBackup) return;
+
     NSPasteboard *pb = [NSPasteboard generalPasteboard];
 
     // Only restore if the clipboard hasn't been modified since we wrote to it
     if (pb.changeCount != self.writtenChangeCount) {
         NSLog(@"[Koe] Clipboard changed since write, skipping restore");
-        return;
-    }
-
-    if (!self.backedUpItems || self.backedUpItems.count == 0) {
+        self.backedUpItems = nil;
+        self.hasBackup = NO;
         return;
     }
 
     [pb clearContents];
-    [pb writeObjects:self.backedUpItems];
+    if (self.backedUpItems.count > 0) {
+        [pb writeObjects:self.backedUpItems];
+    }
+    NSLog(@"[Koe] Clipboard restored%@", self.backedUpItems.count == 0 ? @" (was empty)" : @"");
     self.backedUpItems = nil;
-    NSLog(@"[Koe] Clipboard restored");
+    self.hasBackup = NO;
 }
 
 @end
