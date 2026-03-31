@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -326,6 +327,8 @@ where
     let semaphore = Arc::new(Semaphore::new(4));
     let client = reqwest::Client::builder()
         .user_agent("koe/1.0")
+        .connect_timeout(Duration::from_secs(30))
+        .tcp_keepalive(Some(Duration::from_secs(30)))
         .build()
         .map_err(|e| KoeError::Config(format!("http client: {e}")))?;
 
@@ -340,10 +343,10 @@ where
         let cancel = cancel.clone();
 
         let handle = tokio::spawn(async move {
-            let _permit = semaphore.acquire().await.unwrap();
-            if cancel.is_cancelled() {
-                return Err(KoeError::Config("cancelled".into()));
-            }
+            let _permit = tokio::select! {
+                permit = semaphore.acquire() => permit.unwrap(),
+                _ = cancel.cancelled() => return Err(KoeError::Config("cancelled".into())),
+            };
             download_file(
                 &client,
                 &model_dir,
@@ -365,11 +368,13 @@ where
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 if first_error.is_none() {
+                    cancel.cancel();
                     first_error = Some(e);
                 }
             }
             Err(e) => {
                 if first_error.is_none() {
+                    cancel.cancel();
                     first_error = Some(KoeError::Config(format!("join: {e}")));
                 }
             }
@@ -455,12 +460,13 @@ where
         request = request.header("Range", format!("bytes={}-", existing_size));
     }
 
-    let response = request
-        .send()
-        .await
-        .map_err(|e| KoeError::Config(format!("download {}: {e}", file.name)))?
-        .error_for_status()
-        .map_err(|e| KoeError::Config(format!("download {}: {e}", file.name)))?;
+    let response = tokio::select! {
+        result = request.send() => result
+            .map_err(|e| KoeError::Config(format!("download {}: {e}", file.name)))?
+            .error_for_status()
+            .map_err(|e| KoeError::Config(format!("download {}: {e}", file.name)))?,
+        _ = cancel.cancelled() => return Err(KoeError::Config("cancelled".into())),
+    };
 
     let resuming = response.status() == reqwest::StatusCode::PARTIAL_CONTENT;
 
@@ -493,11 +499,14 @@ where
     let mut stream = response.bytes_stream();
 
     use tokio::io::AsyncWriteExt;
-    while let Some(chunk) = stream.next().await {
-        if cancel.is_cancelled() {
-            return Err(KoeError::Config("cancelled".into()));
-        }
-        let chunk = chunk.map_err(|e| KoeError::Config(format!("download {}: {e}", file.name)))?;
+    loop {
+        let chunk = tokio::select! {
+            item = stream.next() => match item {
+                Some(chunk) => chunk.map_err(|e| KoeError::Config(format!("download {}: {e}", file.name)))?,
+                None => break,
+            },
+            _ = cancel.cancelled() => return Err(KoeError::Config("cancelled".into())),
+        };
         out.write_all(&chunk)
             .await
             .map_err(|e| KoeError::Config(format!("write {}: {e}", file.name)))?;
@@ -519,7 +528,13 @@ where
 
     // Verify integrity: use sha256 when available, otherwise check file size
     if !file.sha256.is_empty() {
-        let actual_sha = sha256_file(&part_path)?;
+        let part = part_path.clone();
+        let actual_sha = tokio::select! {
+            result = tokio::task::spawn_blocking(move || sha256_file(&part)) =>
+                result.map_err(|e| KoeError::Config(format!("sha256 join: {e}")))??
+            ,
+            _ = cancel.cancelled() => return Err(KoeError::Config("cancelled".into())),
+        };
         if actual_sha != file.sha256 {
             let _ = std::fs::remove_file(&part_path);
             return Err(KoeError::Config(format!(
