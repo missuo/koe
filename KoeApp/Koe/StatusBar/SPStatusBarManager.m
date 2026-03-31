@@ -181,26 +181,30 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     [menu addItem:permHeader];
 
     self.micPermissionItem = [[NSMenuItem alloc] initWithTitle:@"  Microphone: Checking..."
-                                                       action:nil
+                                                       action:@selector(openMicrophoneSettings)
                                                 keyEquivalent:@""];
+    self.micPermissionItem.target = self;
     self.micPermissionItem.enabled = NO;
     [menu addItem:self.micPermissionItem];
 
     self.accessibilityPermissionItem = [[NSMenuItem alloc] initWithTitle:@"  Accessibility: Checking..."
-                                                                 action:nil
+                                                                 action:@selector(requestAccessibilityPermission)
                                                           keyEquivalent:@""];
+    self.accessibilityPermissionItem.target = self;
     self.accessibilityPermissionItem.enabled = NO;
     [menu addItem:self.accessibilityPermissionItem];
 
     self.inputMonitoringPermissionItem = [[NSMenuItem alloc] initWithTitle:@"  Input Monitoring: Checking..."
-                                                                   action:nil
+                                                                   action:@selector(openInputMonitoringSettings)
                                                             keyEquivalent:@""];
+    self.inputMonitoringPermissionItem.target = self;
     self.inputMonitoringPermissionItem.enabled = NO;
     [menu addItem:self.inputMonitoringPermissionItem];
 
     self.notificationPermissionItem = [[NSMenuItem alloc] initWithTitle:@"  Notifications: Checking..."
-                                                                action:nil
+                                                                action:@selector(requestNotificationPermission)
                                                          keyEquivalent:@""];
+    self.notificationPermissionItem.target = self;
     self.notificationPermissionItem.enabled = NO;
     [menu addItem:self.notificationPermissionItem];
 
@@ -281,16 +285,36 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     BOOL inputMonitoring = [self.permissionManager isInputMonitoringGranted];
 
     self.micPermissionItem.title = [NSString stringWithFormat:@"  Microphone: %@",
-                                    mic ? @"Granted" : @"Not Granted"];
+                                    mic ? @"Granted" : @"Not Granted ▸"];
+    self.micPermissionItem.enabled = !mic;
     self.accessibilityPermissionItem.title = [NSString stringWithFormat:@"  Accessibility: %@",
-                                              accessibility ? @"Granted" : @"Not Granted"];
+                                              accessibility ? @"Granted" : @"Not Granted ▸"];
+    self.accessibilityPermissionItem.enabled = !accessibility;
     self.inputMonitoringPermissionItem.title = [NSString stringWithFormat:@"  Input Monitoring: %@",
-                                                inputMonitoring ? @"Granted" : @"Not Granted"];
+                                                inputMonitoring ? @"Granted" : @"Not Granted ▸"];
+    self.inputMonitoringPermissionItem.enabled = !inputMonitoring;
 
     [self.permissionManager checkNotificationPermissionWithCompletion:^(BOOL granted) {
         self.notificationPermissionItem.title = [NSString stringWithFormat:@"  Notifications: %@",
-                                                  granted ? @"Granted" : @"Not Granted"];
+                                                  granted ? @"Granted" : @"Not Granted ▸"];
+        self.notificationPermissionItem.enabled = !granted;
     }];
+}
+
+- (void)openMicrophoneSettings {
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"]];
+}
+
+- (void)requestAccessibilityPermission {
+    [self.permissionManager requestAccessibilityPermission];
+}
+
+- (void)openInputMonitoringSettings {
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"]];
+}
+
+- (void)requestNotificationPermission {
+    [self.permissionManager requestNotificationPermission];
 }
 
 - (void)refreshStats {
