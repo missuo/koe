@@ -97,6 +97,7 @@ impl Session {
                 | (Correcting, PreparingPaste)
                 | (Correcting, Failed)
                 | (PreparingPaste, Pasting)
+                | (PreparingPaste, Completed)
                 | (PreparingPaste, Failed)
                 | (Pasting, RestoringClipboard)
                 | (Pasting, Completed)
@@ -117,5 +118,28 @@ impl Session {
 
     pub fn elapsed_ms(&self) -> u64 {
         self.started_at.elapsed().as_millis() as u64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn session_at(state: SessionState) -> Session {
+        let mut s = Session::new(SPSessionMode::Hold, None, 0);
+        s.state = state;
+        s
+    }
+
+    #[test]
+    fn preparing_paste_can_transition_to_completed() {
+        let mut s = session_at(SessionState::PreparingPaste);
+        assert!(s.transition(SessionState::Completed).is_ok());
+    }
+
+    #[test]
+    fn completed_can_transition_to_idle() {
+        let mut s = session_at(SessionState::Completed);
+        assert!(s.transition(SessionState::Idle).is_ok());
     }
 }

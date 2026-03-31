@@ -822,23 +822,20 @@ async fn run_session(
     invoke_state_changed(session_token,"preparing_paste");
 
     // --- Deliver result to Obj-C ---
+    // The Obj-C side owns all state transitions from here (pasting → idle).
+    // Rust must NOT emit completed/idle state changes — they would be
+    // dispatched to the main queue and overwrite the pasting state that
+    // Obj-C sets in the final-text callback.
     invoke_final_text_ready(session_token,&final_text);
 
-    // Session complete
     {
         let mut s = session_arc.lock().unwrap();
         if let Some(ref mut session) = *s {
-            let _ = session.transition(SessionState::Pasting);
-            // Pasting and clipboard restore happen on the Obj-C side
-            // We transition directly to Completed here
             let _ = session.transition(SessionState::Completed);
         }
     }
-    invoke_state_changed(session_token,"completed");
-
-    log::info!("[{session_id}] session completed");
+    log::info!("[{session_id}] session completed (text delivered)");
     cleanup_session(&session_arc);
-    invoke_state_changed(session_token,"idle");
 }
 
 async fn wait_for_final(
