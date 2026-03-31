@@ -12,6 +12,6 @@ koe-core = { path = "../koe-core", default-features = false }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 indicatif = "0.17"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "system-proxy"], default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
