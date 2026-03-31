@@ -15,7 +15,7 @@ sherpa-onnx = ["koe-asr/sherpa-onnx"]
 [dependencies]
 koe-asr = { path = "../koe-asr" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls", "http2", "stream"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "http2", "stream", "system-proxy"], default-features = false }
 sha2 = "0.10"
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
