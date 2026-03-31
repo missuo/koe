@@ -141,7 +141,7 @@ static void bridge_on_interim_text(uint64_t token, const char *text) {
     sp_core_destroy();
 }
 
-- (void)beginSessionWithMode:(SPSessionModeObjC)mode {
+- (BOOL)beginSessionWithMode:(SPSessionModeObjC)mode {
     NSRunningApplication *frontApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
     const char *bundleId = frontApp.bundleIdentifier.UTF8String;
     pid_t pid = frontApp.processIdentifier;
@@ -158,7 +158,9 @@ static void bridge_on_interim_text(uint64_t token, const char *text) {
     int32_t result = sp_core_session_begin(context);
     if (result != 0) {
         NSLog(@"[Koe] sp_core_session_begin failed: %d", result);
+        return NO;
     }
+    return YES;
 }
 
 - (void)pushAudioFrame:(const void *)buffer length:(uint32_t)length timestamp:(uint64_t)timestamp {

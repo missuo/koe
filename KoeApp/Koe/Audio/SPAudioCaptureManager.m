@@ -27,8 +27,8 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
     return self;
 }
 
-- (void)startCaptureWithAudioCallback:(SPAudioFrameCallback)callback {
-    if (self.isCapturing) return;
+- (BOOL)startCaptureWithAudioCallback:(SPAudioFrameCallback)callback {
+    if (self.isCapturing) return NO;
 
     self.audioCallback = callback;
     [self.accumBuffer setLength:0];
@@ -69,7 +69,7 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
                                                                  toFormat:targetFormat];
     if (!converter) {
         NSLog(@"[Koe] ERROR: Failed to create audio converter from %@ to %@", hardwareFormat, targetFormat);
-        return;
+        return NO;
     }
 
     const NSUInteger targetByteLength = kFrameSamples * sizeof(int16_t); // 6400 bytes per 200ms
@@ -138,14 +138,14 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
 
     NSError *error = nil;
     [self.audioEngine prepare];
-    [self.audioEngine startAndReturnError:&error];
-    if (error) {
-        NSLog(@"[Koe] Audio engine start failed: %@", error.localizedDescription);
-        return;
+    if (![self.audioEngine startAndReturnError:&error]) {
+        NSLog(@"[Koe] Audio engine start failed: %@", error.localizedDescription ?: @"unknown error");
+        return NO;
     }
 
     self.isCapturing = YES;
     NSLog(@"[Koe] Audio capture started (hardware -> 16kHz mono, 200ms frames)");
+    return YES;
 }
 
 - (void)setInputDeviceID:(AudioDeviceID)deviceID {

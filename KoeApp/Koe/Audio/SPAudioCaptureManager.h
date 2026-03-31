@@ -16,7 +16,8 @@ typedef void (^SPAudioFrameCallback)(const void *buffer, uint32_t length, uint64
 
 /// Start audio capture. Captured frames are delivered via the callback.
 /// Audio format: 16kHz, mono, PCM Int16 LE, ~200ms per frame (3200 samples).
-- (void)startCaptureWithAudioCallback:(SPAudioFrameCallback)callback;
+/// Returns YES on success, NO if capture could not be started.
+- (BOOL)startCaptureWithAudioCallback:(SPAudioFrameCallback)callback;
 
 /// Stop audio capture.
 - (void)stopCapture;
