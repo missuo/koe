@@ -43,6 +43,7 @@ targetTemplates:
           - "-framework Security"
           - "-framework CoreFoundation"
           - "-framework UserNotifications"
+          - "-framework SystemConfiguration"
         ENABLE_APP_SANDBOX: NO
         CLANG_ENABLE_OBJC_ARC: YES
     frameworks:
