@@ -83,6 +83,26 @@ targets:
           ln -sf "${SRCROOT}/../target/${RUST_TARGET}/release/libkoe_core.a" "${SRCROOT}/../target/release/libkoe_core.a"
         basedOnDependencyAnalysis: false
 
+  Koe-lite:
+    templates:
+      - KoeApp
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
+    dependencies:
+      - package: KoeAppleSpeech
+        product: KoeAppleSpeech
+    preBuildScripts:
+      - name: Build Rust Library
+        script: |
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+          cd "${SRCROOT}/.."
+          RUST_TARGET="aarch64-apple-darwin"
+          cargo build --manifest-path koe-core/Cargo.toml --release --target "$RUST_TARGET" --no-default-features --features "apple-speech"
+          mkdir -p "${SRCROOT}/../target/release"
+          ln -sf "${SRCROOT}/../target/${RUST_TARGET}/release/libkoe_core.a" "${SRCROOT}/../target/release/libkoe_core.a"
+        basedOnDependencyAnalysis: false
+
   Koe-x86:
     templates:
       - KoeApp

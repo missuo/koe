@@ -1,9 +1,12 @@
-.PHONY: build build-rust build-xcode build-x86_64 generate clean run
+.PHONY: build build-lite build-rust build-xcode build-x86_64 generate clean run
 
 ARCH := aarch64-apple-darwin
 XCODE_ARCH := arm64
 
 build: generate build-rust build-xcode
+
+build-lite: generate
+	cd KoeApp && xcodebuild -project Koe.xcodeproj -scheme Koe-lite -configuration Release ARCHS=arm64 build
 
 build-x86_64: generate
 	cd KoeApp && xcodebuild -project Koe.xcodeproj -scheme Koe-x86 -configuration Release ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO build

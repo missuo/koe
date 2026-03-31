@@ -549,6 +549,31 @@ Once installed, the `koe-setup` skill will:
 
 This is especially useful for first-time users who want a guided, interactive setup experience.
 
+## Build Variants
+
+Koe ships multiple Xcode schemes for different use cases:
+
+| Scheme | App | Zip | Idle Memory | Description |
+|--------|-----|-----|--------|-------------|
+| **Koe** | ~86 MB | ~24 MB | ~40 MB | Full build (arm64). All providers. |
+| **Koe-lite** | ~19 MB | ~7 MB | ~13 MB | Lightweight (arm64). Cloud + Apple Speech only. |
+| **Koe-x86** | — | — | — | Intel build (x86_64). No MLX. |
+
+```bash
+# Full build (default, Apple Silicon)
+make build
+
+# Lite build (cloud + Apple Speech only, ~78% smaller)
+make build-lite
+
+# Intel build
+make build-x86_64
+```
+
+The lite build excludes MLX and sherpa-onnx, producing a smaller app that doesn't require downloading on-device ASR models (~189 MB–1.5 GB). Cloud providers (Doubao, Qwen) work on all macOS versions; Apple Speech requires macOS 26+.
+
+Local ASR providers are controlled by Rust feature flags in `koe-core/Cargo.toml`: `mlx`, `apple-speech`, `sherpa-onnx` (all enabled by default). Each Xcode scheme passes the appropriate `--features` flags to `cargo build`.
+
 ## Architecture
 
 Koe is built as a native macOS app with two layers:
