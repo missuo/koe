@@ -275,13 +275,36 @@ pub fn remove_model_files(model_dir: &Path) -> Result<usize> {
         std::fs::read_dir(model_dir).map_err(|e| KoeError::Config(format!("read dir: {e}")))?;
     for entry in entries.flatten() {
         let name = entry.file_name();
-        if name != MANIFEST_FILE && entry.path().is_file() {
-            std::fs::remove_file(entry.path())
-                .map_err(|e| KoeError::Config(format!("remove {}: {e}", entry.path().display())))?;
+        if name == MANIFEST_FILE {
+            continue;
+        }
+        let path = entry.path();
+        if path.is_dir() {
+            removed += count_files_recursive(&path);
+            std::fs::remove_dir_all(&path)
+                .map_err(|e| KoeError::Config(format!("remove dir {}: {e}", path.display())))?;
+        } else if path.is_file() {
+            std::fs::remove_file(&path)
+                .map_err(|e| KoeError::Config(format!("remove {}: {e}", path.display())))?;
             removed += 1;
         }
     }
     Ok(removed)
+}
+
+fn count_files_recursive(dir: &Path) -> usize {
+    let mut count = 0;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                count += count_files_recursive(&path);
+            } else {
+                count += 1;
+            }
+        }
+    }
+    count
 }
 
 // ─── Download ───────────────────────────────────────────────────────
@@ -902,6 +925,56 @@ mod tests {
         assert!(tmp.join(MANIFEST_FILE).exists());
 
         assert_eq!(model_status(&tmp, VerifyMode::CacheOnly), ModelStatus::NotInstalled);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn remove_model_files_handles_subdirectories() {
+        let tmp = std::env::temp_dir().join(format!(
+            "koe-model-test-nested-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        let manifest = ModelManifest {
+            provider: "test".into(),
+            description: "test".into(),
+            repo: "test/model".into(),
+            files: vec![
+                ModelFile {
+                    name: "weights.bin".into(),
+                    size: 10,
+                    sha256: String::new(),
+                    url: String::new(),
+                },
+                ModelFile {
+                    name: "subdir/config.json".into(),
+                    size: 5,
+                    sha256: String::new(),
+                    url: String::new(),
+                },
+            ],
+        };
+        fs::write(
+            tmp.join(MANIFEST_FILE),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        // Create files including nested ones
+        fs::write(tmp.join("weights.bin"), b"0123456789").unwrap();
+        fs::create_dir_all(tmp.join("subdir")).unwrap();
+        fs::write(tmp.join("subdir/config.json"), b"12345").unwrap();
+
+        let removed = remove_model_files(&tmp).unwrap();
+        assert_eq!(removed, 2);
+        assert!(tmp.join(MANIFEST_FILE).exists());
+        assert!(!tmp.join("weights.bin").exists());
+        assert!(!tmp.join("subdir").exists());
 
         let _ = fs::remove_dir_all(&tmp);
     }
