@@ -74,8 +74,10 @@ class MLXAsrManager {
         generation &+= 1
         let thisGeneration = generation
 
+        callbackLock.lock()
         self.callback = callback
         self.callbackCtx = context
+        callbackLock.unlock()
 
         let preset: DelayPreset
         switch delayPreset {
@@ -98,18 +100,18 @@ class MLXAsrManager {
         let session = StreamingInferenceSession(model: model, config: config)
         self.session = session
 
-        invokeCallback(eventType: 4, text: "")
+        invokeCallback(eventType: 4, text: "", generation: thisGeneration)
 
         eventTask = Task { [weak self] in
             for await event in session.events {
                 guard let self = self, self.generation == thisGeneration else { break }
                 switch event {
                 case .displayUpdate(let confirmed, let provisional):
-                    self.invokeCallback(eventType: 0, text: confirmed + provisional)
+                    self.invokeCallback(eventType: 0, text: confirmed + provisional, generation: thisGeneration)
                 case .confirmed(let text):
-                    self.invokeCallback(eventType: 1, text: text)
+                    self.invokeCallback(eventType: 1, text: text, generation: thisGeneration)
                 case .ended(let fullText):
-                    self.invokeCallback(eventType: 2, text: fullText)
+                    self.invokeCallback(eventType: 2, text: fullText, generation: thisGeneration)
                 case .stats:
                     break
                 default:
@@ -117,7 +119,7 @@ class MLXAsrManager {
                 }
             }
             if let self = self, self.generation == thisGeneration {
-                self.invokeCallback(eventType: 5, text: "")
+                self.invokeCallback(eventType: 5, text: "", generation: thisGeneration)
             }
         }
 
@@ -167,10 +169,10 @@ class MLXAsrManager {
 
     // MARK: - Private
 
-    private func invokeCallback(eventType: Int32, text: String) {
+    private func invokeCallback(eventType: Int32, text: String, generation gen: UInt64) {
         callbackLock.lock()
         defer { callbackLock.unlock() }
-        guard let cb = callback, let ctx = callbackCtx else { return }
+        guard gen == generation, let cb = callback, let ctx = callbackCtx else { return }
         text.withCString { cstr in
             cb(ctx, eventType, cstr)
         }
