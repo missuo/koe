@@ -309,30 +309,36 @@ impl AsrProvider for QwenAsrProvider {
             return Ok(event);
         }
 
-        if let Some(ref mut ws) = self.ws {
-            match ws.next().await {
+        loop {
+            let msg = self
+                .ws
+                .as_mut()
+                .ok_or_else(|| AsrError::Connection("not connected".into()))?
+                .next()
+                .await;
+
+            match msg {
                 Some(Ok(Message::Text(text))) => {
                     let events = self.parse_server_event(&text)?;
                     self.pending_events.extend(events);
-                    Ok(self
-                        .pending_events
-                        .pop_front()
-                        .unwrap_or_else(|| AsrEvent::Interim(String::new())))
+                    if let Some(event) = self.pending_events.pop_front() {
+                        return Ok(event);
+                    }
+                    log::debug!("[Qwen ASR] Skipping text frame with no parseable events");
                 }
-                Some(Ok(Message::Close(_))) => Ok(AsrEvent::Closed),
+                Some(Ok(Message::Close(_))) => return Ok(AsrEvent::Closed),
                 Some(Ok(Message::Binary(data))) => {
                     log::debug!(
-                        "[Qwen ASR] Ignoring binary message ({} bytes)",
+                        "[Qwen ASR] Skipping binary frame ({} bytes)",
                         data.len()
                     );
-                    Ok(AsrEvent::Interim(String::new()))
                 }
-                Some(Ok(_)) => Ok(AsrEvent::Interim(String::new())),
-                Some(Err(e)) => Err(AsrError::Protocol(e.to_string())),
-                None => Ok(AsrEvent::Closed),
+                Some(Ok(frame)) => {
+                    log::debug!("[Qwen ASR] Skipping frame: {:?}", frame);
+                }
+                Some(Err(e)) => return Err(AsrError::Protocol(e.to_string())),
+                None => return Ok(AsrEvent::Closed),
             }
-        } else {
-            Err(AsrError::Connection("not connected".into()))
         }
     }
 
