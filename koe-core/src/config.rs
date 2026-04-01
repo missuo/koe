@@ -184,11 +184,11 @@ pub enum LlmMaxTokenParameter {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct FeedbackSection {
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub start_sound: bool,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub stop_sound: bool,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub error_sound: bool,
 }
 
