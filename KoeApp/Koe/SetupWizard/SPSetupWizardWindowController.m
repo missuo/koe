@@ -1,6 +1,18 @@
 #import "SPSetupWizardWindowController.h"
 #import "SPRustBridge.h"
 #import <Cocoa/Cocoa.h>
+#import <Speech/Speech.h>
+
+// Apple Speech asset management FFI (KoeAppleSpeech Swift package)
+extern int32_t koe_apple_speech_is_available(void);
+extern int32_t koe_apple_speech_asset_status(const char *locale);
+extern void koe_apple_speech_install_asset(
+    const char *locale,
+    void (*callback)(void *ctx, int32_t event_type, const char *text),
+    void *ctx
+);
+extern int32_t koe_apple_speech_release_asset(const char *locale);
+extern uint8_t *koe_apple_speech_supported_locales(uint32_t *outLen);
 
 static NSString *const kConfigDir = @".koe";
 static NSString *const kDictionaryFile = @"dictionary.txt";
@@ -133,6 +145,9 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 @property (nonatomic, strong) NSTextField *modelProgressSizeLabel;
 @property (nonatomic, strong) NSMutableSet<NSString *> *downloadingModels;
 @property (nonatomic, copy) NSString *pendingVerificationPath;
+
+// Apple Speech locale selection
+@property (nonatomic, strong) NSPopUpButton *appleSpeechLocalePopup;
 
 // LLM fields
 @property (nonatomic, strong) NSButton *llmEnabledCheckbox;
@@ -326,7 +341,12 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     [self.asrProviderPopup itemAtIndex:0].representedObject = @"doubao";
     [self.asrProviderPopup addItemWithTitle:@"Qwen (\u963f\u91cc\u4e91)"];
     [self.asrProviderPopup itemAtIndex:1].representedObject = @"qwen";
-    // Add local providers supported by this build
+    // Add Apple Speech (macOS 26+, no model download required)
+    if (@available(macOS 26.0, *)) {
+        [self.asrProviderPopup addItemWithTitle:@"Apple Speech (On-Device)"];
+        [self.asrProviderPopup lastItem].representedObject = @"apple-speech";
+    }
+    // Add local providers supported by this build (model-based)
     NSDictionary *localProviderLabels = @{
         @"mlx": @"MLX (Apple Silicon)",
         @"sherpa-onnx": @"Sherpa-ONNX",
@@ -353,6 +373,19 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     NSTextField *appKeyLabel = [self formLabel:@"App Key" frame:NSMakeRect(16, y, labelW, 22)];
     appKeyLabel.tag = 1001;
     [pane addSubview:appKeyLabel];
+
+    // Apple Speech locale popup (same row as App Key / Model, tag 1005)
+    NSTextField *localeLabel = [self formLabel:@"Language" frame:NSMakeRect(16, y, labelW, 22)];
+    localeLabel.tag = 1005;
+    localeLabel.hidden = YES;
+    [pane addSubview:localeLabel];
+    self.appleSpeechLocalePopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, fieldW - 26, 26) pullsDown:NO];
+    self.appleSpeechLocalePopup.hidden = YES;
+    [self.appleSpeechLocalePopup setTarget:self];
+    [self.appleSpeechLocalePopup setAction:@selector(appleSpeechLocaleChanged:)];
+    // Populate from system-reported supported locales
+    [self populateAppleSpeechLocalePopup];
+    [pane addSubview:self.appleSpeechLocalePopup];
 
     // Row 1: Model popup + Download button (Local providers, same row as App Key)
     self.localModelLabel = [self formLabel:@"Model" frame:NSMakeRect(16, y, labelW, 22)];
@@ -847,7 +880,8 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     NSString *selectedProvider = sender.selectedItem.representedObject ?: @"doubao";
     BOOL isDoubao = [selectedProvider isEqualToString:@"doubao"];
     BOOL isQwen = [selectedProvider isEqualToString:@"qwen"];
-    BOOL isLocal = !isDoubao && !isQwen;
+    BOOL isAppleSpeech = [selectedProvider isEqualToString:@"apple-speech"];
+    BOOL isModelBasedLocal = !isDoubao && !isQwen && !isAppleSpeech;
 
     // Show/hide Doubao fields
     for (NSView *view in self.currentPaneView.subviews) {
@@ -870,29 +904,50 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     self.asrQwenApiKeySecureField.hidden = !isQwen;
     self.asrQwenApiKeyToggle.hidden = !isQwen;
 
+    // Show/hide Apple Speech locale popup and asset status
+    self.appleSpeechLocalePopup.hidden = !isAppleSpeech;
+    for (NSView *view in self.currentPaneView.subviews) {
+        if (view.tag == 1005) { // Locale label
+            view.hidden = !isAppleSpeech;
+        }
+    }
+
     // Show/hide local model popup, status, and download button
-    self.localModelPopup.hidden = !isLocal;
-    self.modelStatusLabel.hidden = !isLocal;
-    if (!isLocal) {
+    self.localModelPopup.hidden = !isModelBasedLocal;
+    if (!isModelBasedLocal && !isAppleSpeech) {
+        self.modelStatusLabel.hidden = YES;
         self.modelDownloadButton.hidden = YES;
         self.modelDeleteButton.hidden = YES;
         self.modelProgressBar.hidden = YES;
         self.modelProgressSizeLabel.hidden = YES;
-    } else {
+    } else if (isAppleSpeech) {
+        // Reuse model status row for Apple Speech asset status
+        self.modelStatusLabel.hidden = NO;
         self.modelDownloadButton.hidden = NO;
         self.modelDeleteButton.hidden = NO;
+        self.modelProgressBar.hidden = YES;
+        self.modelProgressSizeLabel.hidden = YES;
+        [self updateAppleSpeechAssetStatus];
+    } else {
+        self.modelStatusLabel.hidden = NO;
+        self.modelDownloadButton.hidden = NO;
+        self.modelDeleteButton.hidden = NO;
+        self.modelProgressBar.hidden = YES;
+        self.modelProgressSizeLabel.hidden = YES;
+        [self updateModelStatusLabel];
     }
     for (NSView *view in self.currentPaneView.subviews) {
         if (view.tag == 1004) { // Model label
-            view.hidden = !isLocal;
+            view.hidden = !isModelBasedLocal;
         }
     }
-    if (isLocal) {
+    if (isModelBasedLocal) {
         [self populateLocalModelPopup:selectedProvider];
         [self updateModelStatusLabel];
     }
 
     // Hide test button for local providers (no remote connection to test)
+    BOOL isLocal = !isDoubao && !isQwen;
     self.asrTestButton.hidden = isLocal;
     self.asrTestResultLabel.hidden = isLocal;
 
@@ -983,6 +1038,13 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 }
 
 - (void)downloadSelectedModel:(id)sender {
+    // Dispatch to Apple Speech asset download if that provider is selected
+    NSString *selectedProvider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
+    if ([selectedProvider isEqualToString:@"apple-speech"]) {
+        [self downloadAppleSpeechAsset];
+        return;
+    }
+
     NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
     if (!modelPath) return;
 
@@ -1052,6 +1114,13 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 }
 
 - (void)deleteSelectedModel:(id)sender {
+    // Dispatch to Apple Speech asset release if that provider is selected
+    NSString *selectedProvider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
+    if ([selectedProvider isEqualToString:@"apple-speech"]) {
+        [self releaseAppleSpeechAsset];
+        return;
+    }
+
     NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
     if (!modelPath) return;
 
@@ -1066,6 +1135,137 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         [self.rustBridge removeModelFiles:modelPath];
         [self updateModelStatusLabel];
     }
+}
+
+// MARK: - Apple Speech Asset Management
+
+- (void)populateAppleSpeechLocalePopup {
+    [self.appleSpeechLocalePopup removeAllItems];
+
+    uint32_t blobLen = 0;
+    uint8_t *blob = koe_apple_speech_supported_locales(&blobLen);
+    if (blob && blobLen > 0) {
+        // Parse "id\0displayName\0\0id\0displayName\0\0..." blob
+        NSData *data = [NSData dataWithBytesNoCopy:blob length:blobLen freeWhenDone:YES];
+        const uint8_t *bytes = data.bytes;
+        NSUInteger pos = 0;
+        while (pos < blobLen) {
+            // Read identifier (until first \0)
+            NSUInteger idStart = pos;
+            while (pos < blobLen && bytes[pos] != 0) pos++;
+            if (pos >= blobLen) break;
+            NSString *identifier = [[NSString alloc] initWithBytes:bytes + idStart
+                                                            length:pos - idStart
+                                                          encoding:NSUTF8StringEncoding];
+            pos++; // skip \0
+
+            // Read display name (until next \0)
+            NSUInteger nameStart = pos;
+            while (pos < blobLen && bytes[pos] != 0) pos++;
+            NSString *displayName = [[NSString alloc] initWithBytes:bytes + nameStart
+                                                             length:pos - nameStart
+                                                           encoding:NSUTF8StringEncoding];
+            pos++; // skip \0
+
+            // Skip trailing \0 (double-null separator)
+            if (pos < blobLen && bytes[pos] == 0) pos++;
+
+            if (identifier && displayName) {
+                [self.appleSpeechLocalePopup addItemWithTitle:displayName];
+                [self.appleSpeechLocalePopup lastItem].representedObject = identifier;
+            }
+        }
+    } else {
+        // Fallback if API unavailable
+        [self.appleSpeechLocalePopup addItemWithTitle:@"No languages available"];
+        self.appleSpeechLocalePopup.enabled = NO;
+    }
+}
+
+- (void)updateAppleSpeechAssetStatus {
+    NSString *locale = self.appleSpeechLocalePopup.selectedItem.representedObject;
+    int32_t status = koe_apple_speech_asset_status(locale.UTF8String);
+
+    switch (status) {
+        case 3: { // installed
+            self.modelStatusLabel.stringValue = @"● Installed";
+            self.modelStatusLabel.textColor = [NSColor systemGreenColor];
+            self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
+                                                        accessibilityDescription:@"Download"];
+            self.modelDownloadButton.enabled = NO;
+            self.modelDeleteButton.enabled = YES;
+            break;
+        }
+        case 2: // downloading
+            self.modelStatusLabel.stringValue = @"◐ Downloading…";
+            self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
+            self.modelDownloadButton.enabled = NO;
+            self.modelDeleteButton.enabled = NO;
+            break;
+        case 1: // supported (downloadable)
+            self.modelStatusLabel.stringValue = @"○ Not installed";
+            self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
+            self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
+                                                        accessibilityDescription:@"Download"];
+            self.modelDownloadButton.enabled = YES;
+            self.modelDeleteButton.enabled = NO;
+            break;
+        default: // unsupported
+            self.modelStatusLabel.stringValue = @"✕ Not supported for this language";
+            self.modelStatusLabel.textColor = [NSColor systemRedColor];
+            self.modelDownloadButton.enabled = NO;
+            self.modelDeleteButton.enabled = NO;
+            break;
+    }
+}
+
+static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char *text) {
+    SPSetupWizardWindowController *controller = (__bridge SPSetupWizardWindowController *)ctx;
+    NSString *textStr = text ? [NSString stringWithUTF8String:text] : nil;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        switch (eventType) {
+            case 0: // progress
+                controller.modelStatusLabel.stringValue = textStr ?: @"Downloading…";
+                controller.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
+                break;
+            case 1: // completed
+                [controller updateAppleSpeechAssetStatus];
+                break;
+            case 2: // error
+                controller.modelStatusLabel.stringValue = textStr ?: @"Download failed";
+                controller.modelStatusLabel.textColor = [NSColor systemRedColor];
+                controller.modelDownloadButton.enabled = YES;
+                break;
+        }
+    });
+}
+
+- (void)appleSpeechLocaleChanged:(id)sender {
+    [self updateAppleSpeechAssetStatus];
+}
+
+- (void)releaseAppleSpeechAsset {
+    NSString *locale = self.appleSpeechLocalePopup.selectedItem.representedObject;
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Release Speech Assets?";
+    alert.informativeText = @"The system may reclaim storage for this language's speech model. You can re-download it later.";
+    [alert addButtonWithTitle:@"Release"];
+    [alert addButtonWithTitle:@"Cancel"];
+    alert.alertStyle = NSAlertStyleWarning;
+
+    if ([alert runModal] == NSAlertFirstButtonReturn) {
+        koe_apple_speech_release_asset(locale.UTF8String);
+        [self updateAppleSpeechAssetStatus];
+    }
+}
+
+- (void)downloadAppleSpeechAsset {
+    NSString *locale = self.appleSpeechLocalePopup.selectedItem.representedObject;
+    self.modelStatusLabel.stringValue = @"Downloading…";
+    self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
+    self.modelDownloadButton.enabled = NO;
+    koe_apple_speech_install_asset(locale.UTF8String, appleSpeechInstallCallback, (__bridge void *)self);
 }
 
 - (void)populateLocalModelPopup:(NSString *)provider {
@@ -1135,6 +1335,34 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         self.asrQwenApiKeyField.stringValue = qwenApiKey;
         // Reset visibility based on selected provider
         [self asrProviderChanged:self.asrProviderPopup];
+        // Select saved Apple Speech locale (always, so switching to apple-speech shows the right default)
+        {
+            NSString *locale = configGet(@"asr.apple-speech.locale");
+            if (locale.length > 0) {
+                // Try exact match first, then fall back to language-equivalent match
+                NSInteger exactIdx = -1, equivIdx = -1;
+                NSLocale *configLocale = [NSLocale localeWithLocaleIdentifier:locale];
+                for (NSInteger i = 0; i < self.appleSpeechLocalePopup.numberOfItems; i++) {
+                    NSString *itemId = [self.appleSpeechLocalePopup itemAtIndex:i].representedObject;
+                    if ([itemId isEqualToString:locale]) {
+                        exactIdx = i;
+                        break;
+                    }
+                    if (equivIdx < 0) {
+                        NSLocale *itemLocale = [NSLocale localeWithLocaleIdentifier:itemId];
+                        if ([configLocale.languageCode isEqualToString:itemLocale.languageCode]
+                            && [configLocale.countryCode isEqualToString:itemLocale.countryCode]) {
+                            equivIdx = i;
+                        }
+                    }
+                }
+                NSInteger matchIdx = (exactIdx >= 0) ? exactIdx : equivIdx;
+                if (matchIdx >= 0) {
+                    [self.appleSpeechLocalePopup selectItemAtIndex:matchIdx];
+                    [self updateAppleSpeechAssetStatus];
+                }
+            }
+        }
         // Select current local model if applicable
         NSString *currentModel = nil;
         if ([provider isEqualToString:@"mlx"]) {
@@ -1230,11 +1458,32 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 }
 
 - (void)saveConfig:(id)sender {
-    // Warn if a local provider is selected but the model is not installed
+    // Warn if a local provider is selected but assets/models are not installed
     if (self.asrProviderPopup) {
         NSString *provider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
-        BOOL isLocal = ![provider isEqualToString:@"doubao"] && ![provider isEqualToString:@"qwen"];
-        if (isLocal) {
+        // Check Apple Speech asset status
+        if ([provider isEqualToString:@"apple-speech"]) {
+            NSString *locale = self.appleSpeechLocalePopup.selectedItem.representedObject;
+            int32_t assetStatus = koe_apple_speech_asset_status(locale.UTF8String);
+            if (assetStatus != 3) { // not installed
+                NSAlert *alert = [[NSAlert alloc] init];
+                alert.messageText = @"Speech Assets Not Installed";
+                alert.informativeText = @"The speech recognition model for the selected language has not been downloaded yet. Saving will start downloading automatically.";
+                [alert addButtonWithTitle:@"Save & Download"];
+                [alert addButtonWithTitle:@"Cancel"];
+                alert.alertStyle = NSAlertStyleWarning;
+                if ([alert runModal] != NSAlertFirstButtonReturn) {
+                    return;
+                }
+                // Trigger background download immediately
+                [self downloadAppleSpeechAsset];
+            }
+        }
+        // Check model-based local provider model status
+        BOOL isModelBasedLocal = ![provider isEqualToString:@"doubao"]
+            && ![provider isEqualToString:@"qwen"]
+            && ![provider isEqualToString:@"apple-speech"];
+        if (isModelBasedLocal) {
             NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
             if (modelPath) {
                 NSInteger status = [self.rustBridge modelStatus:modelPath mode:SPModelVerifyCacheOnly];
@@ -1275,6 +1524,11 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         // Save Qwen fields
         NSString *qwenApiKey = self.asrQwenApiKeyToggle.tag == 1 ? self.asrQwenApiKeyField.stringValue : self.asrQwenApiKeySecureField.stringValue;
         saveOk &= configSet(@"asr.qwen.api_key", qwenApiKey);
+        // Save Apple Speech locale
+        if ([selectedProvider isEqualToString:@"apple-speech"]) {
+            NSString *locale = self.appleSpeechLocalePopup.selectedItem.representedObject;
+            saveOk &= configSet(@"asr.apple-speech.locale", locale);
+        }
         // Save local model selection
         if ([selectedProvider isEqualToString:@"mlx"]) {
             NSString *modelPath = self.localModelPopup.selectedItem.representedObject;

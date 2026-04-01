@@ -21,6 +21,7 @@ static const CGFloat kIconSize = 18.0;
 @property (nonatomic, strong) NSMenuItem *accessibilityPermissionItem;
 @property (nonatomic, strong) NSMenuItem *inputMonitoringPermissionItem;
 @property (nonatomic, strong) NSMenuItem *notificationPermissionItem;
+@property (nonatomic, strong) NSMenuItem *speechRecognitionPermissionItem;
 @property (nonatomic, strong) NSMenuItem *hotkeyDisplayItem;
 @property (nonatomic, strong) NSMenuItem *statsCountItem;
 @property (nonatomic, strong) NSMenuItem *statsTimeItem;
@@ -204,6 +205,13 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     self.notificationPermissionItem.enabled = NO;
     [menu addItem:self.notificationPermissionItem];
 
+    self.speechRecognitionPermissionItem = [[NSMenuItem alloc] initWithTitle:@"  Speech Recognition: Checking..."
+                                                                     action:nil
+                                                              keyEquivalent:@""];
+    self.speechRecognitionPermissionItem.enabled = NO;
+    self.speechRecognitionPermissionItem.hidden = YES; // shown only for apple-speech provider
+    [menu addItem:self.speechRecognitionPermissionItem];
+
     [menu addItem:[NSMenuItem separatorItem]];
 
     // Microphone selection submenu
@@ -291,6 +299,17 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
         self.notificationPermissionItem.title = [NSString stringWithFormat:@"  Notifications: %@",
                                                   granted ? @"Granted" : @"Not Granted"];
     }];
+
+    // Speech Recognition — only visible when apple-speech provider is configured
+    char *rawProvider = sp_config_get("asr.provider");
+    BOOL isAppleSpeech = rawProvider && strcmp(rawProvider, "apple-speech") == 0;
+    if (rawProvider) sp_core_free_string(rawProvider);
+    self.speechRecognitionPermissionItem.hidden = !isAppleSpeech;
+    if (isAppleSpeech) {
+        BOOL speechGranted = [self.permissionManager isSpeechRecognitionGranted];
+        self.speechRecognitionPermissionItem.title = [NSString stringWithFormat:@"  Speech Recognition: %@",
+                                                       speechGranted ? @"Granted" : @"Not Granted"];
+    }
 }
 
 - (void)refreshStats {

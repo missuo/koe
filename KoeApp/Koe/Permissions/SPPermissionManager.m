@@ -1,6 +1,7 @@
 #import "SPPermissionManager.h"
 #import <AVFoundation/AVFoundation.h>
 #import <ApplicationServices/ApplicationServices.h>
+#import <Speech/Speech.h>
 #import <UserNotifications/UserNotifications.h>
 
 @implementation SPPermissionManager
@@ -62,6 +63,26 @@ static CGEventRef inputMonitoringProbeCallback(CGEventTapProxy proxy,
         return YES;
     }
     return NO;
+}
+
+- (BOOL)isSpeechRecognitionGranted {
+    return [SFSpeechRecognizer authorizationStatus] == SFSpeechRecognizerAuthorizationStatusAuthorized;
+}
+
+- (void)requestSpeechRecognitionPermissionWithCompletion:(void (^)(BOOL))completion {
+    SFSpeechRecognizerAuthorizationStatus status = [SFSpeechRecognizer authorizationStatus];
+    if (status == SFSpeechRecognizerAuthorizationStatusAuthorized) {
+        completion(YES);
+    } else if (status == SFSpeechRecognizerAuthorizationStatusNotDetermined) {
+        [SFSpeechRecognizer requestAuthorization:^(SFSpeechRecognizerAuthorizationStatus newStatus) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion(newStatus == SFSpeechRecognizerAuthorizationStatusAuthorized);
+            });
+        }];
+    } else {
+        NSLog(@"[Koe] Speech recognition permission denied or restricted");
+        completion(NO);
+    }
 }
 
 - (void)requestNotificationPermission {

@@ -11,6 +11,7 @@ KoeApp/Koe.xcodeproj/project.xcworkspace/xcshareddata/
 *.xcscmblueprint
 DerivedData/
 build/
+.build/
 *.ipa
 *.dSYM.zip
 *.dSYM

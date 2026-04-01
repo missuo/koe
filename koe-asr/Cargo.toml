@@ -22,6 +22,7 @@ sherpa-onnx = { version = "1.12", optional = true }
 [features]
 default = []
 mlx = []
+apple-speech = []
 sherpa-onnx = ["dep:sherpa-onnx"]
 
 [dev-dependencies]

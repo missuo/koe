@@ -183,7 +183,22 @@ Without this permission:
 - But text cannot be reliably auto-pasted into other apps' input fields
 - Falls back to "write result to clipboard without auto-pasting"
 
-### 5.4 Permissions Not Required
+### 5.4 Speech Recognition Permission
+
+Required only when using the Apple Speech ASR provider (macOS 26+).
+
+Purpose:
+
+- Allow the app to use the system's on-device speech recognition engine
+
+Without this permission:
+
+- The Apple Speech provider will fail to start a session
+- Other ASR providers (cloud, MLX, sherpa-onnx) are unaffected
+
+Info.plist key: `NSSpeechRecognitionUsageDescription`
+
+### 5.5 Permissions Not Required
 
 Typically not needed:
 
@@ -1650,11 +1665,13 @@ The final recommended implementation approach is as follows:
 The `AsrProvider` trait defines a uniform interface for all ASR backends:
 
 - **Cloud providers**: Doubao (WebSocket binary protocol), Qwen (WebSocket JSON protocol)
-- **Local providers**: MLX (Swift FFI to KoeMLX package, Apple Silicon), sherpa-onnx (dedicated worker thread, CPU)
+- **Local providers**: MLX (Swift FFI to KoeMLX package, Apple Silicon), sherpa-onnx (dedicated worker thread, CPU), Apple Speech (Swift FFI to KoeAppleSpeech package, macOS 26+)
 
 All providers emit the same event types (`Connected`, `Interim`, `Definite`, `Final`, `Closed`, `Error`), making them interchangeable via `config.yaml`.
 
 Local providers receive configuration through their constructor (`new(config)`), not through the shared `AsrConfig` parameter in `connect()`. This avoids polluting the cloud-oriented `AsrConfig` with local-specific fields.
+
+Apple Speech differs from other local providers in that it uses system-managed model assets (no download required). It does not participate in the model management system (`~/.koe/models/`). Instead, SpeechAnalyzer + SpeechTranscriber handle model lifecycle automatically.
 
 ### 30.2 Model Management
 
@@ -1682,6 +1699,19 @@ The Setup Wizard's ASR pane includes local provider support. When the user selec
 - Multiple models can be downloaded concurrently; switching models in the dropdown shows the correct status and progress for each
 - On save, if the selected model is not installed, a confirmation alert warns the user that ASR will not work
 
+When the user selects Apple Speech:
+
+- Cloud credential fields and model management UI (model dropdown, progress bar) are hidden
+- A **Language dropdown** appears, dynamically populated from `SpeechTranscriber.supportedLocales` and sorted by localized display name
+- An **asset status label** shows the installation state: `● Installed` (green), `○ Not installed`, `◐ Downloading…`, or `✕ Not supported for this language`
+- A **download button** triggers `AssetInventory.assetInstallationRequest` + `downloadAndInstall()` with progress callback
+- A **release button** allows the user to release system-managed assets (with confirmation alert); the system may reclaim storage when space is needed
+- On save, if the selected locale's assets are not installed, a confirmation alert offers "Save & Download" which saves config and triggers asset download immediately
+- The selected locale is saved to `asr.apple-speech.locale` in `config.yaml`
+- The provider option only appears on macOS 26.0+ (guarded by `@available`)
+
+Asset management is exposed from Swift to Objective-C via `@_cdecl` FFI functions (`koe_apple_speech_asset_status`, `koe_apple_speech_install_asset`, `koe_apple_speech_supported_locales`, etc.) in the KoeAppleSpeech package, called directly from the Setup Wizard without going through Rust.
+
 Model management is exposed from Rust to Objective-C via C FFI functions (`sp_core_scan_models_json`, `sp_core_check_model_status`, `sp_core_download_model`, etc.) wrapped by `SPRustBridge`.
 
 ### 30.4 Feature Flags
@@ -1689,10 +1719,63 @@ Model management is exposed from Rust to Objective-C via C FFI functions (`sp_co
 Local ASR providers are compile-time gated:
 
 - `mlx` — MLX provider (no Rust crate dependency; resolved at link time via KoeMLX Swift package)
+- `apple-speech` — Apple Speech provider (no Rust crate dependency; resolved at link time via KoeAppleSpeech Swift package)
 - `sherpa-onnx` — sherpa-onnx provider (`sherpa-onnx` crate dependency)
 
-Both are enabled by default in `koe-core`. Builds without local ASR can use `--no-default-features`.
+All three are enabled by default in `koe-core`. Builds without local ASR can use `--no-default-features`.
+
+### 30.5 Apple Speech Provider (macOS 26+)
+
+Apple Speech is a zero-configuration local ASR provider that uses Apple's SpeechAnalyzer and SpeechTranscriber frameworks. Unlike MLX and sherpa-onnx, it requires no model download — the system manages speech recognition assets.
+
+**Architecture**:
+
+The provider follows the same Swift-to-Rust bridge pattern established by KoeMLX:
+
+- Rust side: `koe-asr/src/apple_speech.rs` — FFI wrapper implementing `AsrProvider`
+- Swift side: `Packages/KoeAppleSpeech/Sources/KoeAppleSpeech/CBridge.swift` — `@_cdecl` entry points
+- Swift side: `Packages/KoeAppleSpeech/Sources/KoeAppleSpeech/AppleSpeechManager.swift` — session management
+
+**Audio flow**:
+
+SpeechAnalyzer requires 16-bit signed integer audio samples. Raw PCM16 LE bytes pass through FFI unchanged — the Swift side copies them directly into `AVAudioPCMBuffer` (Int16 format) via `memcpy`. Audio is fed through an `AsyncStream<AnalyzerInput>` bridge: synchronous `@_cdecl` calls yield into the stream, and SpeechAnalyzer pulls from it asynchronously.
+
+**FFI functions** (`@_cdecl` in CBridge.swift):
+
+Session management (called from Rust via `AppleSpeechProvider`):
+
+- `koe_apple_speech_start_session` — create SpeechAnalyzer + SpeechTranscriber, begin recognition
+- `koe_apple_speech_feed_audio` — feed raw PCM16 LE bytes
+- `koe_apple_speech_stop` — signal end of audio input
+- `koe_apple_speech_cancel` — cancel session, clear callback under lock
+
+Asset management (called from Objective-C Setup Wizard, no Rust involvement):
+
+- `koe_apple_speech_is_available` — runtime macOS 26+ availability check
+- `koe_apple_speech_supported_locales` — return supported locales as null-separated blob, sorted by localized display name
+- `koe_apple_speech_asset_status` — check asset status (0=unsupported, 1=supported, 2=downloading, 3=installed)
+- `koe_apple_speech_install_asset` — trigger download with progress callback
+- `koe_apple_speech_release_asset` — release locale reservation (system may reclaim storage)
+
+**Key differences from MLX provider**:
+
+- No `load_model`/`unload_model` lifecycle — system models are managed via `AssetInventory`
+- Audio stays as Int16 PCM through the entire pipeline (no Float32 conversion)
+- Dictionary entries are passed as `AnalysisContext.contextualStrings` (Apple's vocabulary bias mechanism)
+- `SpeechAnalyzer.Options.ModelRetention.processLifetime` caches the model for the app's lifetime
+- Transcription results use Apple's `result.isFinal` model: finalized segments are accumulated into a stable prefix, volatile segments represent the current in-progress recognition. Each `Interim` event carries the full text (`finalizedTranscript + volatileTranscript`); the `Final` event at stream end carries the complete transcript
+- Session start checks `AssetInventory.status` and auto-downloads assets if needed
+
+**Availability**:
+
+- Requires macOS 26.0+ at runtime (guarded by `@available`)
+- Requires `NSSpeechRecognitionUsageDescription` in Info.plist
+- Deployment target remains macOS 14.0 — the feature is simply unavailable on older systems
+
+**Locale handling**:
+
+SpeechTranscriber requires an explicit locale. There is no automatic language detection. Available locales are retrieved dynamically from `SpeechTranscriber.supportedLocales`. The default is `zh_CN` (Chinese, China mainland). Users configure the locale via `asr.apple-speech.locale` in `config.yaml` or the Setup Wizard language dropdown.
 
 ## 31. One-Sentence Summary
 
-This project is an Objective-C background macOS Agent App + Rust core library + Swift MLX package + YAML configuration + TXT dictionary + SQLite usage statistics + a voice input pipeline with configurable trigger/cancel hotkeys, multi-provider ASR (cloud: Doubao/Qwen, local: MLX/sherpa-onnx), and an OpenAI-compatible LLM for correction.
+This project is an Objective-C background macOS Agent App + Rust core library + Swift packages (KoeMLX, KoeAppleSpeech) + YAML configuration + TXT dictionary + SQLite usage statistics + a voice input pipeline with configurable trigger/cancel hotkeys, multi-provider ASR (cloud: Doubao/Qwen, local: MLX/sherpa-onnx/Apple Speech), and an OpenAI-compatible LLM for correction.

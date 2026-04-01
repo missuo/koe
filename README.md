@@ -34,7 +34,7 @@ Koe takes a different approach:
 ASR provider support:
 
 - **Cloud**: **Doubao (豆包)** and **Qwen (通义)** streaming ASR
-- **Local**: **MLX** (Apple Silicon, Qwen3-ASR models) and **sherpa-onnx** (CPU, streaming zipformer models)
+- **Local**: **Apple Speech** (macOS 26+, zero-config on-device), **MLX** (Apple Silicon, Qwen3-ASR models), and **sherpa-onnx** (CPU, streaming zipformer models)
 - **LLM**: any **OpenAI-compatible API** for text correction
 - **Planned**: future ASR support may include the **OpenAI Transcriptions API**
 
@@ -126,6 +126,7 @@ Koe requires **three macOS permissions** to function. You'll be prompted to gran
 | **Microphone** | Captures audio from your mic and streams it to the ASR service for speech recognition. | Koe cannot hear you at all. Recording will not start. |
 | **Accessibility** | Simulates a `Cmd+V` keystroke to paste the corrected text into the active input field of any app. | Koe will still copy the text to your clipboard, but cannot auto-paste. You'll need to paste manually. |
 | **Input Monitoring** | Listens for the trigger key (default: **Fn**, configurable) globally so Koe can detect when you press/release it, regardless of which app is in the foreground. | Koe cannot detect the hotkey. You won't be able to trigger recording. |
+| **Speech Recognition** | Required only when using the Apple Speech provider (macOS 26+). Allows on-device speech recognition. | Other providers (cloud, MLX, sherpa-onnx) work without this permission. |
 
 To grant permissions: **System Settings → Privacy & Security** → enable Koe under each of the three categories above.
 
@@ -134,8 +135,9 @@ To grant permissions: **System Settings → Privacy & Security** → enable Koe 
 All config files live in `~/.koe/` and are auto-generated on first launch. You
 can edit them directly, or use the built-in settings window (Setup Wizard) from
 the menu bar. The settings window includes tabs for ASR, LLM, Controls, Dictionary,
-and Prompt. When a local ASR provider (MLX or Sherpa-ONNX) is selected, the ASR
-tab shows a model picker with download, status, and delete controls.
+and Prompt. When a local ASR provider is selected, the ASR tab shows provider-specific
+controls: model picker with download/delete for MLX and Sherpa-ONNX, or language
+picker with asset status and download for Apple Speech.
 
 ```
 ~/.koe/
@@ -161,11 +163,11 @@ Below is the full configuration with explanations for every field.
 
 #### ASR (Speech Recognition)
 
-Koe uses a provider-based ASR config layout. Built-in providers: **Doubao**, **Qwen**, **MLX** (local, Apple Silicon), and **sherpa-onnx** (local, CPU).
+Koe uses a provider-based ASR config layout. Built-in providers: **Doubao**, **Qwen**, **Apple Speech** (local, macOS 26+), **MLX** (local, Apple Silicon), and **sherpa-onnx** (local, CPU).
 
 ```yaml
 asr:
-  # ASR provider: "doubao", "qwen", "mlx", "sherpa-onnx"
+  # ASR provider: "doubao", "qwen", "apple-speech", "mlx", "sherpa-onnx"
   provider: "doubao"
 
   doubao:
@@ -206,6 +208,10 @@ asr:
     # but significantly better accuracy, especially for technical terms.
     # Recommended: true.
     enable_nonstream: true
+
+  # Apple Speech local ASR (macOS 26+, system-managed assets)
+  apple-speech:
+    locale: "zh_CN"                        # available locales depend on system; see Setup Wizard
 
   # MLX local ASR (Apple Silicon only, requires model download)
   mlx:
@@ -415,11 +421,15 @@ sqlite3 ~/.koe/history.db "SELECT date(timestamp, 'unixepoch', 'localtime') as d
 
 You can also build your own dashboard or visualization on top of this database — it's just a standard SQLite file.
 
-## Local ASR Models
+## Local ASR
 
-Koe supports on-device speech recognition via **MLX** (Apple Silicon) and **sherpa-onnx** (CPU). Models are managed through `.koe-manifest.json` files under `~/.koe/models/`.
+Koe supports three on-device speech recognition providers:
 
-You can manage models in two ways:
+- **Apple Speech** (macOS 26+) — uses Apple's built-in SpeechAnalyzer. Select the provider and language in the Setup Wizard — speech assets are managed by macOS and downloaded automatically on first use (or manually via the Setup Wizard). No API key needed. Dictionary entries are automatically passed as contextual strings for vocabulary bias.
+- **MLX** (Apple Silicon) — runs Qwen3-ASR models via the MLX framework. Requires model download (~680 MB–1.5 GB).
+- **sherpa-onnx** (CPU) — runs streaming zipformer models. Requires model download (~189 MB–735 MB).
+
+MLX and sherpa-onnx models are managed through `.koe-manifest.json` files under `~/.koe/models/`. You can manage them in two ways:
 
 1. **Setup Wizard** — select a local provider in the ASR tab, pick a model from the dropdown, and click the download button. Progress is shown inline with a progress bar.
 2. **koe CLI** — command-line model management (see below).
@@ -503,8 +513,9 @@ This is especially useful for first-time users who want a guided, interactive se
 Koe is built as a native macOS app with two layers:
 
 - **Objective-C shell** — handles macOS integration: hotkey detection, audio capture, clipboard management, paste simulation, menu bar UI, and usage statistics (SQLite)
-- **Rust core library** — handles ASR (cloud WebSocket streaming + local MLX/sherpa-onnx), LLM API calls, config management, model management, transcript aggregation, and session orchestration
+- **Rust core library** — handles ASR (cloud WebSocket streaming + local MLX/sherpa-onnx/Apple Speech), LLM API calls, config management, model management, transcript aggregation, and session orchestration
 - **Swift KoeMLX package** — bridges MLX inference (Qwen3-ASR) to Rust via C FFI for on-device ASR on Apple Silicon
+- **Swift KoeAppleSpeech package** — bridges Apple's SpeechAnalyzer to Rust via C FFI for zero-config on-device ASR (macOS 26+)
 
 The two layers communicate via C FFI (Foreign Function Interface). The Rust core is compiled as a static library (`libkoe_core.a`) and linked into the Xcode project.
 
@@ -536,7 +547,10 @@ The two layers communicate via C FFI (Foreign Function Interface). The Rust core
 │  │ ├────────┤ ├───────────┤ │ ┌────────────────┐  │
 │  │ │ MLX    │ │ sherpa-   │ │ │ LLM (HTTP)     │  │
 │  │ │ (FFI)  │ │ onnx(CPU) │ │ │                │  │
-│  │ └────────┘ └───────────┘ │ └───────▲────────┘  │
+│  │ ├────────┤ ├───────────┤ │ └───────▲────────┘  │
+│  │ │ Apple  │ │           │ │                     │
+│  │ │ Speech │ │           │ │                     │
+│  │ └────────┘ └───────────┘ │                     │
 │  └──────────┬───────────────┘         │           │
 │  ┌──────────▼─────────────────────────┴────────┐  │
 │  │ TranscriptAggregator                        │  │
@@ -553,9 +567,9 @@ Cloud providers (Doubao, Qwen):
 2. First-pass streaming results arrive in real-time (`Interim` events) and are displayed in the overlay
 3. Second-pass re-recognition confirms segments with higher accuracy (`Definite` events)
 
-Local providers (MLX, sherpa-onnx):
+Local providers (Apple Speech, MLX, sherpa-onnx):
 
-1. Audio is processed on-device — MLX via Swift FFI on Apple Silicon, sherpa-onnx via a dedicated CPU worker thread
+1. Audio is processed on-device — Apple Speech via SpeechAnalyzer (macOS 26+), MLX via Swift FFI on Apple Silicon, sherpa-onnx via a dedicated CPU worker thread
 2. Streaming results are emitted through the same `Interim`/`Definite`/`Final` event model
 
 All providers:

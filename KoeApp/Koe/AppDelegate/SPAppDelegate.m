@@ -85,6 +85,17 @@
     // Request notification permission
     [self.permissionManager requestNotificationPermission];
 
+    // Request Speech Recognition permission if Apple Speech is the configured provider
+    char *rawProvider = sp_config_get("asr.provider");
+    if (rawProvider) {
+        if (strcmp(rawProvider, "apple-speech") == 0) {
+            [self.permissionManager requestSpeechRecognitionPermissionWithCompletion:^(BOOL granted) {
+                NSLog(@"[Koe] Speech recognition permission: %@", granted ? @"granted" : @"denied");
+            }];
+        }
+        sp_core_free_string(rawProvider);
+    }
+
     // Check permissions
     [self.permissionManager checkAllPermissionsWithCompletion:^(BOOL micGranted, BOOL accessibilityGranted, BOOL inputMonitoringGranted) {
         NSLog(@"[Koe] Permissions — mic:%d accessibility:%d inputMonitoring:%d",

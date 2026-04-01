@@ -21,7 +21,7 @@ pub struct Config {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AsrSection {
-    /// Which ASR provider to use: "doubao" (default), "qwen", "mlx", "sherpa-onnx"
+    /// Which ASR provider to use: "doubao" (default), "qwen", "mlx", "sherpa-onnx", "apple-speech"
     #[serde(default = "default_asr_provider")]
     pub provider: String,
 
@@ -40,6 +40,10 @@ pub struct AsrSection {
     /// Sherpa-ONNX local ASR configuration (CPU)
     #[serde(rename = "sherpa-onnx", default)]
     pub sherpa_onnx: SherpaOnnxAsrConfig,
+
+    /// Apple Speech local ASR configuration (macOS 26+)
+    #[serde(rename = "apple-speech", default)]
+    pub apple_speech: AppleSpeechAsrConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -143,6 +147,25 @@ impl Default for SherpaOnnxAsrConfig {
             endpoint_silence: default_sherpa_onnx_endpoint_silence(),
         }
     }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AppleSpeechAsrConfig {
+    /// Locale identifier (e.g. "zh_CN", "en_US")
+    #[serde(default = "default_apple_speech_locale")]
+    pub locale: String,
+}
+
+impl Default for AppleSpeechAsrConfig {
+    fn default() -> Self {
+        Self {
+            locale: default_apple_speech_locale(),
+        }
+    }
+}
+
+fn default_apple_speech_locale() -> String {
+    "zh_CN".to_string()
 }
 
 // ─── Other Sections (unchanged) ─────────────────────────────────────
@@ -930,7 +953,7 @@ const DEFAULT_CONFIG_YAML: &str = r#"# Koe - Voice Input Tool Configuration
 # ~/.koe/config.yaml
 
 asr:
-  # ASR provider: "doubao" (default)
+  # ASR provider: "doubao" (default), "qwen", "apple-speech", "mlx", "sherpa-onnx"
   provider: "doubao"
 
   # Doubao (豆包) Streaming ASR 2.0 (优化版双向流式)
@@ -954,6 +977,10 @@ asr:
     language: "zh"
     connect_timeout_ms: 3000
     final_wait_timeout_ms: 5000
+
+  # Apple Speech local ASR (macOS 26+, zero-config, no model download)
+  apple-speech:
+    locale: "zh_CN"                 # zh_CN | en_US | en_GB | ja_JP | ko_KR
 
   # MLX local ASR (Apple Silicon only)
   mlx:

@@ -44,6 +44,8 @@ pub mod error;
 pub mod event;
 #[cfg(feature = "mlx")]
 pub mod mlx;
+#[cfg(feature = "apple-speech")]
+pub mod apple_speech;
 pub mod provider;
 pub mod qwen;
 #[cfg(feature = "sherpa-onnx")]
@@ -53,6 +55,8 @@ pub mod transcript;
 pub use qwen::QwenAsrProvider;
 #[cfg(feature = "mlx")]
 pub use mlx::{MlxConfig, MlxProvider};
+#[cfg(feature = "apple-speech")]
+pub use apple_speech::{AppleSpeechConfig, AppleSpeechProvider};
 #[cfg(feature = "sherpa-onnx")]
 pub use sherpa_onnx::{SherpaOnnxConfig, SherpaOnnxProvider};
 pub use config::AsrConfig;

@@ -25,6 +25,8 @@ use koe_asr::{
 };
 #[cfg(feature = "mlx")]
 use koe_asr::{MlxConfig, MlxProvider};
+#[cfg(feature = "apple-speech")]
+use koe_asr::{AppleSpeechConfig, AppleSpeechProvider};
 #[cfg(feature = "sherpa-onnx")]
 use koe_asr::{SherpaOnnxConfig, SherpaOnnxProvider};
 use reqwest::Client;
@@ -376,6 +378,18 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
             (
                 AsrConfig::default(),
                 Box::new(SherpaOnnxProvider::new(sherpa_config)),
+            )
+        }
+        #[cfg(feature = "apple-speech")]
+        "apple-speech" => {
+            let as_cfg = &cfg.asr.apple_speech;
+            let apple_config = AppleSpeechConfig {
+                locale: as_cfg.locale.clone(),
+                contextual_strings: core.dictionary.clone(),
+            };
+            (
+                AsrConfig::default(),
+                Box::new(AppleSpeechProvider::new(apple_config)),
             )
         }
         _ => {

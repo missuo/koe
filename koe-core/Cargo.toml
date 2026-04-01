@@ -8,8 +8,9 @@ name = "koe_core"
 crate-type = ["staticlib", "lib"]
 
 [features]
-default = ["mlx", "sherpa-onnx"]
+default = ["mlx", "apple-speech", "sherpa-onnx"]
 mlx = ["koe-asr/mlx"]
+apple-speech = ["koe-asr/apple-speech"]
 sherpa-onnx = ["koe-asr/sherpa-onnx"]
 
 [dependencies]
