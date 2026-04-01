@@ -678,8 +678,7 @@ fn migrate_config_v1_to_v2(path: &Path) -> Result<bool> {
          {yaml_str}"
     );
 
-    std::fs::write(path, &output)
-        .map_err(|e| KoeError::Config(format!("write migrated config {}: {e}", path.display())))?;
+    atomic_write_file(path, &output)?;
 
     log::info!("config migrated to V2 format successfully");
     Ok(true)
@@ -736,9 +735,7 @@ fn normalize_hotkey_config(path: &Path, config: &Config) -> Result<bool> {
          {yaml_str}"
     );
 
-    std::fs::write(path, &output).map_err(|e| {
-        KoeError::Config(format!("write normalized config {}: {e}", path.display()))
-    })?;
+    atomic_write_file(path, &output)?;
 
     log::info!("normalized hotkey config on disk");
     Ok(true)
@@ -863,6 +860,16 @@ pub fn config_get(key_path: &str) -> Result<String> {
     Ok(s)
 }
 
+/// Write data to a file atomically: write to a temp sibling, then rename.
+fn atomic_write_file(path: &Path, data: &str) -> Result<()> {
+    let tmp = path.with_extension("yaml.tmp");
+    std::fs::write(&tmp, data)
+        .map_err(|e| KoeError::Config(format!("write {}: {e}", tmp.display())))?;
+    std::fs::rename(&tmp, path)
+        .map_err(|e| KoeError::Config(format!("rename {} -> {}: {e}", tmp.display(), path.display())))?;
+    Ok(())
+}
+
 /// Set a config value by dot-separated key path. Reads, modifies, and writes back.
 /// Creates intermediate mappings as needed. Infers YAML type from the string value.
 pub fn config_set(key_path: &str, value: &str) -> Result<()> {
@@ -887,8 +894,7 @@ pub fn config_set(key_path: &str, value: &str) -> Result<()> {
 
     let serialized =
         serde_yaml::to_string(&root).map_err(|e| KoeError::Config(format!("serialize: {e}")))?;
-    std::fs::write(&path, &serialized)
-        .map_err(|e| KoeError::Config(format!("write {}: {e}", path.display())))?;
+    atomic_write_file(&path, &serialized)?;
 
     Ok(())
 }
