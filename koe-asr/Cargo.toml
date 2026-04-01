@@ -1,23 +1,28 @@
 [package]
 name = "koe-asr"
-version = "0.1.0"
-edition = "2021"
 description = "Streaming ASR (Automatic Speech Recognition) client for Volcengine/Doubao and Aliyun"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
-tokio = { version = "1", features = ["rt", "sync", "time"] }
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
-rustls = { version = "0.23", features = ["ring"], default-features = false }
-futures-util = "0.3"
-flate2 = "1"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-log = "0.4"
-uuid = { version = "1", features = ["v4"] }
-base64 = "0.22"
-async-trait = "0.1"
-sherpa-onnx = { version = "1.12", optional = true }
+async-trait.workspace = true
+base64.workspace = true
+flate2.workspace = true
+futures-util.workspace = true
+log.workspace = true
+rustls = { workspace = true, default-features = false, features = ["ring"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sherpa-onnx = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"] }
+uuid = { workspace = true, features = ["v4"] }
 
 [features]
 default = []
@@ -25,4 +30,4 @@ mlx = []
 sherpa-onnx = ["dep:sherpa-onnx"]
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

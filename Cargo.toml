@@ -1,3 +1,44 @@
 [workspace]
 members = ["koe-asr", "koe-core", "koe-cli"]
 resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+repository = "https://github.com/missuo/koe"
+rust-version = "1.85"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+# shared
+async-trait = "0.1"
+futures-util = "0.3"
+log = "0.4"
+reqwest = { version = "0.12", default-features = false }
+serde = "1.0"
+serde_json = "1.0"
+tokio = "1.50"
+uuid = "1.23"
+
+# koe-asr
+base64 = "0.22"
+flate2 = "1.1"
+rustls = { version = "0.23", default-features = false }
+sherpa-onnx = "1.12"
+tokio-tungstenite = "0.24"
+
+# koe-core
+cbindgen = "0.27"
+env_logger = "0.11"
+serde_yaml = "0.9"
+sha2 = "0.10"
+tokio-util = "0.7"
+urlencoding = "2.1"
+
+# koe-cli
+clap = "4.6"
+indicatif = "0.17"
