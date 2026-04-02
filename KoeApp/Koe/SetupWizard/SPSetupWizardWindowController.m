@@ -1388,70 +1388,47 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     self.llmTestResultLabel.stringValue = @"Testing...";
     self.llmTestResultLabel.textColor = [NSColor secondaryLabelColor];
 
-    NSString *endpoint = [baseUrl stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"/"]];
-    endpoint = [endpoint stringByAppendingString:@"/chat/completions"];
-    NSURL *url = [NSURL URLWithString:endpoint];
-    if (!url) {
-        self.llmTestResultLabel.stringValue = @"Invalid Base URL.";
-        self.llmTestResultLabel.textColor = [NSColor systemRedColor];
-        self.llmTestButton.enabled = YES;
-        return;
-    }
+    NSString *tokenParam = self.maxTokenParamPopup.selectedItem.representedObject
+        ?: @"max_completion_tokens";
 
-    NSString *tokenParam = self.maxTokenParamPopup.selectedItem.representedObject ?: @"max_completion_tokens";
-    NSMutableDictionary *body = [@{
-        @"model": model,
-        @"messages": @[@{@"role": @"user", @"content": @"Hi"}],
-        tokenParam: @(10),
-    } mutableCopy];
-    // Match runtime behavior: send reasoning_effort when using max_completion_tokens
-    if ([tokenParam isEqualToString:@"max_completion_tokens"]) {
-        body[@"reasoning_effort"] = @"none";
-    }
-    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
+    // Run the Rust-side test on a background thread (sp_llm_test blocks until done)
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        char *raw = sp_llm_test(
+            baseUrl.UTF8String,
+            apiKey.UTF8String,
+            model.UTF8String,
+            tokenParam.UTF8String
+        );
+        NSString *jsonStr = raw ? [NSString stringWithUTF8String:raw] : @"";
+        if (raw) sp_core_free_string(raw);
 
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    request.HTTPMethod = @"POST";
-    request.HTTPBody = jsonData;
-    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [request setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
-    request.timeoutInterval = 15;
+        NSDictionary *result = nil;
+        if (jsonStr.length > 0) {
+            result = [NSJSONSerialization JSONObjectWithData:
+                [jsonStr dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+        }
 
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request
-        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             self.llmTestButton.enabled = (self.llmEnabledCheckbox.state == NSControlStateValueOn);
 
-            if (error) {
-                self.llmTestResultLabel.stringValue = error.localizedDescription;
+            if (!result) {
+                self.llmTestResultLabel.stringValue = @"Test failed: invalid response from core";
                 self.llmTestResultLabel.textColor = [NSColor systemRedColor];
                 return;
             }
 
-            NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
-            if (httpResponse.statusCode >= 200 && httpResponse.statusCode < 300) {
-                self.llmTestResultLabel.stringValue = @"Connection successful!";
-                self.llmTestResultLabel.textColor = [NSColor systemGreenColor];
-            } else {
-                NSString *errMsg = nil;
-                if (data) {
-                    NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-                    if ([json isKindOfClass:[NSDictionary class]]) {
-                        NSDictionary *errObj = json[@"error"];
-                        if ([errObj isKindOfClass:[NSDictionary class]]) {
-                            errMsg = errObj[@"message"];
-                        }
-                    }
-                }
-                NSString *bodyStr = data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"";
-                self.llmTestResultLabel.stringValue = [NSString stringWithFormat:@"HTTP %ld: %@",
-                    (long)httpResponse.statusCode,
-                    errMsg ?: bodyStr ?: @"Unknown error"];
-                self.llmTestResultLabel.textColor = [NSColor systemRedColor];
-            }
+            BOOL success = [result[@"success"] boolValue];
+            NSString *message = result[@"message"] ?: @"Unknown result";
+            NSNumber *elapsedMs = result[@"elapsed_ms"];
+            NSString *timeStr = elapsedMs
+                ? [NSString stringWithFormat:@" (%.1fs)", elapsedMs.doubleValue / 1000.0] : @"";
+
+            self.llmTestResultLabel.stringValue =
+                [NSString stringWithFormat:@"%@%@", message, timeStr];
+            self.llmTestResultLabel.textColor = success
+                ? [NSColor systemGreenColor] : [NSColor systemRedColor];
         });
-    }];
-    [task resume];
+    });
 }
 
 // ─── ASR Test Connection ────────────────────────────────────────────

@@ -169,6 +169,8 @@ pub struct LlmSection {
     pub max_token_parameter: LlmMaxTokenParameter,
     #[serde(default = "default_dictionary_max_candidates")]
     pub dictionary_max_candidates: usize,
+    #[serde(default)]
+    pub no_reasoning_control: LlmNoReasoningControl,
     #[serde(default = "default_system_prompt_path")]
     pub system_prompt_path: String,
     #[serde(default = "default_user_prompt_path")]
@@ -180,6 +182,15 @@ pub struct LlmSection {
 pub enum LlmMaxTokenParameter {
     MaxTokens,
     MaxCompletionTokens,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmNoReasoningControl {
+    #[default]
+    ReasoningEffort,
+    Thinking,
+    None,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -979,6 +990,7 @@ llm:
   timeout_ms: 8000
   max_output_tokens: 1024
   max_token_parameter: "max_completion_tokens"  # use "max_tokens" for older model endpoints
+  no_reasoning_control: "reasoning_effort"       # "reasoning_effort" (OpenAI o-series), "thinking" (GLM etc.), "none" (send nothing)
   dictionary_max_candidates: 0             # 0 = send all entries to LLM
   system_prompt_path: "system_prompt.txt"  # relative to ~/.koe/
   user_prompt_path: "user_prompt.txt"      # relative to ~/.koe/

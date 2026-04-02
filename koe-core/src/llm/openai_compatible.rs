@@ -1,9 +1,9 @@
-use crate::config::LlmMaxTokenParameter;
+use crate::config::{LlmMaxTokenParameter, LlmNoReasoningControl, LlmSection};
 use crate::errors::{KoeError, Result};
 use crate::llm::{CorrectionRequest, LlmProvider};
 use reqwest::Client;
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use urlencoding::encode;
 
 pub const LLM_HTTP_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
@@ -18,6 +18,7 @@ pub struct OpenAiCompatibleProvider {
     top_p: f64,
     max_output_tokens: u32,
     max_token_parameter: LlmMaxTokenParameter,
+    no_reasoning_control: LlmNoReasoningControl,
 }
 
 impl OpenAiCompatibleProvider {
@@ -31,6 +32,7 @@ impl OpenAiCompatibleProvider {
         top_p: f64,
         max_output_tokens: u32,
         max_token_parameter: LlmMaxTokenParameter,
+        no_reasoning_control: LlmNoReasoningControl,
     ) -> Self {
         Self {
             client,
@@ -41,6 +43,7 @@ impl OpenAiCompatibleProvider {
             top_p,
             max_output_tokens,
             max_token_parameter,
+            no_reasoning_control,
         }
     }
 
@@ -91,6 +94,38 @@ pub fn build_http_client(timeout_ms: u64) -> std::result::Result<Client, reqwest
         .build()
 }
 
+/// Test LLM connection using the exact same `correct()` code path as runtime.
+/// Always returns elapsed time — even on timeout/error.
+pub async fn test_correction(
+    client: Client,
+    llm_config: &LlmSection,
+    system_prompt: &str,
+    user_prompt: &str,
+) -> (Result<String>, Duration) {
+    let llm = OpenAiCompatibleProvider::new(
+        client,
+        llm_config.base_url.clone(),
+        llm_config.api_key.clone(),
+        llm_config.model.clone(),
+        llm_config.temperature,
+        llm_config.top_p,
+        llm_config.max_output_tokens,
+        llm_config.max_token_parameter,
+        llm_config.no_reasoning_control,
+    );
+
+    let request = CorrectionRequest {
+        asr_text: String::new(),
+        dictionary_entries: vec![],
+        system_prompt: system_prompt.to_string(),
+        user_prompt: user_prompt.to_string(),
+    };
+
+    let start = Instant::now();
+    let result = llm.correct(&request).await;
+    (result, start.elapsed())
+}
+
 impl LlmProvider for OpenAiCompatibleProvider {
     async fn correct(&self, request: &CorrectionRequest) -> Result<String> {
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
@@ -115,11 +150,19 @@ impl LlmProvider for OpenAiCompatibleProvider {
             LlmMaxTokenParameter::MaxCompletionTokens => "max_completion_tokens",
         };
         body[token_field_name] = json!(self.max_output_tokens);
-        if matches!(
-            self.max_token_parameter,
-            LlmMaxTokenParameter::MaxCompletionTokens
-        ) {
-            body["reasoning_effort"] = json!("none");
+        match self.no_reasoning_control {
+            LlmNoReasoningControl::ReasoningEffort => {
+                if matches!(
+                    self.max_token_parameter,
+                    LlmMaxTokenParameter::MaxCompletionTokens
+                ) {
+                    body["reasoning_effort"] = json!("none");
+                }
+            }
+            LlmNoReasoningControl::Thinking => {
+                body["thinking"] = json!({"type": "disabled"});
+            }
+            LlmNoReasoningControl::None => {}
         }
 
         log::debug!("LLM request to {url}");
