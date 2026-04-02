@@ -1085,6 +1085,124 @@ pub extern "C" fn sp_config_resolved_cancel_key() -> *mut c_char {
     CString::new(key).unwrap_or_default().into_raw()
 }
 
+/// Test LLM connection using the exact same `correct()` code path as runtime.
+///
+/// Accepts wizard-editable fields as parameters (user may not have saved yet);
+/// reads everything else (temperature, top_p, timeout_ms, prompts, dictionary)
+/// from config/disk, exactly as the runtime does.
+///
+/// Returns a heap-allocated JSON string:
+///   `{"success": true,  "elapsed_ms": 2345, "message": "..."}`
+///   `{"success": false, "elapsed_ms": 8000, "message": "..."}`
+///
+/// # Safety
+/// All pointer parameters must be valid null-terminated C strings.
+/// Caller must free the returned pointer with `sp_core_free_string()`.
+#[no_mangle]
+pub unsafe extern "C" fn sp_llm_test(
+    base_url: *const c_char,
+    api_key: *const c_char,
+    model: *const c_char,
+    max_token_param: *const c_char,
+) -> *mut c_char {
+    let base_url = unsafe { cstr_to_str(base_url) }.unwrap_or_default().to_string();
+    let api_key = unsafe { cstr_to_str(api_key) }.unwrap_or_default().to_string();
+    let model = unsafe { cstr_to_str(model) }.unwrap_or_default().to_string();
+    let max_token_param_str = unsafe { cstr_to_str(max_token_param) }.unwrap_or_default();
+    let max_token_parameter = if max_token_param_str == "max_tokens" {
+        config::LlmMaxTokenParameter::MaxTokens
+    } else {
+        config::LlmMaxTokenParameter::MaxCompletionTokens
+    };
+
+    // Load config from disk for remaining parameters (same as runtime hot-reload)
+    let cfg = config::load_config().unwrap_or_default();
+
+    // Build an LlmSection that merges UI-editable fields with disk config
+    let llm_cfg = config::LlmSection {
+        enabled: true,
+        base_url,
+        api_key,
+        model,
+        max_token_parameter,
+        temperature: cfg.llm.temperature,
+        top_p: cfg.llm.top_p,
+        timeout_ms: cfg.llm.timeout_ms,
+        max_output_tokens: cfg.llm.max_output_tokens,
+        dictionary_max_candidates: cfg.llm.dictionary_max_candidates,
+        system_prompt_path: cfg.llm.system_prompt_path.clone(),
+        user_prompt_path: cfg.llm.user_prompt_path.clone(),
+    };
+
+    // Load prompts and dictionary from disk (same paths as runtime)
+    let system_prompt = prompt::load_system_prompt(&config::resolve_system_prompt_path(&cfg));
+    let user_prompt_template =
+        prompt::load_user_prompt_template(&config::resolve_user_prompt_path(&cfg));
+
+    let dict_path = config::resolve_dictionary_path(&cfg);
+    let dictionary = dictionary::load_dictionary(&dict_path).unwrap_or_default();
+    let candidates = prompt::filter_dictionary_candidates(
+        &dictionary,
+        "",
+        llm_cfg.dictionary_max_candidates,
+    );
+
+    // Render user prompt from template with test content
+    let test_asr = "so umm i installed this program called koe on my computer and like, \
+                     i wanna know, you know, how much CPU and memory its using basically";
+    let user_prompt = prompt::render_user_prompt(&user_prompt_template, test_asr, &candidates, &[]);
+
+    // Build HTTP client with the configured timeout
+    let client = match build_http_client(llm_cfg.timeout_ms) {
+        Ok(c) => c,
+        Err(e) => {
+            let json = serde_json::json!({
+                "success": false,
+                "elapsed_ms": 0,
+                "message": format!("Failed to create HTTP client: {e}"),
+            });
+            return CString::new(json.to_string()).unwrap_or_default().into_raw();
+        }
+    };
+
+    // Run the test on a temporary tokio runtime (blocking)
+    let rt = match Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            let json = serde_json::json!({
+                "success": false,
+                "elapsed_ms": 0,
+                "message": format!("Failed to create async runtime: {e}"),
+            });
+            return CString::new(json.to_string()).unwrap_or_default().into_raw();
+        }
+    };
+
+    let (result, elapsed) =
+        rt.block_on(llm::openai_compatible::test_correction(
+            client,
+            &llm_cfg,
+            &system_prompt,
+            &user_prompt,
+        ));
+    let elapsed_ms = elapsed.as_millis() as u64;
+
+    let json = match result {
+        Ok(_corrected) => serde_json::json!({
+            "success": true,
+            "elapsed_ms": elapsed_ms,
+            "message": "Connection successful!",
+        }),
+        Err(e) => serde_json::json!({
+            "success": false,
+            "elapsed_ms": elapsed_ms,
+            "message": format!("{e}"),
+        }),
+    };
+
+    CString::new(json.to_string()).unwrap_or_default().into_raw()
+}
+
 /// Free a string returned by sp_core_scan_models_json().
 ///
 /// # Safety
