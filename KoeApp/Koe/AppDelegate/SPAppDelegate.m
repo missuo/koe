@@ -452,7 +452,14 @@
 }
 
 - (void)statusBarMenuDidClose {
-    self.hotkeyMonitor.suspended = NO;
+    // Defer unsuspend to the next run-loop iteration so that any menu-item
+    // action (e.g. Quit → stop()) executes first.  Without this, Cocoa's
+    // menuDidClose: fires before the item action, resetting suspended=NO
+    // and allowing FlagsChanged events through the NSEvent monitor path
+    // before stop() has a chance to set running=NO.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.hotkeyMonitor.suspended = NO;
+    });
 }
 
 - (void)statusBarDidSelectQuit {
