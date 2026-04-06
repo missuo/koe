@@ -382,7 +382,12 @@ impl AsrProvider for DoubaoWsProvider {
     }
 
     async fn next_event(&mut self) -> Result<AsrEvent> {
-        if let Some(ref mut ws) = self.ws {
+        let ws = self
+            .ws
+            .as_mut()
+            .ok_or_else(|| AsrError::Connection("not connected".into()))?;
+
+        loop {
             match ws.next().await {
                 Some(Ok(Message::Binary(data))) => match Self::parse_server_response(&data)? {
                     ServerMessage::Response { json, is_last } => {
@@ -407,11 +412,11 @@ impl AsrProvider for DoubaoWsProvider {
                             .unwrap_or(false);
 
                         if is_last {
-                            Ok(AsrEvent::Final(text))
+                            return Ok(AsrEvent::Final(text));
                         } else if has_definite {
-                            Ok(AsrEvent::Definite(text))
+                            return Ok(AsrEvent::Definite(text));
                         } else {
-                            Ok(AsrEvent::Interim(text))
+                            return Ok(AsrEvent::Interim(text));
                         }
                     }
                     ServerMessage::Error { code, message } => {
@@ -419,18 +424,18 @@ impl AsrProvider for DoubaoWsProvider {
                             "ASR error: code={code}, message={message}, logid={:?}",
                             self.logid
                         );
-                        Err(AsrError::Protocol(format!(
+                        return Err(AsrError::Protocol(format!(
                             "server error {code}: {message}"
-                        )))
+                        )));
                     }
                 },
-                Some(Ok(Message::Close(_))) => Ok(AsrEvent::Closed),
-                Some(Ok(_)) => Ok(AsrEvent::Interim(String::new())),
-                Some(Err(e)) => Err(AsrError::Protocol(e.to_string())),
-                None => Ok(AsrEvent::Closed),
+                Some(Ok(Message::Close(_))) => return Ok(AsrEvent::Closed),
+                Some(Ok(frame)) => {
+                    log::debug!("[Doubao ASR] Skipping frame: {:?}", frame);
+                }
+                Some(Err(e)) => return Err(AsrError::Protocol(e.to_string())),
+                None => return Ok(AsrEvent::Closed),
             }
-        } else {
-            Err(AsrError::Connection("not connected".into()))
         }
     }
 
