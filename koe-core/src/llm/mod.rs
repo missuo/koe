@@ -1,3 +1,5 @@
+#[cfg(feature = "mlx")]
+pub mod mlx;
 pub mod openai_compatible;
 
 use crate::errors::Result;
@@ -11,7 +13,7 @@ pub struct CorrectionRequest {
 }
 
 /// Trait for LLM correction providers.
-#[allow(async_fn_in_trait)]
+#[async_trait::async_trait]
 pub trait LlmProvider: Send {
     async fn correct(&self, request: &CorrectionRequest) -> Result<String>;
 }

@@ -50,4 +50,47 @@ public func koeMLXUnloadModel() {
     manager.unloadModel()
 }
 
+// ─── LLM Bridge ────────────────────────────────────────────────────
+
+private var llmManager = MLXLlmManager()
+
+@_cdecl("koe_mlx_llm_generate")
+public func koeMLXLlmGenerate(
+    _ modelPath: UnsafePointer<CChar>?,
+    _ systemPrompt: UnsafePointer<CChar>?,
+    _ userPrompt: UnsafePointer<CChar>?,
+    _ temperature: Float,
+    _ topP: Float,
+    _ maxTokens: Int32
+) -> UnsafeMutablePointer<CChar>? {
+    guard let modelPath = modelPath,
+          let systemPrompt = systemPrompt,
+          let userPrompt = userPrompt else { return nil }
+
+    let path = String(cString: modelPath)
+    let system = String(cString: systemPrompt)
+    let user = String(cString: userPrompt)
+
+    guard let result = llmManager.generate(
+        modelPath: path,
+        systemPrompt: system,
+        userPrompt: user,
+        temperature: temperature,
+        topP: topP,
+        maxTokens: Int(maxTokens)
+    ) else { return nil }
+
+    return strdup(result)
+}
+
+@_cdecl("koe_mlx_llm_free_string")
+public func koeMLXLlmFreeString(_ ptr: UnsafeMutablePointer<CChar>?) {
+    free(ptr)
+}
+
+@_cdecl("koe_mlx_llm_unload_model")
+public func koeMLXLlmUnloadModel() {
+    llmManager.unloadModel()
+}
+
 #endif

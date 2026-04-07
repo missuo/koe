@@ -206,6 +206,9 @@ fn default_apple_speech_locale() -> String {
 pub struct LlmSection {
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// LLM provider: "openai" (default) or "mlx"
+    #[serde(default = "default_llm_provider")]
+    pub provider: String,
     #[serde(default)]
     pub base_url: String,
     #[serde(default)]
@@ -230,6 +233,24 @@ pub struct LlmSection {
     pub system_prompt_path: String,
     #[serde(default = "default_user_prompt_path")]
     pub user_prompt_path: String,
+    /// MLX local LLM configuration (Apple Silicon only)
+    #[serde(default)]
+    pub mlx: MlxLlmConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct MlxLlmConfig {
+    /// Model directory name under ~/.koe/models/
+    #[serde(default = "default_mlx_llm_model")]
+    pub model: String,
+}
+
+impl Default for MlxLlmConfig {
+    fn default() -> Self {
+        Self {
+            model: default_mlx_llm_model(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
@@ -512,6 +533,12 @@ fn default_dictionary_max_candidates() -> usize {
 }
 fn default_llm_max_token_parameter() -> LlmMaxTokenParameter {
     LlmMaxTokenParameter::MaxCompletionTokens
+}
+fn default_llm_provider() -> String {
+    "openai".into()
+}
+fn default_mlx_llm_model() -> String {
+    "mlx/Qwen3-0.6B-4bit".into()
 }
 fn default_dictionary_path() -> String {
     "dictionary.txt".into()
@@ -1059,6 +1086,8 @@ asr:
 
 llm:
   enabled: true        # set to false to skip LLM correction entirely
+  provider: "openai"   # "openai" (default) or "mlx" (local Apple Silicon)
+
   # OpenAI-compatible endpoint for text correction
   base_url: "https://api.openai.com/v1"
   api_key: ""          # or use ${LLM_API_KEY}
@@ -1072,6 +1101,10 @@ llm:
   dictionary_max_candidates: 0             # 0 = send all entries to LLM
   system_prompt_path: "system_prompt.txt"  # relative to ~/.koe/
   user_prompt_path: "user_prompt.txt"      # relative to ~/.koe/
+
+  # MLX local LLM (Apple Silicon only)
+  mlx:
+    model: "mlx/Qwen3-1.7B-4bit"          # relative to ~/.koe/models/, or absolute path
 
 feedback:
   start_sound: false

@@ -126,6 +126,7 @@ pub async fn test_correction(
     (result, start.elapsed())
 }
 
+#[async_trait::async_trait]
 impl LlmProvider for OpenAiCompatibleProvider {
     async fn correct(&self, request: &CorrectionRequest) -> Result<String> {
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));

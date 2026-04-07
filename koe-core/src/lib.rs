@@ -18,6 +18,8 @@ use crate::ffi::{
 use crate::llm::openai_compatible::{
     build_http_client, OpenAiCompatibleProvider, LLM_HTTP_POOL_IDLE_TIMEOUT,
 };
+#[cfg(feature = "mlx")]
+use crate::llm::mlx::MlxLlmProvider;
 use crate::llm::{CorrectionRequest, LlmProvider};
 use crate::session::{Session, SessionState};
 use koe_asr::{
@@ -790,17 +792,35 @@ async fn run_session(
         }
         invoke_state_changed(session_token,"correcting");
 
-        let llm = OpenAiCompatibleProvider::new(
-            llm_http_client,
-            llm_config.base_url,
-            llm_config.api_key,
-            llm_config.model,
-            llm_config.temperature,
-            llm_config.top_p,
-            llm_config.max_output_tokens,
-            llm_config.max_token_parameter,
-            llm_config.no_reasoning_control,
-        );
+        let llm: Box<dyn LlmProvider> = match llm_config.provider.as_str() {
+            #[cfg(feature = "mlx")]
+            "mlx" => {
+                let model_path = config::resolve_model_dir(&llm_config.mlx.model)
+                    .to_string_lossy()
+                    .to_string();
+                log::info!("[{session_id}] using MLX LLM provider: {model_path}");
+                Box::new(MlxLlmProvider::new(
+                    model_path,
+                    llm_config.temperature,
+                    llm_config.top_p,
+                    llm_config.max_output_tokens,
+                    llm_config.timeout_ms,
+                ))
+            }
+            _ => {
+                Box::new(OpenAiCompatibleProvider::new(
+                    llm_http_client,
+                    llm_config.base_url,
+                    llm_config.api_key,
+                    llm_config.model,
+                    llm_config.temperature,
+                    llm_config.top_p,
+                    llm_config.max_output_tokens,
+                    llm_config.max_token_parameter,
+                    llm_config.no_reasoning_control,
+                ))
+            }
+        };
 
         // Filter dictionary candidates for prompt
         let candidates =
@@ -808,17 +828,25 @@ async fn run_session(
 
         log::info!("[{session_id}] LLM request — asr_text_len: {}", asr_text.len());
         log::debug!("[{session_id}] LLM request — asr_text: \"{}\"", asr_text);
+        // Skip interim history for local LLM — small models don't benefit from it
+        // and it increases prompt length / inference time.
+        let history = if llm_config.provider == "mlx" {
+            &[][..]
+        } else {
+            &interim_history[..]
+        };
+
         log::info!(
             "[{session_id}] LLM request — {} dictionary entries, {} interim revisions",
             candidates.len(),
-            interim_history.len()
+            history.len()
         );
 
         let user_prompt = prompt::render_user_prompt(
             &user_prompt_template,
             &asr_text,
             &candidates,
-            &interim_history,
+            history,
         );
         log::debug!("[{session_id}] LLM user prompt:\n{}", user_prompt);
 
@@ -929,7 +957,14 @@ fn cleanup_session(session_arc: &Arc<Mutex<Option<Session>>>) {
 }
 
 fn llm_is_ready(cfg: &config::LlmSection) -> bool {
-    cfg.enabled && !cfg.base_url.is_empty() && !cfg.api_key.is_empty() && !cfg.model.is_empty()
+    if !cfg.enabled {
+        return false;
+    }
+    match cfg.provider.as_str() {
+        #[cfg(feature = "mlx")]
+        "mlx" => !cfg.mlx.model.is_empty(),
+        _ => !cfg.base_url.is_empty() && !cfg.api_key.is_empty() && !cfg.model.is_empty(),
+    }
 }
 
 fn start_llm_warmup_if_needed(
@@ -940,6 +975,10 @@ fn start_llm_warmup_if_needed(
     llm_warmup_state: Arc<Mutex<LlmWarmupState>>,
 ) {
     if !llm_is_ready(llm_config) {
+        return;
+    }
+    // Local MLX provider doesn't need HTTP warmup
+    if llm_config.provider == "mlx" {
         return;
     }
 
@@ -1169,6 +1208,7 @@ pub unsafe extern "C" fn sp_llm_test(
     // Build an LlmSection that merges UI-editable fields with disk config
     let llm_cfg = config::LlmSection {
         enabled: true,
+        provider: "openai".into(),
         base_url,
         api_key,
         model,
@@ -1181,6 +1221,7 @@ pub unsafe extern "C" fn sp_llm_test(
         no_reasoning_control: cfg.llm.no_reasoning_control,
         system_prompt_path: cfg.llm.system_prompt_path.clone(),
         user_prompt_path: cfg.llm.user_prompt_path.clone(),
+        mlx: Default::default(),
     };
 
     // Load prompts and dictionary from disk (same paths as runtime)

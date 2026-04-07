@@ -21,6 +21,7 @@ apple-speech = ["koe-asr/apple-speech"]
 sherpa-onnx = ["koe-asr/sherpa-onnx"]
 
 [dependencies]
+async-trait.workspace = true
 koe-asr = { path = "../koe-asr" }
 env_logger.workspace = true
 futures-util.workspace = true
@@ -36,7 +37,6 @@ urlencoding.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
-async-trait.workspace = true
 
 [build-dependencies]
 cbindgen.workspace = true
