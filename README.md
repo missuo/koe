@@ -28,14 +28,14 @@ Koe takes a different approach:
 1. Press and hold the trigger key (default: **Fn**, configurable) — Koe starts listening
 2. Audio streams in real-time to a cloud ASR service (Doubao/豆包 by ByteDance)
 3. A floating status pill shows real-time interim recognition text as you speak
-4. The ASR transcript is corrected by an LLM (any OpenAI-compatible API) — fixing capitalization, punctuation, spacing, and terminology
+4. The ASR transcript is corrected by an LLM — fixing capitalization, punctuation, spacing, and terminology
 5. The corrected text is automatically pasted into the active input field
 
 ASR provider support:
 
 - **Cloud**: **Doubao (豆包)** and **Qwen (通义)** streaming ASR
 - **Local**: **Apple Speech** (macOS 26+, zero-config on-device), **MLX** (Apple Silicon, Qwen3-ASR models), and **sherpa-onnx** (CPU, streaming zipformer models)
-- **LLM**: any **OpenAI-compatible API** for text correction
+- **LLM**: any **OpenAI-compatible API**, or **MLX** local models (Apple Silicon, fully offline) for text correction
 - **Planned**: future ASR support may include the **OpenAI Transcriptions API**
 
 ## Installation
@@ -147,6 +147,8 @@ and Prompt. The Prompt tab edits `system_prompt.txt`; advanced knobs such as
 file-based settings. When a local ASR provider is selected, the ASR tab shows
 provider-specific controls: model picker with download/delete for MLX and
 Sherpa-ONNX, or language picker with asset status and download for Apple Speech.
+The LLM tab supports both OpenAI-compatible APIs and local MLX models — selecting
+MLX shows a model picker with download/status controls instead of API fields.
 
 ```
 ~/.koe/
@@ -260,19 +262,23 @@ migrate that flat format into the provider-based v2 layout automatically.
 #### LLM (Text Correction)
 
 After ASR, the transcript is sent to an LLM for correction (capitalization,
-spacing, terminology, filler word removal). Koe currently supports
-**OpenAI-compatible APIs only** for this step. Native provider-specific APIs that
-are not OpenAI-compatible are not supported directly.
+spacing, terminology, filler word removal). Koe supports two LLM providers:
 
-The LLM HTTP client is shared across sessions with HTTP/2 support and connection
-pooling for lower latency. For GPT-5-style endpoints (using `max_completion_tokens`),
-Koe automatically sets `reasoning_effort: "none"` to skip unnecessary reasoning
-on the latency-sensitive correction path.
+- **OpenAI-compatible APIs** — any cloud or self-hosted endpoint that implements the OpenAI chat completions API
+- **MLX** (Apple Silicon only) — fully offline local inference using Qwen3 models, no API key required
+
+The `provider` field selects which backend to use. When set to `"openai"` (default),
+the LLM HTTP client is shared across sessions with HTTP/2 support and connection
+pooling for lower latency. When set to `"mlx"`, inference runs on-device via the
+KoeMLX Swift package — no network access needed.
 
 ```yaml
 llm:
   # Set to false to skip LLM correction and paste raw ASR output directly.
   enabled: true
+
+  # LLM provider: "openai" (default) or "mlx" (local Apple Silicon).
+  provider: "openai"
 
   # OpenAI-compatible API endpoint.
   # Examples:
@@ -320,6 +326,11 @@ llm:
   # Edit these files to customize how the LLM corrects text.
   system_prompt_path: "system_prompt.txt"
   user_prompt_path: "user_prompt.txt"
+
+  # MLX local LLM (Apple Silicon only).
+  # Model path relative to ~/.koe/models/, or absolute path.
+  mlx:
+    model: "mlx/Qwen3-0.6B-4bit"
 ```
 
 #### Feedback (Sound Effects)
@@ -499,14 +510,25 @@ koe manifest generate mlx-community/Qwen3-ASR-0.6B-4bit \
 
 ### Available Models
 
-**MLX (Apple Silicon)**:
+**MLX ASR (Apple Silicon)**:
 - `mlx/Qwen3-ASR-0.6B-4bit` — Qwen3 ASR 0.6B 4-bit (~680 MB, fast)
 - `mlx/Qwen3-ASR-1.7B-4bit` — Qwen3 ASR 1.7B 4-bit (~1.5 GB, higher accuracy)
+
+**MLX LLM (Apple Silicon)**:
+- `mlx/Qwen3-0.6B-4bit` — Qwen3 LLM 0.6B 4-bit (~335 MB, fast)
+- `mlx/Qwen3-1.7B-4bit` — Qwen3 LLM 1.7B 4-bit (~938 MB, higher accuracy)
 
 **sherpa-onnx (CPU)**:
 - `sherpa-onnx/bilingual-zh-en` — Bilingual Chinese-English (~189 MB)
 - `sherpa-onnx/multilingual-8lang` — 8-language multilingual (~322 MB)
 - `sherpa-onnx/zh-xlarge` — Chinese extra-large (~735 MB, best accuracy)
+
+### Fully Offline Mode
+
+When both ASR and LLM are set to local MLX providers, Koe runs entirely on-device with no network access required — ideal for privacy-sensitive use cases. GPU memory usage depends on the model combination:
+
+- **Lightest** (ASR 0.6B + LLM 0.6B): ~1.2 GB — runs comfortably on any Apple Silicon Mac
+- **Heaviest** (ASR 1.7B + LLM 1.7B): ~2.9 GB — still fits easily in 8 GB unified memory
 
 ### Model Manifest
 
@@ -515,6 +537,7 @@ Each model directory contains a `.koe-manifest.json` describing the model and it
 ```json
 {
   "provider": "mlx",
+  "mode": "asr",
   "description": "Qwen3 ASR 0.6B 4-bit (fast, lightweight)",
   "repo": "mlx-community/Qwen3-ASR-0.6B-4bit",
   "files": [
@@ -522,6 +545,8 @@ Each model directory contains a `.koe-manifest.json` describing the model and it
   ]
 }
 ```
+
+The `mode` field (`"asr"` or `"llm"`) determines where the model appears in the Setup Wizard.
 
 Default manifests are installed automatically on first launch. `koe model pull` downloads the actual model files using the URLs and verifies them with sha256 checksums.
 
@@ -579,8 +604,8 @@ Local ASR providers are controlled by Rust feature flags in `koe-core/Cargo.toml
 Koe is built as a native macOS app with two layers:
 
 - **Objective-C shell** — handles macOS integration: hotkey detection, audio capture, clipboard management, paste simulation, menu bar UI, and usage statistics (SQLite)
-- **Rust core library** — handles ASR (cloud WebSocket streaming + local MLX/sherpa-onnx/Apple Speech), LLM API calls, config management, model management, transcript aggregation, and session orchestration
-- **Swift KoeMLX package** — bridges MLX inference (Qwen3-ASR) to Rust via C FFI for on-device ASR on Apple Silicon
+- **Rust core library** — handles ASR (cloud WebSocket streaming + local MLX/sherpa-onnx/Apple Speech), LLM correction (cloud API + local MLX), config management, model management, transcript aggregation, and session orchestration
+- **Swift KoeMLX package** — bridges MLX inference to Rust via C FFI for on-device ASR (Qwen3-ASR) and LLM text correction (Qwen3) on Apple Silicon
 - **Swift KoeAppleSpeech package** — bridges Apple's SpeechAnalyzer to Rust via C FFI for zero-config on-device ASR (macOS 26+)
 
 The two layers communicate via C FFI (Foreign Function Interface). The Rust core is compiled as a static library (`libkoe_core.a`) and linked into the Xcode project.
@@ -611,8 +636,8 @@ The two layers communicate via C FFI (Foreign Function Interface). The Rust core
 │  │ │ Doubao │ │ Qwen      │ │ │ + Models       │  │
 │  │ │ (WS)   │ │ (WS)      │ │ └────────────────┘  │
 │  │ ├────────┤ ├───────────┤ │ ┌────────────────┐  │
-│  │ │ MLX    │ │ sherpa-   │ │ │ LLM (HTTP)     │  │
-│  │ │ (FFI)  │ │ onnx(CPU) │ │ │                │  │
+│  │ │ MLX    │ │ sherpa-   │ │ │ LLM            │  │
+│  │ │ (FFI)  │ │ onnx(CPU) │ │ │ HTTP or MLX    │  │
 │  │ ├────────┤ ├───────────┤ │ └───────▲────────┘  │
 │  │ │ Apple  │ │           │ │                     │
 │  │ │ Speech │ │           │ │                     │
@@ -641,7 +666,7 @@ Local providers (Apple Speech, MLX, sherpa-onnx):
 All providers:
 
 4. `TranscriptAggregator` merges all results and tracks interim revision history
-5. Final transcript + interim history + dictionary are sent to the LLM for correction
+5. Final transcript + interim history + dictionary are sent to the LLM for correction (cloud API or local MLX)
 
 ## Contributing
 

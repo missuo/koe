@@ -115,7 +115,7 @@ Instead of a CLI tool, the app provides a menu bar dropdown with:
 - **Utility actions**: `Setup Wizard...`, `Open Config Folder...`, `Check for Updates...`, `Launch at Login`, and `Quit Koe`
 
 Section headers use custom `NSView` with bold labels (not selectable, not grayed out). The idle icon is a 5-bar audio waveform for easy recognition.
-The current Setup Wizard exposes panes for ASR, LLM, Controls, Dictionary, and System Prompt. Advanced knobs such as `user_prompt.txt`, cloud-provider custom `headers`, and `llm.no_reasoning_control` remain config-file-driven.
+The current Setup Wizard exposes panes for ASR, LLM, Controls, Dictionary, and System Prompt. The LLM pane supports provider selection (OpenAI Compatible or MLX) — selecting MLX shows a local model picker with download/status controls. Advanced knobs such as `user_prompt.txt`, cloud-provider custom `headers`, and `llm.no_reasoning_control` remain config-file-driven.
 
 ### 4.3 Floating Overlay
 
@@ -522,7 +522,7 @@ Cue sounds can be enabled by users who want stronger feedback, but the shipped d
 │ - Session state machine                                 │
 │ - Streaming ASR 2.0 client (two-pass recognition)      │
 │ - Transcript aggregator (interim → definite → final)   │
-│ - LLM corrector (with interim history context)          │
+│ - LLM corrector (OpenAI API or local MLX)               │
 │ - Prompt builder                                        │
 │ - Error model                                           │
 │ - Logging                                               │
@@ -548,7 +548,7 @@ Cue sounds can be enabled by users who want stronger feedback, but the shipped d
 - Managing the state machine for a "dual-mode hotkey voice input" session
 - Establishing and maintaining WebSocket ASR connections
 - Aggregating streaming interim results and final results
-- Organizing LLM requests
+- Organizing LLM requests (cloud API or local MLX inference)
 - Constructing correction prompts based on the dictionary
 - Outputting final text or errors
 
@@ -772,6 +772,7 @@ asr:
 
 llm:
   enabled: true
+  provider: "openai"   # "openai" or "mlx" (local Apple Silicon)
   base_url: "https://api.openai.com/v1"
   api_key: "${LLM_API_KEY}"
   model: "gpt-5.4-nano"
@@ -784,6 +785,8 @@ llm:
   dictionary_max_candidates: 0  # 0 = send all entries to LLM
   system_prompt_path: "system_prompt.txt"
   user_prompt_path: "user_prompt.txt"
+  mlx:
+    model: "mlx/Qwen3-0.6B-4bit"
 
 feedback:
   start_sound: false
@@ -1310,10 +1313,10 @@ When the system confirms this is a tap:
 ### 20.9 LLM Correction Phase
 
 1. Rust reads the best available text from TranscriptAggregator (final > definite > interim)
-2. Rust collects the interim revision history (last 10 unique interim texts)
+2. Rust collects the interim revision history (last 10 unique interim texts; skipped for local MLX provider)
 3. Rust selects candidate entries from the dictionary
 4. Rust constructs the correction prompt (ASR text + interim history + dictionary)
-5. Rust calls the LLM API
+5. Rust dispatches to the configured LLM provider (OpenAI-compatible API or local MLX)
 5. LLM returns the corrected final text
 6. Rust performs basic output sanitization, such as removing extra quotation marks and trimming leading/trailing whitespace
 7. If the LLM call fails, decide based on configuration:
@@ -1689,7 +1692,7 @@ The final recommended implementation approach is as follows:
 - Hotkey mode: default `Fn` trigger plus `left_option` cancel, configurable with supported fallback keys
 - Recording strategy: hold to record and release to end, or tap to start and tap again to end
 - ASR: provider-based config across Doubao, Qwen, Apple Speech, MLX, and sherpa-onnx; cloud providers can also use custom WebSocket headers for compatible gateways
-- Correction: OpenAI-compatible LLM minimal-necessary correction with configurable token field and optional no-reasoning control
+- Correction: LLM minimal-necessary correction via OpenAI-compatible API or local MLX, with configurable token field and optional no-reasoning control
 - Filler words: removed by LLM in context
 - Input injection: clipboard + `Cmd+V`
 - Permissions: Microphone + Input Monitoring + Accessibility, plus optional Notifications and provider-specific Speech Recognition when Apple Speech is used
