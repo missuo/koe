@@ -1110,6 +1110,8 @@ macro_rules! manifest {
 const DEFAULT_MANIFESTS: &[(&str, &str)] = &[
     manifest!("mlx/Qwen3-ASR-0.6B-4bit"),
     manifest!("mlx/Qwen3-ASR-1.7B-4bit"),
+    manifest!("mlx/Qwen3-0.6B-4bit"),
+    manifest!("mlx/Qwen3-1.7B-4bit"),
     manifest!("sherpa-onnx/bilingual-zh-en"),
     manifest!("sherpa-onnx/multilingual-8lang"),
     manifest!("sherpa-onnx/zh-xlarge"),

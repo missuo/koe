@@ -1,5 +1,6 @@
 {
     "provider": "mlx",
+    "mode": "asr",
     "description": "Qwen3 ASR 0.6B 4-bit (fast, lightweight)",
     "repo": "mlx-community/Qwen3-ASR-0.6B-4bit",
     "files": [

@@ -151,6 +151,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 
 // LLM fields
 @property (nonatomic, strong) NSButton *llmEnabledCheckbox;
+@property (nonatomic, strong) NSPopUpButton *llmProviderPopup;
 @property (nonatomic, strong) NSTextField *llmBaseUrlField;
 @property (nonatomic, strong) NSTextField *llmApiKeyField;
 @property (nonatomic, strong) NSSecureTextField *llmApiKeySecureField;
@@ -161,6 +162,14 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 
 // LLM max token parameter
 @property (nonatomic, strong) NSPopUpButton *maxTokenParamPopup;
+
+// LLM local model selection (MLX)
+@property (nonatomic, strong) NSPopUpButton *llmLocalModelPopup;
+@property (nonatomic, strong) NSTextField *llmModelStatusLabel;
+@property (nonatomic, strong) NSButton *llmModelDownloadButton;
+@property (nonatomic, strong) NSButton *llmModelDeleteButton;
+@property (nonatomic, strong) NSProgressIndicator *llmModelProgressBar;
+@property (nonatomic, strong) NSTextField *llmModelProgressSizeLabel;
 
 // Hotkey
 @property (nonatomic, strong) NSPopUpButton *hotkeyPopup;
@@ -525,7 +534,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     CGFloat y = contentHeight - 48;
 
     // Description
-    NSTextField *desc = [self descriptionLabel:@"Configure an OpenAI-compatible LLM for post-correction. When disabled, raw ASR output is used directly."];
+    NSTextField *desc = [self descriptionLabel:@"Configure LLM for post-correction. When disabled, raw ASR output is used directly."];
     desc.frame = NSMakeRect(24, y - 10, paneWidth - 48, 36);
     [pane addSubview:desc];
     y -= 52;
@@ -538,37 +547,66 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     [pane addSubview:self.llmEnabledCheckbox];
     y -= rowH + 8;
 
+    // Provider
+    [pane addSubview:[self formLabel:@"Provider" frame:NSMakeRect(16, y, labelW, 22)]];
+    self.llmProviderPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, fieldW, 26) pullsDown:NO];
+    NSMenuItem *openaiItem = [[NSMenuItem alloc] initWithTitle:@"OpenAI Compatible" action:nil keyEquivalent:@""];
+    openaiItem.representedObject = @"openai";
+    [self.llmProviderPopup.menu addItem:openaiItem];
+    NSMenuItem *mlxItem = [[NSMenuItem alloc] initWithTitle:@"MLX (Apple Silicon)" action:nil keyEquivalent:@""];
+    mlxItem.representedObject = @"mlx";
+    [self.llmProviderPopup.menu addItem:mlxItem];
+    [self.llmProviderPopup setTarget:self];
+    [self.llmProviderPopup setAction:@selector(llmProviderChanged:)];
+    [pane addSubview:self.llmProviderPopup];
+    y -= rowH;
+
+    // --- OpenAI fields (tag 2001-2006 for show/hide) ---
+
     // Base URL
-    [pane addSubview:[self formLabel:@"Base URL" frame:NSMakeRect(16, y, labelW, 22)]];
+    NSTextField *baseUrlLabel = [self formLabel:@"Base URL" frame:NSMakeRect(16, y, labelW, 22)];
+    baseUrlLabel.tag = 2001;
+    [pane addSubview:baseUrlLabel];
     self.llmBaseUrlField = [self formTextField:NSMakeRect(fieldX, y, fieldW, 22) placeholder:@"https://api.openai.com/v1"];
+    self.llmBaseUrlField.tag = 2001;
     [pane addSubview:self.llmBaseUrlField];
     y -= rowH;
 
     // API Key (secure by default)
     CGFloat eyeW = 28;
     CGFloat secFieldW = fieldW - eyeW - 4;
-    [pane addSubview:[self formLabel:@"API Key" frame:NSMakeRect(16, y, labelW, 22)]];
+    NSTextField *apiKeyLabel = [self formLabel:@"API Key" frame:NSMakeRect(16, y, labelW, 22)];
+    apiKeyLabel.tag = 2002;
+    [pane addSubview:apiKeyLabel];
     self.llmApiKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, y, secFieldW, 22)];
     self.llmApiKeySecureField.placeholderString = @"sk-...";
     self.llmApiKeySecureField.font = [NSFont systemFontOfSize:13];
+    self.llmApiKeySecureField.tag = 2002;
     [pane addSubview:self.llmApiKeySecureField];
     self.llmApiKeyField = [self formTextField:NSMakeRect(fieldX, y, secFieldW, 22) placeholder:@"sk-..."];
     self.llmApiKeyField.hidden = YES;
+    self.llmApiKeyField.tag = 2002;
     [pane addSubview:self.llmApiKeyField];
     self.llmApiKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, y - 1, eyeW, 24)
                                              action:@selector(toggleLlmApiKeyVisibility:)];
     [pane addSubview:self.llmApiKeyToggle];
     y -= rowH;
 
-    // Model
-    [pane addSubview:[self formLabel:@"Model" frame:NSMakeRect(16, y, labelW, 22)]];
+    // Model (text field for OpenAI)
+    NSTextField *modelLabel = [self formLabel:@"Model" frame:NSMakeRect(16, y, labelW, 22)];
+    modelLabel.tag = 2003;
+    [pane addSubview:modelLabel];
     self.llmModelField = [self formTextField:NSMakeRect(fieldX, y, fieldW, 22) placeholder:@"gpt-5.4-nano"];
+    self.llmModelField.tag = 2003;
     [pane addSubview:self.llmModelField];
     y -= rowH + 4;
 
     // Max Token Parameter
-    [pane addSubview:[self formLabel:@"Token Parameter" frame:NSMakeRect(16, y, labelW, 22)]];
+    NSTextField *tokenParamLabel = [self formLabel:@"Token Parameter" frame:NSMakeRect(16, y, labelW, 22)];
+    tokenParamLabel.tag = 2004;
+    [pane addSubview:tokenParamLabel];
     self.maxTokenParamPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 240, 26) pullsDown:NO];
+    self.maxTokenParamPopup.tag = 2004;
     [self.maxTokenParamPopup addItemsWithTitles:@[
         @"max_completion_tokens",
         @"max_tokens",
@@ -581,6 +619,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     // Hint text
     NSTextField *tokenHint = [self descriptionLabel:@"GPT-4o and older models use max_tokens. GPT-5 and reasoning models (o1/o3) use max_completion_tokens."];
     tokenHint.frame = NSMakeRect(fieldX, y - 2, fieldW, 32);
+    tokenHint.tag = 2005;
     [pane addSubview:tokenHint];
     y -= 44;
 
@@ -588,6 +627,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     self.llmTestButton = [NSButton buttonWithTitle:@"Test Connection" target:self action:@selector(testLlmConnection:)];
     self.llmTestButton.bezelStyle = NSBezelStyleRounded;
     self.llmTestButton.frame = NSMakeRect(fieldX, y, 130, 28);
+    self.llmTestButton.tag = 2006;
     [pane addSubview:self.llmTestButton];
     y -= 32;
 
@@ -596,7 +636,83 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     self.llmTestResultLabel.frame = NSMakeRect(fieldX, y - 36, fieldW, 42);
     self.llmTestResultLabel.font = [NSFont systemFontOfSize:12];
     self.llmTestResultLabel.selectable = YES;
+    self.llmTestResultLabel.tag = 2006;
     [pane addSubview:self.llmTestResultLabel];
+
+    // --- MLX fields (tag 2010-2012 for show/hide, initially hidden) ---
+    CGFloat mlxY = contentHeight - 48 - 52 - rowH - 8 - rowH;  // same Y as Base URL row
+
+    // MLX Model popup + Download button
+    NSTextField *llmModelLabel = [self formLabel:@"Model" frame:NSMakeRect(16, mlxY, labelW, 22)];
+    llmModelLabel.tag = 2010;
+    llmModelLabel.hidden = YES;
+    [pane addSubview:llmModelLabel];
+    self.llmLocalModelPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, mlxY - 2, fieldW - 26, 26) pullsDown:NO];
+    self.llmLocalModelPopup.tag = 2010;
+    self.llmLocalModelPopup.hidden = YES;
+    [self.llmLocalModelPopup setTarget:self];
+    [self.llmLocalModelPopup setAction:@selector(llmLocalModelChanged:)];
+    [pane addSubview:self.llmLocalModelPopup];
+
+    self.llmModelDownloadButton = [[NSButton alloc] initWithFrame:NSMakeRect(fieldX + fieldW - 20, mlxY + 1, 20, 20)];
+    self.llmModelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
+                                                      accessibilityDescription:@"Download"];
+    self.llmModelDownloadButton.bezelStyle = NSBezelStyleInline;
+    self.llmModelDownloadButton.bordered = NO;
+    self.llmModelDownloadButton.imageScaling = NSImageScaleProportionallyUpOrDown;
+    self.llmModelDownloadButton.target = self;
+    self.llmModelDownloadButton.action = @selector(llmDownloadSelectedModel:);
+    self.llmModelDownloadButton.tag = 2010;
+    self.llmModelDownloadButton.hidden = YES;
+    [pane addSubview:self.llmModelDownloadButton];
+
+    mlxY -= rowH;
+
+    // MLX Status + Delete button
+    self.llmModelStatusLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(fieldX, mlxY + 2, fieldW - 32, 18)];
+    self.llmModelStatusLabel.bezeled = NO;
+    self.llmModelStatusLabel.drawsBackground = NO;
+    self.llmModelStatusLabel.editable = NO;
+    self.llmModelStatusLabel.selectable = NO;
+    self.llmModelStatusLabel.font = [NSFont systemFontOfSize:12];
+    self.llmModelStatusLabel.tag = 2011;
+    self.llmModelStatusLabel.hidden = YES;
+    [pane addSubview:self.llmModelStatusLabel];
+
+    self.llmModelDeleteButton = [[NSButton alloc] initWithFrame:NSMakeRect(fieldX + fieldW - 20, mlxY + 1, 20, 20)];
+    self.llmModelDeleteButton.image = [NSImage imageWithSystemSymbolName:@"trash"
+                                                    accessibilityDescription:@"Delete"];
+    self.llmModelDeleteButton.bezelStyle = NSBezelStyleInline;
+    self.llmModelDeleteButton.bordered = NO;
+    self.llmModelDeleteButton.imageScaling = NSImageScaleProportionallyUpOrDown;
+    self.llmModelDeleteButton.target = self;
+    self.llmModelDeleteButton.action = @selector(llmDeleteSelectedModel:);
+    self.llmModelDeleteButton.tag = 2011;
+    self.llmModelDeleteButton.hidden = YES;
+    [pane addSubview:self.llmModelDeleteButton];
+
+    mlxY -= rowH;
+
+    // MLX Progress bar + size label
+    self.llmModelProgressBar = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(fieldX, mlxY + 10, fieldW - 120, 10)];
+    self.llmModelProgressBar.controlSize = NSControlSizeMini;
+    self.llmModelProgressBar.style = NSProgressIndicatorStyleBar;
+    self.llmModelProgressBar.minValue = 0;
+    self.llmModelProgressBar.maxValue = 100;
+    self.llmModelProgressBar.indeterminate = NO;
+    self.llmModelProgressBar.hidden = YES;
+    [pane addSubview:self.llmModelProgressBar];
+
+    self.llmModelProgressSizeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(fieldX + fieldW - 114, mlxY + 2, 114, 18)];
+    self.llmModelProgressSizeLabel.bezeled = NO;
+    self.llmModelProgressSizeLabel.drawsBackground = NO;
+    self.llmModelProgressSizeLabel.editable = NO;
+    self.llmModelProgressSizeLabel.selectable = NO;
+    self.llmModelProgressSizeLabel.alignment = NSTextAlignmentRight;
+    self.llmModelProgressSizeLabel.font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular];
+    self.llmModelProgressSizeLabel.textColor = [NSColor secondaryLabelColor];
+    self.llmModelProgressSizeLabel.hidden = YES;
+    [pane addSubview:self.llmModelProgressSizeLabel];
 
     // Save / Cancel buttons
     [self addButtonsToPane:pane atY:16 width:paneWidth];
@@ -945,7 +1061,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         }
     }
     if (isModelBasedLocal) {
-        [self populateLocalModelPopup:selectedProvider];
+        [self populateLocalModelPopup:selectedProvider mode:@"asr"];
         [self updateModelStatusLabel];
     }
 
@@ -1272,11 +1388,21 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 }
 
 - (void)populateLocalModelPopup:(NSString *)provider {
+    [self populateLocalModelPopup:provider mode:nil];
+}
+
+- (void)populateLocalModelPopup:(NSString *)provider mode:(NSString *)mode {
     [self.localModelPopup removeAllItems];
 
     NSArray<NSDictionary *> *models = [self.rustBridge scanModels];
     for (NSDictionary *model in models) {
         if (![model[@"provider"] isEqualToString:provider]) continue;
+        // Filter by mode: treat empty/missing mode as "asr" for backward compat
+        if (mode) {
+            NSString *modelMode = model[@"mode"];
+            if (!modelMode || modelMode.length == 0) modelMode = @"asr";
+            if (![modelMode isEqualToString:mode]) continue;
+        }
 
         NSString *path = model[@"path"];
         NSString *title = model[@"description"] ?: path;
@@ -1388,6 +1514,18 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     } else if ([identifier isEqualToString:kToolbarLLM]) {
         NSString *enabled = configGet(@"llm.enabled");
         self.llmEnabledCheckbox.state = ([enabled isEqualToString:@"false"]) ? NSControlStateValueOff : NSControlStateValueOn;
+
+        // Restore provider selection
+        NSString *llmProvider = configGet(@"llm.provider");
+        if (llmProvider.length == 0) llmProvider = @"openai";
+        for (NSInteger i = 0; i < self.llmProviderPopup.numberOfItems; i++) {
+            if ([[self.llmProviderPopup itemAtIndex:i].representedObject isEqualToString:llmProvider]) {
+                [self.llmProviderPopup selectItemAtIndex:i];
+                break;
+            }
+        }
+
+        // OpenAI fields
         NSString *baseUrl = configGet(@"llm.base_url");
         self.llmBaseUrlField.stringValue = baseUrl.length > 0 ? baseUrl : @"https://api.openai.com/v1";
         NSString *apiKey = configGet(@"llm.api_key");
@@ -1408,6 +1546,22 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
                 break;
             }
         }
+
+        // MLX model selection
+        if ([llmProvider isEqualToString:@"mlx"]) {
+            [self populateLlmLocalModelPopup];
+            NSString *mlxModel = configGet(@"llm.mlx.model");
+            if (mlxModel.length > 0) {
+                for (NSInteger i = 0; i < self.llmLocalModelPopup.numberOfItems; i++) {
+                    if ([[self.llmLocalModelPopup itemAtIndex:i].representedObject isEqualToString:mlxModel]) {
+                        [self.llmLocalModelPopup selectItemAtIndex:i];
+                        break;
+                    }
+                }
+            }
+            [self updateLlmModelStatusLabel];
+        }
+
         self.llmTestResultLabel.stringValue = @"";
         [self updateLlmFieldsEnabled];
     } else if ([identifier isEqualToString:kToolbarHotkey]) {
@@ -1547,12 +1701,20 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     if (self.llmEnabledCheckbox) {
         NSString *enabledStr = (self.llmEnabledCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
         saveOk &= configSet(@"llm.enabled", enabledStr);
+        NSString *llmProvider = self.llmProviderPopup.selectedItem.representedObject ?: @"openai";
+        saveOk &= configSet(@"llm.provider", llmProvider);
+        // OpenAI fields
         saveOk &= configSet(@"llm.base_url", self.llmBaseUrlField.stringValue);
         NSString *llmApiKey = self.llmApiKeyToggle.tag == 1 ? self.llmApiKeyField.stringValue : self.llmApiKeySecureField.stringValue;
         saveOk &= configSet(@"llm.api_key", llmApiKey);
         saveOk &= configSet(@"llm.model", self.llmModelField.stringValue);
         NSString *selectedTokenParam = self.maxTokenParamPopup.selectedItem.representedObject ?: @"max_completion_tokens";
         saveOk &= configSet(@"llm.max_token_parameter", selectedTokenParam);
+        // MLX model
+        if ([llmProvider isEqualToString:@"mlx"]) {
+            NSString *mlxModelPath = self.llmLocalModelPopup.selectedItem.representedObject;
+            if (mlxModelPath) saveOk &= configSet(@"llm.mlx.model", mlxModelPath);
+        }
     }
 
     // Update hotkey
@@ -1624,11 +1786,242 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
 - (void)updateLlmFieldsEnabled {
     BOOL enabled = (self.llmEnabledCheckbox.state == NSControlStateValueOn);
+    self.llmProviderPopup.enabled = enabled;
+
+    NSString *provider = self.llmProviderPopup.selectedItem.representedObject ?: @"openai";
+    BOOL isOpenAI = [provider isEqualToString:@"openai"];
+    BOOL isMlx = [provider isEqualToString:@"mlx"];
+
+    // Toggle OpenAI fields (tag 2001-2006)
+    for (NSView *view in self.currentPaneView.subviews) {
+        if (view.tag >= 2001 && view.tag <= 2006) {
+            view.hidden = !isOpenAI;
+        }
+    }
+    // Eye toggle doesn't use tag for show/hide (tag is used for 0/1 state)
+    self.llmApiKeyToggle.hidden = !isOpenAI;
+    // Preserve API key visibility state when showing OpenAI fields
+    if (isOpenAI) {
+        BOOL showPlain = (self.llmApiKeyToggle.tag == 1);
+        self.llmApiKeyField.hidden = !showPlain;
+        self.llmApiKeySecureField.hidden = showPlain;
+    }
+
     self.llmBaseUrlField.enabled = enabled;
     self.llmApiKeyField.enabled = enabled;
+    self.llmApiKeySecureField.enabled = enabled;
     self.llmModelField.enabled = enabled;
     self.maxTokenParamPopup.enabled = enabled;
     self.llmTestButton.enabled = enabled;
+
+    // Toggle MLX fields (tag 2010-2012)
+    for (NSView *view in self.currentPaneView.subviews) {
+        if (view.tag >= 2010 && view.tag <= 2012) {
+            view.hidden = !isMlx;
+        }
+    }
+    if (isMlx) {
+        self.llmLocalModelPopup.enabled = enabled;
+        self.llmModelDownloadButton.enabled = enabled;
+        self.llmModelDeleteButton.enabled = enabled;
+        // Progress bar stays hidden unless downloading
+        self.llmModelProgressBar.hidden = YES;
+        self.llmModelProgressSizeLabel.hidden = YES;
+    }
+}
+
+- (void)llmProviderChanged:(id)sender {
+    [self updateLlmFieldsEnabled];
+    NSString *provider = self.llmProviderPopup.selectedItem.representedObject ?: @"openai";
+    if ([provider isEqualToString:@"mlx"]) {
+        [self populateLlmLocalModelPopup];
+        [self updateLlmModelStatusLabel];
+    }
+    self.llmTestResultLabel.stringValue = @"";
+}
+
+- (void)populateLlmLocalModelPopup {
+    [self.llmLocalModelPopup removeAllItems];
+
+    NSArray<NSDictionary *> *models = [self.rustBridge scanModels];
+    for (NSDictionary *model in models) {
+        if (![model[@"provider"] isEqualToString:@"mlx"]) continue;
+        NSString *modelMode = model[@"mode"];
+        if (!modelMode || modelMode.length == 0) modelMode = @"asr";
+        if (![modelMode isEqualToString:@"llm"]) continue;
+
+        NSString *path = model[@"path"];
+        NSString *title = model[@"description"] ?: path;
+
+        [self.llmLocalModelPopup addItemWithTitle:title];
+        [self.llmLocalModelPopup lastItem].representedObject = path;
+    }
+
+    if (self.llmLocalModelPopup.numberOfItems == 0) {
+        [self.llmLocalModelPopup addItemWithTitle:@"No models found"];
+        self.llmLocalModelPopup.enabled = NO;
+    } else {
+        self.llmLocalModelPopup.enabled = YES;
+    }
+}
+
+- (void)llmLocalModelChanged:(id)sender {
+    [self updateLlmModelStatusLabel];
+}
+
+- (void)updateLlmModelStatusLabel {
+    NSString *modelPath = self.llmLocalModelPopup.selectedItem.representedObject;
+    if (!modelPath) {
+        self.llmModelStatusLabel.stringValue = @"";
+        self.llmModelDownloadButton.enabled = NO;
+        self.llmModelDeleteButton.enabled = NO;
+        self.llmModelProgressBar.hidden = YES;
+        self.llmModelProgressSizeLabel.hidden = YES;
+        return;
+    }
+
+    if ([self.downloadingModels containsObject:modelPath]) {
+        self.llmModelStatusLabel.stringValue = @"Downloading";
+        self.llmModelStatusLabel.textColor = [NSColor secondaryLabelColor];
+        self.llmModelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"stop.circle"
+                                                         accessibilityDescription:@"Stop"];
+        self.llmModelDownloadButton.enabled = YES;
+        self.llmModelDeleteButton.enabled = NO;
+        self.llmModelProgressBar.hidden = NO;
+        self.llmModelProgressSizeLabel.hidden = NO;
+        return;
+    }
+
+    NSInteger cachedStatus = [self.rustBridge modelStatus:modelPath mode:SPModelVerifyCacheOnly];
+    if (cachedStatus == 2) {
+        [self applyLlmModelStatus:cachedStatus];
+        return;
+    }
+
+    [self applyLlmModelStatus:(cachedStatus > 0 ? cachedStatus : 1) verifying:YES];
+
+    dispatch_async(_verifyQueue, ^{
+        NSInteger verified = [self.rustBridge modelStatus:modelPath mode:SPModelVerifyNormal];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSString *current = self.llmLocalModelPopup.selectedItem.representedObject;
+            if ([current isEqualToString:modelPath]) {
+                [self applyLlmModelStatus:verified];
+            }
+        });
+    });
+}
+
+- (void)applyLlmModelStatus:(NSInteger)status {
+    [self applyLlmModelStatus:status verifying:NO];
+}
+
+- (void)applyLlmModelStatus:(NSInteger)status verifying:(BOOL)verifying {
+    self.llmModelProgressBar.hidden = YES;
+    self.llmModelProgressSizeLabel.hidden = YES;
+    self.llmModelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
+                                                     accessibilityDescription:@"Download"];
+    switch (status) {
+        case 2:
+            self.llmModelStatusLabel.stringValue = verifying ? @"● Verifying…" : @"● Installed";
+            self.llmModelStatusLabel.textColor = verifying ? [NSColor secondaryLabelColor] : [NSColor systemGreenColor];
+            self.llmModelDownloadButton.enabled = NO;
+            self.llmModelDeleteButton.enabled = YES;
+            break;
+        case 1:
+            self.llmModelStatusLabel.stringValue = verifying ? @"◐ Verifying…" : @"◐ Incomplete";
+            self.llmModelStatusLabel.textColor = verifying ? [NSColor secondaryLabelColor] : [NSColor systemOrangeColor];
+            self.llmModelDownloadButton.enabled = YES;
+            self.llmModelDeleteButton.enabled = YES;
+            break;
+        default:
+            self.llmModelStatusLabel.stringValue = @"○ Not installed";
+            self.llmModelStatusLabel.textColor = [NSColor secondaryLabelColor];
+            self.llmModelDownloadButton.enabled = YES;
+            self.llmModelDeleteButton.enabled = NO;
+            break;
+    }
+}
+
+- (void)llmDownloadSelectedModel:(id)sender {
+    NSString *modelPath = self.llmLocalModelPopup.selectedItem.representedObject;
+    if (!modelPath) return;
+
+    if ([self.downloadingModels containsObject:modelPath]) {
+        [self.rustBridge cancelDownload:modelPath];
+        return;
+    }
+
+    if (!self.downloadingModels) {
+        self.downloadingModels = [NSMutableSet new];
+    }
+    [self.downloadingModels addObject:modelPath];
+
+    self.llmModelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"stop.circle"
+                                                     accessibilityDescription:@"Stop"];
+    self.llmModelDownloadButton.hidden = NO;
+    self.llmModelStatusLabel.stringValue = @"Downloading...";
+    self.llmModelStatusLabel.textColor = [NSColor secondaryLabelColor];
+    self.llmModelProgressBar.hidden = NO;
+    self.llmModelProgressBar.doubleValue = 0;
+    self.llmModelProgressSizeLabel.hidden = NO;
+    self.llmModelProgressSizeLabel.stringValue = @"";
+
+    __block uint64_t totalBytesAllFiles = 0;
+    for (NSDictionary *m in [self.rustBridge scanModels]) {
+        if ([m[@"path"] isEqualToString:modelPath]) {
+            totalBytesAllFiles = [m[@"total_size"] unsignedLongLongValue];
+            break;
+        }
+    }
+    __block NSMutableDictionary<NSNumber *, NSNumber *> *fileDownloaded = [NSMutableDictionary new];
+
+    __weak typeof(self) weakSelf = self;
+    [self.rustBridge downloadModel:modelPath
+        progress:^(NSUInteger fileIndex, NSUInteger fileCount,
+                   uint64_t downloaded, uint64_t total, NSString *filename) {
+            typeof(self) strongSelf = weakSelf;
+            if (!strongSelf) return;
+
+            NSString *selected = strongSelf.llmLocalModelPopup.selectedItem.representedObject;
+            if (![modelPath isEqualToString:selected]) return;
+
+            fileDownloaded[@(fileIndex)] = @(downloaded);
+
+            uint64_t totalDownloaded = 0;
+            for (NSNumber *v in fileDownloaded.allValues) totalDownloaded += v.unsignedLongLongValue;
+
+            double pct = (totalBytesAllFiles > 0)
+                ? (double)totalDownloaded / (double)totalBytesAllFiles * 100.0 : 0;
+            strongSelf.llmModelProgressBar.doubleValue = pct;
+            strongSelf.llmModelStatusLabel.stringValue = @"Downloading";
+            strongSelf.llmModelProgressSizeLabel.stringValue =
+                [NSString stringWithFormat:@"%.1f / %.1f MB",
+                    (double)totalDownloaded / 1048576.0,
+                    (double)totalBytesAllFiles / 1048576.0];
+        }
+        completion:^(BOOL success, NSString *message) {
+            typeof(self) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            [strongSelf.downloadingModels removeObject:modelPath];
+            [strongSelf updateLlmModelStatusLabel];
+        }];
+}
+
+- (void)llmDeleteSelectedModel:(id)sender {
+    NSString *modelPath = self.llmLocalModelPopup.selectedItem.representedObject;
+    if (!modelPath) return;
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Remove Model Files?";
+    alert.informativeText = @"Downloaded model files will be deleted. The model can be re-downloaded later.";
+    [alert addButtonWithTitle:@"Remove"];
+    [alert addButtonWithTitle:@"Cancel"];
+    alert.alertStyle = NSAlertStyleWarning;
+
+    if ([alert runModal] == NSAlertFirstButtonReturn) {
+        [self.rustBridge removeModelFiles:modelPath];
+        [self updateLlmModelStatusLabel];
+    }
 }
 
 - (void)testLlmConnection:(id)sender {

@@ -1054,6 +1054,7 @@ pub extern "C" fn sp_core_scan_models_json() -> *mut c_char {
             serde_json::json!({
                 "path": rel_path.to_string_lossy(),
                 "provider": m.manifest.provider,
+                "mode": m.manifest.mode.as_deref().unwrap_or(""),
                 "description": m.manifest.description,
                 "repo": m.manifest.repo,
                 "total_size": m.manifest.files.iter().map(|f| f.size).sum::<u64>(),

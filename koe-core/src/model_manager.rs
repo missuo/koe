@@ -20,6 +20,8 @@ const CHECKSUM_CACHE_FILE: &str = ".koe-checksum.json";
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ModelManifest {
     pub provider: String,
+    #[serde(default)]
+    pub mode: Option<String>,
     pub description: String,
     pub repo: String,
     pub files: Vec<ModelFile>,
