@@ -1,0 +1,56 @@
+{
+    "provider": "mlx",
+    "mode": "llm",
+    "description": "Qwen3 1.7B 4-bit LLM (higher accuracy)",
+    "repo": "mlx-community/Qwen3-1.7B-4bit",
+    "files": [
+        {
+            "name": "config.json",
+            "size": 937,
+            "sha256": "507a6701220524eb8b283425bf0856a9ae4f21f4052e563896ddd668994b1dc7",
+            "url": "https://huggingface.co/mlx-community/Qwen3-1.7B-4bit/resolve/main/config.json"
+        },
+        {
+            "name": "merges.txt",
+            "size": 1671853,
+            "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+            "url": "https://huggingface.co/mlx-community/Qwen3-1.7B-4bit/resolve/main/merges.txt"
+        },
+        {
+            "name": "model.safetensors",
+            "size": 968080210,
+            "sha256": "0e86d9677e519323849eac1bc272caae88567a481ff188c431f70be543d9995f",
+            "url": "https://huggingface.co/mlx-community/Qwen3-1.7B-4bit/resolve/main/model.safetensors"
+        },
+        {
+            "name": "model.safetensors.index.json",
+            "size": 49731,
+            "sha256": "1e3058d4ba4b04e4de35b74467725cbef90ff022198404218e48f21adc9cfa15",
+            "url": "https://huggingface.co/mlx-community/Qwen3-1.7B-4bit/resolve/main/model.safetensors.index.json"
+        },
+        {
+            "name": "special_tokens_map.json",
+            "size": 613,
+            "sha256": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd",
+            "url": "https://huggingface.co/mlx-community/Qwen3-1.7B-4bit/resolve/main/special_tokens_map.json"
+        },
+        {
+            "name": "tokenizer.json",
+            "size": 11422654,
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "url": "https://huggingface.co/mlx-community/Qwen3-1.7B-4bit/resolve/main/tokenizer.json"
+        },
+        {
+            "name": "tokenizer_config.json",
+            "size": 9706,
+            "sha256": "253153d0738ceb4c668d2eff957714dd2bea0b56de772a9fdccd96cbf517e6a0",
+            "url": "https://huggingface.co/mlx-community/Qwen3-1.7B-4bit/resolve/main/tokenizer_config.json"
+        },
+        {
+            "name": "vocab.json",
+            "size": 2776833,
+            "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+            "url": "https://huggingface.co/mlx-community/Qwen3-1.7B-4bit/resolve/main/vocab.json"
+        }
+    ]
+}
