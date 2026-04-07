@@ -117,3 +117,78 @@ async fn test_connect_fails_with_invalid_credentials() {
     // Should fail since credentials are invalid
     assert!(result.is_err());
 }
+
+#[tokio::test]
+async fn test_doubaoime_connect_and_send_silence() {
+    let mut headers = std::collections::HashMap::new();
+    headers.insert("credential_path".to_string(), "/tmp/test_doubaoime_creds.json".to_string());
+
+    let config = AsrConfig {
+        url: String::new(),
+        app_key: String::new(),
+        access_key: String::new(),
+        resource_id: String::new(),
+        sample_rate_hz: 16000,
+        connect_timeout_ms: 10000,
+        final_wait_timeout_ms: 10000,
+        enable_ddc: false,
+        enable_itn: false,
+        enable_punc: true,
+        enable_nonstream: false,
+        hotwords: Vec::new(),
+        language: Some("zh".to_string()),
+        custom_headers: headers,
+    };
+
+    let mut provider = koe_asr::DoubaoImeProvider::new();
+    match provider.connect(&config).await {
+        Ok(()) => println!("Connected!"),
+        Err(e) => {
+            println!("ERROR connecting: {e}");
+            return;
+        }
+    }
+
+    // Send 1 second of silence (16000 samples * 2 bytes = 32000 bytes)
+    let silence = vec![0u8; 32000];
+    provider.send_audio(&silence).await.unwrap();
+
+    // Finish
+    provider.finish_input().await.unwrap();
+
+    // Read events until closed
+    let mut aggregator = TranscriptAggregator::new();
+    loop {
+        match provider.next_event().await {
+            Ok(AsrEvent::Interim(text)) => {
+                println!("INTERIM: {text}");
+                aggregator.update_interim(&text);
+            }
+            Ok(AsrEvent::Definite(text)) => {
+                println!("DEFINITE: {text}");
+                aggregator.update_definite(&text);
+            }
+            Ok(AsrEvent::Final(text)) => {
+                println!("FINAL: {text}");
+                aggregator.update_final(&text);
+                break;
+            }
+            Ok(AsrEvent::Closed) => {
+                println!("CLOSED");
+                break;
+            }
+            Ok(AsrEvent::Error(e)) => {
+                println!("ERROR event: {e}");
+                break;
+            }
+            Ok(other) => println!("OTHER: {other:?}"),
+            Err(e) => {
+                println!("ERROR: {e}");
+                break;
+            }
+        }
+    }
+
+    println!("Best text: '{}'", aggregator.best_text());
+    provider.close().await.ok();
+}

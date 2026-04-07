@@ -40,6 +40,7 @@
 
 pub mod config;
 pub mod doubao;
+pub mod doubaoime;
 pub mod error;
 pub mod event;
 #[cfg(feature = "mlx")]
@@ -61,6 +62,7 @@ pub use apple_speech::{AppleSpeechConfig, AppleSpeechProvider};
 pub use sherpa_onnx::{SherpaOnnxConfig, SherpaOnnxProvider};
 pub use config::AsrConfig;
 pub use doubao::DoubaoWsProvider;
+pub use doubaoime::DoubaoImeProvider;
 pub use error::AsrError;
 pub use event::AsrEvent;
 pub use provider::AsrProvider;

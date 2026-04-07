@@ -21,7 +21,8 @@ use crate::llm::openai_compatible::{
 use crate::llm::{CorrectionRequest, LlmProvider};
 use crate::session::{Session, SessionState};
 use koe_asr::{
-    AsrConfig, AsrEvent, AsrProvider, DoubaoWsProvider, QwenAsrProvider, TranscriptAggregator,
+    AsrConfig, AsrEvent, AsrProvider, DoubaoImeProvider, DoubaoWsProvider, QwenAsrProvider,
+    TranscriptAggregator,
 };
 #[cfg(feature = "mlx")]
 use koe_asr::{MlxConfig, MlxProvider};
@@ -332,6 +333,36 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
     //   async context, but new() only initializes struct fields with no async
     //   operations, so this has no effect.
     let (asr_config, asr): (AsrConfig, Box<dyn AsrProvider>) = match asr_provider_name.as_str() {
+        "doubaoime" => {
+            let ime = &cfg.asr.doubaoime;
+            let credential_path = if std::path::Path::new(&ime.credential_path).is_absolute() {
+                ime.credential_path.clone()
+            } else {
+                config::config_dir()
+                    .join(&ime.credential_path)
+                    .to_string_lossy()
+                    .to_string()
+            };
+            let mut custom_headers = std::collections::HashMap::new();
+            custom_headers.insert("credential_path".to_string(), credential_path);
+            let config = AsrConfig {
+                url: String::new(),
+                app_key: String::new(),
+                access_key: String::new(),
+                resource_id: String::new(),
+                sample_rate_hz: 16000,
+                connect_timeout_ms: ime.connect_timeout_ms,
+                final_wait_timeout_ms: ime.final_wait_timeout_ms,
+                enable_ddc: false,
+                enable_itn: false,
+                enable_punc: true,
+                enable_nonstream: false,
+                hotwords: Vec::new(),
+                language: Some("zh".to_string()),
+                custom_headers,
+            };
+            (config, Box::new(DoubaoImeProvider::new()))
+        }
         "qwen" => {
             let qwen = &cfg.asr.qwen;
             let config = AsrConfig {

@@ -336,11 +336,13 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 
     // Provider
     [pane addSubview:[self formLabel:@"Provider" frame:NSMakeRect(16, y, labelW, 22)]];
-    self.asrProviderPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 160, 26) pullsDown:NO];
+    self.asrProviderPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 200, 26) pullsDown:NO];
+    [self.asrProviderPopup addItemWithTitle:@"DoubaoIME (\u8c46\u5305\u8f93\u5165\u6cd5, \u514d\u8d39)"];
+    [self.asrProviderPopup lastItem].representedObject = @"doubaoime";
     [self.asrProviderPopup addItemWithTitle:@"Doubao (\u8c46\u5305)"];
-    [self.asrProviderPopup itemAtIndex:0].representedObject = @"doubao";
+    [self.asrProviderPopup lastItem].representedObject = @"doubao";
     [self.asrProviderPopup addItemWithTitle:@"Qwen (\u963f\u91cc\u4e91)"];
-    [self.asrProviderPopup itemAtIndex:1].representedObject = @"qwen";
+    [self.asrProviderPopup lastItem].representedObject = @"qwen";
     // Add Apple Speech (macOS 26+, no model download required)
     if (@available(macOS 26.0, *)) {
         [self.asrProviderPopup addItemWithTitle:@"Apple Speech (On-Device)"];
@@ -363,7 +365,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     // Test button next to Provider
     self.asrTestButton = [NSButton buttonWithTitle:@"Test" target:self action:@selector(testAsrConnection:)];
     self.asrTestButton.bezelStyle = NSBezelStyleRounded;
-    self.asrTestButton.frame = NSMakeRect(fieldX + 168, y - 2, 70, 28);
+    self.asrTestButton.frame = NSMakeRect(fieldX + 208, y - 2, 70, 28);
     [pane addSubview:self.asrTestButton];
     y -= rowH;
 
@@ -877,11 +879,12 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 }
 
 - (void)asrProviderChanged:(NSPopUpButton *)sender {
-    NSString *selectedProvider = sender.selectedItem.representedObject ?: @"doubao";
+    NSString *selectedProvider = sender.selectedItem.representedObject ?: @"doubaoime";
+    BOOL isDoubaoIme = [selectedProvider isEqualToString:@"doubaoime"];
     BOOL isDoubao = [selectedProvider isEqualToString:@"doubao"];
     BOOL isQwen = [selectedProvider isEqualToString:@"qwen"];
     BOOL isAppleSpeech = [selectedProvider isEqualToString:@"apple-speech"];
-    BOOL isModelBasedLocal = !isDoubao && !isQwen && !isAppleSpeech;
+    BOOL isModelBasedLocal = !isDoubaoIme && !isDoubao && !isQwen && !isAppleSpeech;
 
     // Show/hide Doubao fields
     for (NSView *view in self.currentPaneView.subviews) {
@@ -947,7 +950,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     }
 
     // Hide test button for local providers (no remote connection to test)
-    BOOL isLocal = !isDoubao && !isQwen;
+    BOOL isLocal = !isDoubaoIme && !isDoubao && !isQwen;
     self.asrTestButton.hidden = isLocal;
     self.asrTestResultLabel.hidden = isLocal;
 
@@ -1039,7 +1042,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 
 - (void)downloadSelectedModel:(id)sender {
     // Dispatch to Apple Speech asset download if that provider is selected
-    NSString *selectedProvider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
+    NSString *selectedProvider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubaoime";
     if ([selectedProvider isEqualToString:@"apple-speech"]) {
         [self downloadAppleSpeechAsset];
         return;
@@ -1115,7 +1118,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 
 - (void)deleteSelectedModel:(id)sender {
     // Dispatch to Apple Speech asset release if that provider is selected
-    NSString *selectedProvider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
+    NSString *selectedProvider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubaoime";
     if ([selectedProvider isEqualToString:@"apple-speech"]) {
         [self releaseAppleSpeechAsset];
         return;
@@ -1317,7 +1320,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
     if ([identifier isEqualToString:kToolbarASR]) {
         NSString *provider = configGet(@"asr.provider");
-        if (provider.length == 0) provider = @"doubao";
+        if (provider.length == 0) provider = @"doubaoime";
         for (NSInteger i = 0; i < self.asrProviderPopup.numberOfItems; i++) {
             if ([[self.asrProviderPopup itemAtIndex:i].representedObject isEqualToString:provider]) {
                 [self.asrProviderPopup selectItemAtIndex:i];
@@ -1460,7 +1463,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 - (void)saveConfig:(id)sender {
     // Warn if a local provider is selected but assets/models are not installed
     if (self.asrProviderPopup) {
-        NSString *provider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
+        NSString *provider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubaoime";
         // Check Apple Speech asset status
         if ([provider isEqualToString:@"apple-speech"]) {
             NSString *locale = self.appleSpeechLocalePopup.selectedItem.representedObject;
@@ -1480,7 +1483,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
             }
         }
         // Check model-based local provider model status
-        BOOL isModelBasedLocal = ![provider isEqualToString:@"doubao"]
+        BOOL isModelBasedLocal = ![provider isEqualToString:@"doubaoime"]
+            && ![provider isEqualToString:@"doubao"]
             && ![provider isEqualToString:@"qwen"]
             && ![provider isEqualToString:@"apple-speech"];
         if (isModelBasedLocal) {
@@ -1515,7 +1519,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
     // Update ASR fields (always save — fields may be nil if pane not visited, check first)
     if (self.asrAppKeyField) {
-        NSString *selectedProvider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
+        NSString *selectedProvider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubaoime";
         saveOk &= configSet(@"asr.provider", selectedProvider);
         // Save Doubao fields
         saveOk &= configSet(@"asr.doubao.app_key", self.asrAppKeyField.stringValue);
@@ -1688,12 +1692,59 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 // ─── ASR Test Connection ────────────────────────────────────────────
 
 - (void)testAsrConnection:(id)sender {
-    NSString *provider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubao";
-    if ([provider isEqualToString:@"doubao"]) {
+    NSString *provider = self.asrProviderPopup.selectedItem.representedObject ?: @"doubaoime";
+    if ([provider isEqualToString:@"doubaoime"]) {
+        [self testDoubaoImeConnection];
+    } else if ([provider isEqualToString:@"doubao"]) {
         [self testDoubaoConnection];
     } else if ([provider isEqualToString:@"qwen"]) {
         [self testQwenConnection];
     }
+}
+
+- (void)testDoubaoImeConnection {
+    self.asrTestButton.enabled = NO;
+    self.asrTestResultLabel.stringValue = @"测试中...";
+    self.asrTestResultLabel.textColor = [NSColor secondaryLabelColor];
+
+    // Test by connecting to the DoubaoIME WebSocket endpoint
+    NSURL *url = [NSURL URLWithString:@"wss://frontier-audio-ime-ws.doubao.com/ocean/api/v1/ws?aid=401734&device_id=0"];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.timeoutInterval = 5;
+    [request setValue:@"com.bytedance.android.doubaoime/100102018 (Linux; U; Android 16; en_US; Pixel 7 Pro; Build/BP2A.250605.031.A2; Cronet/TTNetVersion:94cf429a 2025-11-17 QuicVersion:1f89f732 2025-05-08)" forHTTPHeaderField:@"User-Agent"];
+    [request setValue:@"v2" forHTTPHeaderField:@"proto-version"];
+    [request setValue:@"true" forHTTPHeaderField:@"x-custom-keepalive"];
+
+    NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
+    config.timeoutIntervalForRequest = 5;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:config];
+    NSURLSessionWebSocketTask *wsTask = [session webSocketTaskWithRequest:request];
+
+    __weak typeof(self) weakSelf = self;
+    [wsTask resume];
+
+    // If WebSocket connects successfully, the endpoint is reachable
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        // If the task is still running after 2s, it means the connection was established
+        if (wsTask.state == NSURLSessionTaskStateRunning) {
+            [wsTask cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
+            strongSelf.asrTestButton.enabled = YES;
+            strongSelf.asrTestResultLabel.stringValue = @"连接成功 (设备注册将在首次使用时自动完成)";
+            strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
+        } else if (wsTask.state == NSURLSessionTaskStateCompleted) {
+            strongSelf.asrTestButton.enabled = YES;
+            if (wsTask.error) {
+                strongSelf.asrTestResultLabel.stringValue = [NSString stringWithFormat:@"连接失败：%@", wsTask.error.localizedDescription];
+                strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
+            } else {
+                strongSelf.asrTestResultLabel.stringValue = @"连接成功 (设备注册将在首次使用时自动完成)";
+                strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
+            }
+        }
+    });
 }
 
 - (void)testDoubaoConnection {

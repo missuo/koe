@@ -21,9 +21,13 @@ pub struct Config {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AsrSection {
-    /// Which ASR provider to use: "doubao" (default), "qwen", "mlx", "sherpa-onnx", "apple-speech"
+    /// Which ASR provider to use: "doubaoime" (default), "doubao", "qwen", "mlx", "sherpa-onnx", "apple-speech"
     #[serde(default = "default_asr_provider")]
     pub provider: String,
+
+    /// DoubaoIME (豆包输入法) free ASR — no API key required
+    #[serde(default)]
+    pub doubaoime: DoubaoImeAsrConfig,
 
     /// Doubao (豆包/火山引擎) ASR configuration
     #[serde(default)]
@@ -75,6 +79,27 @@ impl Default for QwenAsrConfig {
             connect_timeout_ms: default_connect_timeout(),
             final_wait_timeout_ms: default_final_wait_timeout(),
             headers: std::collections::HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct DoubaoImeAsrConfig {
+    /// Path to credential cache file (relative to ~/.koe/ or absolute)
+    #[serde(default = "default_doubaoime_credential_path")]
+    pub credential_path: String,
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout_ms: u64,
+    #[serde(default = "default_final_wait_timeout")]
+    pub final_wait_timeout_ms: u64,
+}
+
+impl Default for DoubaoImeAsrConfig {
+    fn default() -> Self {
+        Self {
+            credential_path: default_doubaoime_credential_path(),
+            connect_timeout_ms: default_connect_timeout(),
+            final_wait_timeout_ms: default_final_wait_timeout(),
         }
     }
 }
@@ -423,7 +448,10 @@ impl HotkeySection {
 // ─── Defaults ───────────────────────────────────────────────────────
 
 fn default_asr_provider() -> String {
-    "doubao".into()
+    "doubaoime".into()
+}
+fn default_doubaoime_credential_path() -> String {
+    "doubaoime_credentials.json".into()
 }
 fn default_qwen_url() -> String {
     "wss://dashscope.aliyuncs.com/api-ws/v1/realtime".into()
@@ -977,8 +1005,14 @@ const DEFAULT_CONFIG_YAML: &str = r#"# Koe - Voice Input Tool Configuration
 # ~/.koe/config.yaml
 
 asr:
-  # ASR provider: "doubao" (default), "qwen", "apple-speech", "mlx", "sherpa-onnx"
-  provider: "doubao"
+  # ASR provider: "doubaoime" (default, free), "doubao", "qwen", "apple-speech", "mlx", "sherpa-onnx"
+  provider: "doubaoime"
+
+  # DoubaoIME (豆包输入法) free ASR — no API key required, auto device registration
+  doubaoime:
+    credential_path: "doubaoime_credentials.json"  # relative to ~/.koe/
+    connect_timeout_ms: 3000
+    final_wait_timeout_ms: 5000
 
   # Doubao (豆包) Streaming ASR 2.0 (优化版双向流式)
   doubao:
