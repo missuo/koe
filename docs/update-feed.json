@@ -1,22 +1,21 @@
 {
-  "version": "1.0.13",
-  "build": 14,
-  "published_at": "2026-04-05T00:00:00Z",
+  "version": "1.0.14",
+  "build": 15,
+  "published_at": "2026-04-09T00:00:00Z",
   "minimum_system_version": "14.0",
-  "download_url": "https://github.com/missuo/koe/releases/download/v1.0.13/Koe-macOS-arm64.zip",
-  "release_notes_url": "https://github.com/missuo/koe/releases/tag/v1.0.13",
+  "download_url": "https://github.com/missuo/koe/releases/download/v1.0.14/Koe-macOS-arm64.zip",
+  "release_notes_url": "https://github.com/missuo/koe/releases/tag/v1.0.14",
   "notes": [
-    "Add Apple Speech provider for zero-config on-device ASR (macOS 26+).",
-    "Add custom HTTP headers support for third-party ASR WebSocket endpoints.",
-    "Add no_reasoning_control option to disable LLM thinking/reasoning.",
-    "Move LLM test connection into Rust core for accurate results.",
-    "Fix repeated accessibility permission prompts, add grant actions to menu.",
-    "Fix clipboard not restoring to empty state after dictation.",
-    "Fix state machine race between Rust and ObjC after text delivery.",
-    "Fix audio capture error handling and session startup failures.",
-    "Fix hotkey race window between menu close and quit action.",
-    "Redact transcription text from INFO logs for privacy.",
-    "Atomic config file writes to prevent corruption.",
-    "Centralize workspace dependencies for consistent builds."
+    "Add a full overlay lifecycle that shows ASR final text, corrected text, and optional follow-up template actions.",
+    "Add a Templates settings pane to add, edit, reorder, and hide prompt templates.",
+    "Add overlay rewrite templates with click, hover, and contextual 1-9 shortcuts.",
+    "Add configurable trigger modes for hold-to-talk and tap-to-toggle workflows.",
+    "Add custom shortcut recording for trigger keys, including modifier combinations.",
+    "Simplify hotkeys to a single trigger shortcut that starts and stops recording.",
+    "Reduce the built-in prompt templates to a minimal English-translation starter template.",
+    "Fix template editor state loss and prompt cross-contamination when switching rows.",
+    "Fix overlay template visibility and prompt restoration after creating or switching templates.",
+    "Fix template number shortcuts and recorded trigger combos leaking characters into the focused app.",
+    "Polish Controls, LLM, and Templates settings UI for more consistent native spacing and switches."
   ]
 }

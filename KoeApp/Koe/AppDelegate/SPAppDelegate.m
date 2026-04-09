@@ -13,6 +13,7 @@
 #import "SPSetupWizardWindowController.h"
 #import "SPUpdateManager.h"
 #import "koe_core.h"
+#import <os/log.h>
 #import <sys/stat.h>
 #import <UserNotifications/UserNotifications.h>
 
@@ -27,13 +28,54 @@
 
 @implementation SPAppDelegate
 
+static BOOL configFlagEnabled(const char *keyPath) {
+    char *rawValue = sp_config_get(keyPath);
+    if (!rawValue) return NO;
+
+    BOOL enabled = strcmp(rawValue, "true") == 0;
+    sp_core_free_string(rawValue);
+    return enabled;
+}
+
+- (BOOL)shouldShowPromptTemplateButtons {
+    return configFlagEnabled("llm.prompt_templates_enabled");
+}
+
+- (void)showPromptTemplateButtonsIfNeededOrDismiss {
+    if (![self shouldShowPromptTemplateButtons]) {
+        [self.overlayPanel lingerAndDismiss];
+        return;
+    }
+
+    NSArray *templates = [self.rustBridge promptTemplates];
+    NSMutableArray<NSDictionary *> *visibleTemplates = [NSMutableArray array];
+    NSInteger visibleShortcut = 1;
+    for (NSUInteger index = 0; index < templates.count; index++) {
+        NSDictionary *templateData = templates[index];
+        id enabledValue = templateData[@"enabled"];
+        BOOL enabled = ![enabledValue isKindOfClass:[NSNumber class]] || [enabledValue boolValue];
+        if (!enabled) continue;
+
+        NSMutableDictionary *overlayTemplate = [templateData mutableCopy] ?: [NSMutableDictionary dictionary];
+        overlayTemplate[@"shortcut"] = @(visibleShortcut++);
+        overlayTemplate[@"source_index"] = @(index);
+        [visibleTemplates addObject:overlayTemplate];
+    }
+
+    NSLog(@"[Koe] Prompt templates visible: %lu / %lu", (unsigned long)visibleTemplates.count, (unsigned long)templates.count);
+    if (visibleTemplates.count > 0 && self.lastAsrText.length > 0) {
+        [self.overlayPanel showTemplateButtons:visibleTemplates];
+        [self startNumberKeyMonitoring];
+    } else {
+        [self.overlayPanel lingerAndDismiss];
+    }
+}
+
 - (void)applyHotkeyConfig:(struct SPHotkeyConfig)hotkeyConfig restartMonitorIfNeeded:(BOOL)restartIfNeeded {
     BOOL changed = self.hotkeyMonitor.targetKeyCode != hotkeyConfig.trigger_key_code ||
                    self.hotkeyMonitor.altKeyCode != hotkeyConfig.trigger_alt_key_code ||
                    self.hotkeyMonitor.targetModifierFlag != hotkeyConfig.trigger_modifier_flag ||
-                   self.hotkeyMonitor.cancelKeyCode != hotkeyConfig.cancel_key_code ||
-                   self.hotkeyMonitor.cancelAltKeyCode != hotkeyConfig.cancel_alt_key_code ||
-                   self.hotkeyMonitor.cancelModifierFlag != hotkeyConfig.cancel_modifier_flag ||
+                   self.hotkeyMonitor.targetMatchKind != hotkeyConfig.trigger_match_kind ||
                    self.hotkeyMonitor.triggerMode != hotkeyConfig.trigger_mode;
 
     if (!changed) return;
@@ -45,9 +87,7 @@
     self.hotkeyMonitor.targetKeyCode = hotkeyConfig.trigger_key_code;
     self.hotkeyMonitor.altKeyCode = hotkeyConfig.trigger_alt_key_code;
     self.hotkeyMonitor.targetModifierFlag = hotkeyConfig.trigger_modifier_flag;
-    self.hotkeyMonitor.cancelKeyCode = hotkeyConfig.cancel_key_code;
-    self.hotkeyMonitor.cancelAltKeyCode = hotkeyConfig.cancel_alt_key_code;
-    self.hotkeyMonitor.cancelModifierFlag = hotkeyConfig.cancel_modifier_flag;
+    self.hotkeyMonitor.targetMatchKind = hotkeyConfig.trigger_match_kind;
     self.hotkeyMonitor.triggerMode = hotkeyConfig.trigger_mode;
 
     if (restartIfNeeded) {
@@ -215,13 +255,11 @@
     // Read new hotkey config
     struct SPHotkeyConfig newConfig = sp_core_get_hotkey_config();
 
-    NSLog(@"[Koe] Reloaded hotkey config: trigger=%d/%d flag=0x%llx cancel=%d/%d flag=0x%llx",
+    NSLog(@"[Koe] Reloaded hotkey config: trigger=%d/%d flag=0x%llx kind=%d",
           newConfig.trigger_key_code,
           newConfig.trigger_alt_key_code,
           (unsigned long long)newConfig.trigger_modifier_flag,
-          newConfig.cancel_key_code,
-          newConfig.cancel_alt_key_code,
-          (unsigned long long)newConfig.cancel_modifier_flag);
+          newConfig.trigger_match_kind);
     [self applyHotkeyConfig:newConfig restartMonitorIfNeeded:YES];
 }
 
@@ -324,17 +362,6 @@
                    dispatch_get_main_queue(), block);
 }
 
-- (void)hotkeyMonitorDidDetectCancel {
-    NSLog(@"[Koe] Cancel detected");
-    [self stopNumberKeyMonitoring];
-    [self cancelPendingSessionEnd];
-    [self.audioCaptureManager stopCapture];
-    [self.rustBridge cancelSession];
-    self.recordingStartTime = nil;
-    [self.statusBarManager updateState:@"idle"];
-    [self.overlayPanel updateState:@"idle"];
-}
-
 #pragma mark - SPRustBridgeDelegate
 
 - (void)rustBridgeDidBecomeReady {
@@ -374,31 +401,18 @@
             [self.clipboardManager scheduleRestoreAfterDelay:1500];
             if (token != self.rustBridge.currentSessionToken) return;
             [self.statusBarManager updateState:@"idle"];
-            // Check if prompt templates are available for rewrite
-            NSArray *templates = [self.rustBridge promptTemplates];
-            NSLog(@"[Koe] Prompt templates: %lu", (unsigned long)templates.count);
-            if (templates.count > 0 && self.lastAsrText.length > 0) {
-                [self.overlayPanel showTemplateButtons:templates];
-                [self startNumberKeyMonitoring];
-            } else {
-                [self.overlayPanel lingerAndDismiss];
-            }
+            [self showPromptTemplateButtonsIfNeededOrDismiss];
         }];
     } else {
         NSLog(@"[Koe] Accessibility not granted — text copied to clipboard only");
         [self.statusBarManager updateState:@"idle"];
-        NSArray *templates = [self.rustBridge promptTemplates];
-        if (templates.count > 0 && self.lastAsrText.length > 0) {
-            [self.overlayPanel showTemplateButtons:templates];
-            [self startNumberKeyMonitoring];
-        } else {
-            [self.overlayPanel lingerAndDismiss];
-        }
+        [self showPromptTemplateButtonsIfNeededOrDismiss];
     }
 }
 
 - (void)rustBridgeDidEncounterError:(NSString *)message {
     if (self.quitting) return;
+    os_log_with_type(OS_LOG_DEFAULT, OS_LOG_TYPE_ERROR, "[Koe] Session error: %{public}@", message ?: @"unknown error");
     NSLog(@"[Koe] Session error: %@", message);
     self.showingError = YES;
     [self.cuePlayer playError];
@@ -461,6 +475,7 @@
 }
 
 - (void)rustBridgeDidReceiveWarning:(NSString *)message {
+    os_log_with_type(OS_LOG_DEFAULT, OS_LOG_TYPE_DEFAULT, "[Koe] Session warning: %{public}@", message ?: @"unknown warning");
     NSLog(@"[Koe] Session warning: %@", message);
     [self sendWarningNotification:message];
 }
@@ -477,6 +492,8 @@
 
 - (void)rustBridgeDidReceiveRewriteText:(NSString *)text {
     NSLog(@"[Koe] Rewrite text received (%lu chars)", (unsigned long)text.length);
+
+    [self.clipboardManager cancelPendingRestore];
 
     // Copy to clipboard (no auto-paste — user decides where to paste)
     [self.clipboardManager writeText:text];
@@ -583,6 +600,11 @@
     NSLog(@"[Koe] Setup wizard saved config, reloading...");
     [self.rustBridge reloadConfig];
 
+    if (![self shouldShowPromptTemplateButtons]) {
+        [self stopNumberKeyMonitoring];
+        [self.overlayPanel hideTemplateButtons];
+    }
+
     // Re-apply hotkey config
     struct SPHotkeyConfig newConfig = sp_core_get_hotkey_config();
     [self applyHotkeyConfig:newConfig restartMonitorIfNeeded:YES];
@@ -594,6 +616,7 @@
 - (void)overlayPanel:(id)panel didSelectTemplateAtIndex:(NSInteger)templateIndex {
     NSLog(@"[Koe] Template selected: index %ld", (long)templateIndex);
     [self stopNumberKeyMonitoring];
+    [self.clipboardManager cancelPendingRestore];
 
     // Show rewriting state
     [self.overlayPanel updateState:@"correcting"];
@@ -608,14 +631,23 @@
 #pragma mark - Number Key Monitoring
 
 - (void)startNumberKeyMonitoring {
-    // Number key handling is done by the SPKeyablePanel (button bar) itself.
-    // It becomes key window and receives keyDown: events directly.
-    // This method is kept for the start/stop logging pattern.
-    NSLog(@"[Koe] Number key monitoring active (via button bar key window)");
+    __weak typeof(self) weakSelf = self;
+    self.hotkeyMonitor.numberKeyHandler = ^BOOL(NSInteger number) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return NO;
+
+        BOOL handled = [strongSelf.overlayPanel handleNumberKey:number];
+        if (handled) {
+            NSLog(@"[Koe] Template shortcut triggered: %ld", (long)number);
+        }
+        return handled;
+    };
+    NSLog(@"[Koe] Template selector visible (global number shortcuts active)");
 }
 
 - (void)stopNumberKeyMonitoring {
-    NSLog(@"[Koe] Number key monitoring stopped");
+    self.hotkeyMonitor.numberKeyHandler = nil;
+    NSLog(@"[Koe] Template selector hidden");
 }
 
 @end

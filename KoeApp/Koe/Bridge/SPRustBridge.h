@@ -76,7 +76,7 @@ typedef NS_ENUM(NSInteger, SPModelVerifyMode) {
 
 // ─── Rewrite / Prompt Templates ───────────────────────────────────
 
-/// Get prompt templates as array of dicts with name, shortcut, system_prompt keys.
+/// Get prompt templates as array of dicts mirroring PromptTemplate in Rust config.
 - (NSArray<NSDictionary *> *)promptTemplates;
 
 /// Save prompt templates from array of dicts. Returns YES on success.

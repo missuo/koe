@@ -27,6 +27,7 @@
 - (void)lingerAndDismiss;
 
 /// Show template selection buttons. Templates is array of dicts with "name" and "shortcut" keys.
+/// Optional "source_index" is preserved and returned to the delegate on selection.
 - (void)showTemplateButtons:(NSArray<NSDictionary *> *)templates;
 
 /// Hide template buttons and return to normal display.

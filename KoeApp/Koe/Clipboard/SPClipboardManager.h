@@ -12,4 +12,7 @@
 /// Will not restore if the clipboard was modified by the user in the meantime.
 - (void)scheduleRestoreAfterDelay:(NSUInteger)delayMs;
 
+/// Cancel any pending delayed restore for the current clipboard write.
+- (void)cancelPendingRestore;
+
 @end

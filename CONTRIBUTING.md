@@ -45,4 +45,5 @@ Scope is auto-detected from file paths (e.g., `asr`, `llm`, `ui`, `config`). Bre
 - Ensure the app still builds (`make build`)
 - Verify hold-to-talk and tap-to-toggle both work
 - Update docs if you changed any user-facing behavior
+- For release-worthy user-facing changes, update both `CHANGELOG.md` and `docs/update-feed.json`
 - See the [Contributing Guide](https://koe.li/docs/contributing) for the full contributor workflow

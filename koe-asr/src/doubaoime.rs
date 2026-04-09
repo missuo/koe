@@ -26,6 +26,7 @@ const SAMPLE_RATE: u32 = 16000;
 const FRAME_DURATION_MS: u32 = 20;
 const SAMPLES_PER_FRAME: usize = (SAMPLE_RATE * FRAME_DURATION_MS / 1000) as usize; // 320
 const BYTES_PER_FRAME: usize = SAMPLES_PER_FRAME * 2; // 640
+const TOKEN_REFRESH_INTERVAL_MS: u64 = 12 * 60 * 60 * 1000;
 
 // ─── Protobuf Encoding/Decoding ────────────────────────────────────
 
@@ -219,6 +220,23 @@ struct DeviceCredentials {
     clientudid: String,
     #[serde(default)]
     token: String,
+    #[serde(default)]
+    token_updated_at_ms: u64,
+}
+
+fn unix_timestamp_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn should_refresh_token(creds: &DeviceCredentials) -> bool {
+    if creds.token.is_empty() || creds.token_updated_at_ms == 0 {
+        return true;
+    }
+
+    unix_timestamp_ms().saturating_sub(creds.token_updated_at_ms) >= TOKEN_REFRESH_INTERVAL_MS
 }
 
 fn generate_cdid() -> String {
@@ -420,6 +438,7 @@ async fn register_device(http: &reqwest::Client) -> Result<DeviceCredentials> {
         openudid,
         clientudid,
         token: String::new(),
+        token_updated_at_ms: 0,
     })
 }
 
@@ -494,23 +513,9 @@ async fn get_asr_token(http: &reqwest::Client, device_id: &str, cdid: &str) -> R
 }
 
 async fn ensure_credentials(credential_path: &Path) -> Result<DeviceCredentials> {
-    // Try loading from cache
-    if let Some(creds) = load_credentials(credential_path) {
-        if !creds.device_id.is_empty() && !creds.token.is_empty() {
-            log::info!(
-                "[DoubaoIME] Using cached credentials (device_id={})",
-                creds.device_id
-            );
-            return Ok(creds);
-        }
-    }
-
     let http = reqwest::Client::new();
-
-    // Check if we have a cached device_id but no token
     let mut creds = if let Some(creds) = load_credentials(credential_path) {
         if !creds.device_id.is_empty() {
-            log::info!("[DoubaoIME] Cached device_id found, refreshing token...");
             creds
         } else {
             register_device(&http).await?
@@ -519,18 +524,44 @@ async fn ensure_credentials(credential_path: &Path) -> Result<DeviceCredentials>
         register_device(&http).await?
     };
 
-    // Get token
-    let token = get_asr_token(&http, &creds.device_id, &creds.cdid).await?;
-    creds.token = token;
+    if !should_refresh_token(&creds) {
+        log::info!(
+            "[DoubaoIME] Using cached credentials (device_id={}, token_age={}s)",
+            creds.device_id,
+            unix_timestamp_ms()
+                .saturating_sub(creds.token_updated_at_ms)
+                / 1000
+        );
+        return Ok(creds);
+    }
 
-    // Save
-    save_credentials(credential_path, &creds)?;
     log::info!(
-        "[DoubaoIME] Credentials saved to {}",
-        credential_path.display()
+        "[DoubaoIME] Refreshing ASR token for device_id={}",
+        creds.device_id
     );
 
-    Ok(creds)
+    match get_asr_token(&http, &creds.device_id, &creds.cdid).await {
+        Ok(token) => {
+            creds.token = token;
+            creds.token_updated_at_ms = unix_timestamp_ms();
+            save_credentials(credential_path, &creds)?;
+            log::info!(
+                "[DoubaoIME] Credentials saved to {}",
+                credential_path.display()
+            );
+            Ok(creds)
+        }
+        Err(err) => {
+            if !creds.token.is_empty() {
+                log::warn!(
+                    "[DoubaoIME] Token refresh failed, falling back to cached token: {err}"
+                );
+                Ok(creds)
+            } else {
+                Err(err)
+            }
+        }
+    }
 }
 
 // ─── Opus Encoder ──────────────────────────────────────────────────

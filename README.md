@@ -14,7 +14,7 @@ I tried nearly every voice input app on the market. They were either paid, ugly,
 
 Koe takes a different approach:
 
-- **Minimal runtime UI.** Koe stays out of the way with a menu bar item, a small floating status pill with native frosted-glass vibrancy during active sessions, and an optional built-in settings window when you actually need to configure it.
+- **Minimal runtime UI.** Koe stays out of the way with a menu bar item, a small floating status pill with native frosted-glass vibrancy during active sessions, optional post-processing template actions above the result bubble, and an optional built-in settings window when you actually need to configure it.
 - **All configuration lives in plain text files** under `~/.koe/`. You can edit them with any text editor, vim, a script, or the built-in settings UI.
 - **Dictionary is a plain `.txt` file.** No need to open an app and add words one by one through a GUI. Just edit `~/.koe/dictionary.txt` — one term per line. You can even use Claude Code or other AI tools to bulk-generate domain-specific terms.
 - **Changes take effect immediately.** Edit any config file and the new settings are used automatically. ASR, LLM, dictionary, and prompt changes apply on the next hotkey press. Hotkey changes are detected within a few seconds. No restart, no reload button.
@@ -25,11 +25,12 @@ Koe takes a different approach:
 
 ## How It Works
 
-1. Press and hold the trigger key (default: **Fn**, configurable) — Koe starts listening
+1. Press the trigger shortcut (default: **Fn**, configurable). In `hold` mode you press-and-hold to record; in `toggle` mode you tap once to start and tap again to stop.
 2. Audio streams in real-time to a cloud ASR service (Doubao/豆包 by ByteDance)
 3. A floating status pill shows real-time interim recognition text as you speak
-4. The ASR transcript is corrected by an LLM — fixing capitalization, punctuation, spacing, and terminology
+4. The overlay stays visible through ASR finalization and LLM correction, so you can see both the final transcript and corrected result
 5. The corrected text is automatically pasted into the active input field
+6. If overlay templates are enabled, you can optionally click a template or press `1-9` to rewrite the result and copy that variant to the clipboard
 
 ASR provider support:
 
@@ -67,10 +68,10 @@ The feed file lives at `docs/update-feed.json` and should contain at least:
 
 ```json
 {
-  "version": "1.0.13",
-  "build": 14,
+  "version": "1.0.14",
+  "build": 15,
   "minimum_system_version": "14.0",
-  "download_url": "https://github.com/missuo/koe/releases/download/v1.0.13/Koe-macOS-arm64.zip"
+  "download_url": "https://github.com/missuo/koe/releases/download/v1.0.14/Koe-macOS-arm64.zip"
 }
 ```
 
@@ -142,9 +143,10 @@ for warning/error notifications and update-related diagnostics.
 All config files live in `~/.koe/` and are auto-generated on first launch. You
 can edit them directly, or use the built-in settings window (Setup Wizard) from
 the menu bar. The settings window includes tabs for ASR, LLM, Controls, Dictionary,
-and Prompt. The Prompt tab edits `system_prompt.txt`; advanced knobs such as
-`user_prompt.txt`, ASR custom `headers`, and `llm.no_reasoning_control` remain
-file-based settings. When a local ASR provider is selected, the ASR tab shows
+System Prompt, Templates, and About. The System Prompt tab edits `system_prompt.txt`;
+the Templates tab manages prompt-template visibility, ordering, and prompts; advanced
+knobs such as `user_prompt.txt`, ASR custom `headers`, and `llm.no_reasoning_control`
+remain file-based settings. When a local ASR provider is selected, the ASR tab shows
 provider-specific controls: model picker with download/delete for MLX and
 Sherpa-ONNX, or language picker with asset status and download for Apple Speech.
 The LLM tab supports both OpenAI-compatible APIs and local MLX models — selecting
@@ -346,13 +348,12 @@ feedback:
 
 ```yaml
 hotkey:
-  # Trigger key for voice input.
+  # Trigger shortcut for voice input.
   # Options: fn | left_option | right_option | left_command | right_command | left_control | right_control
-  # You can also use a raw macOS keycode number such as 96 (F5) or 122 (F1).
+  # You can also use a raw macOS keycode number such as 96 (F5) or 122 (F1),
+  # or a normalized key combo such as "command+shift+49".
   trigger_key: "fn"
-  # Cancel key for aborting the current session.
-  # Must be different from trigger_key. Raw keycodes are also supported here.
-  cancel_key: "left_option"
+  trigger_mode: "hold"  # "hold" | "toggle"
 ```
 
 | Option | Key | Notes |
@@ -365,12 +366,16 @@ hotkey:
 | `left_control` | Left Control | Available on all Mac keyboards |
 | `right_control` | Right Control | Only on full-size/external keyboards |
 
-Hotkey changes take effect automatically within a few seconds. The trigger key
-starts voice input, and the cancel key aborts the current session without output.
-If the configured trigger key and cancel key collide, Koe normalizes them and
-writes the corrected pair back to `config.yaml`. For common raw keycodes, the
-menu bar and Setup Wizard show a friendly label such as `F5` or `Escape` instead
-of only the numeric value.
+Hotkey changes take effect automatically within a few seconds. Koe now uses a
+single trigger shortcut model:
+
+- `hold`: press-and-hold to record, release to stop
+- `toggle`: tap once to start, tap again to stop
+
+You can choose a named modifier key, a raw macOS keycode, or record a custom
+shortcut combination directly in the Controls pane. Recorded combinations are
+normalized in config and shown with friendly labels in the menu bar and settings
+UI instead of raw numeric key values.
 
 #### Dictionary
 
@@ -438,6 +443,37 @@ Available template placeholders in `user_prompt.txt`:
 The default prompts are tuned for software developers working in mixed Chinese-English, but you can adapt them for any language or domain.
 If either prompt file is missing or empty, Koe falls back to the built-in defaults
 compiled into `koe-core`.
+
+### Prompt Templates
+
+Koe can optionally keep the overlay visible after the default correction and show
+rewrite templates above the result bubble. The Templates pane lets you add, edit,
+remove, reorder, and enable or disable up to 9 templates.
+
+```yaml
+llm:
+  prompt_templates_enabled: true
+
+prompt_templates:
+  - name: "翻译英文"
+    enabled: true
+    shortcut: 1
+    system_prompt: "将用户的语音输入翻译为流畅的英文。保持原意，不要添加额外内容。只输出翻译结果。"
+
+  - name: "邮件润色"
+    enabled: true
+    shortcut: 2
+    system_prompt: "将用户的语音输入整理为简洁、礼貌、自然的英文邮件内容。只输出最终邮件正文。"
+```
+
+- `llm.prompt_templates_enabled` is the global switch for showing template buttons in the overlay.
+- `enabled` controls whether a specific template is shown.
+- `shortcut` is the contextual overlay slot (`1-9`) after reordering.
+- `system_prompt` and `system_prompt_path` are mutually exclusive.
+
+After the normal correction is pasted, you can hover or click a template button,
+or press `1-9`, to run a second-pass rewrite. Rewrite results are copied to the
+clipboard instead of being auto-pasted, so you can decide whether to use them.
 
 ## Usage Statistics
 
@@ -671,6 +707,11 @@ All providers:
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions, PR guidelines, and the full contributor workflow.
+
+## Contributors
+
+- Vincent Yang — creator and maintainer
+- luolei — contributor for the 1.0.14 release cycle, including prompt templates, shortcut workflow, and settings/overlay interaction polish
 
 ## License
 

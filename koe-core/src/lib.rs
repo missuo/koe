@@ -35,6 +35,7 @@ use koe_asr::{MlxConfig, MlxProvider};
 use koe_asr::{SherpaOnnxConfig, SherpaOnnxProvider};
 use reqwest::Client;
 
+use std::collections::HashSet;
 use std::ffi::c_char;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -546,26 +547,38 @@ pub extern "C" fn sp_core_session_cancel() -> i32 {
     0
 }
 
+fn validate_prompt_templates(templates: &[config::PromptTemplate]) -> std::result::Result<(), String> {
+    if templates.len() > 9 {
+        return Err("Prompt templates are limited to 9 entries.".into());
+    }
+
+    let mut used_shortcuts = HashSet::new();
+    for template in templates {
+        if !(1..=9).contains(&template.shortcut) {
+            return Err(format!(
+                "Template '{}' uses invalid shortcut {}. Shortcuts must be between 1 and 9.",
+                template.name, template.shortcut
+            ));
+        }
+        if !used_shortcuts.insert(template.shortcut) {
+            return Err(format!(
+                "Duplicate template shortcut {} detected. Each template needs a unique shortcut.",
+                template.shortcut
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 /// Return prompt templates as JSON array.
-/// Each entry: {"name":"...","shortcut":N}
+/// Each entry mirrors config::PromptTemplate for lossless round-tripping.
 /// Caller must free with sp_core_free_string().
 #[no_mangle]
 pub extern "C" fn sp_core_get_prompt_templates_json() -> *mut c_char {
     let global = CORE.lock().unwrap();
     if let Some(ref core) = *global {
-        let templates: Vec<serde_json::Value> = core
-            .config
-            .prompt_templates
-            .iter()
-            .map(|t| {
-                serde_json::json!({
-                    "name": t.name,
-                    "shortcut": t.shortcut,
-                    "system_prompt": t.system_prompt.as_deref().unwrap_or(""),
-                })
-            })
-            .collect();
-        let json = serde_json::to_string(&templates).unwrap_or_else(|_| "[]".into());
+        let json = serde_json::to_string(&core.config.prompt_templates).unwrap_or_else(|_| "[]".into());
         CString::new(json).unwrap_or_default().into_raw()
     } else {
         CString::new("[]").unwrap_or_default().into_raw()
@@ -592,6 +605,10 @@ pub unsafe extern "C" fn sp_core_set_prompt_templates_json(json_str: *const c_ch
             return -1;
         }
     };
+    if let Err(message) = validate_prompt_templates(&templates) {
+        log::error!("sp_core_set_prompt_templates_json: validation error: {message}");
+        return -1;
+    }
 
     // Update config file
     let path = config::config_path();
@@ -796,7 +813,7 @@ pub extern "C" fn sp_core_get_feedback_config() -> SPFeedbackConfig {
 }
 
 /// Query current hotkey configuration.
-/// Returns key codes and modifier flags for the configured trigger/cancel keys.
+/// Returns key codes and modifier flags for the configured trigger key.
 #[no_mangle]
 pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
     let global = CORE.lock().unwrap();
@@ -804,12 +821,10 @@ pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
         let params = core.config.hotkey.resolve();
         let trigger_mode: u8 = if core.config.hotkey.trigger_mode == "toggle" { 1 } else { 0 };
         SPHotkeyConfig {
-            trigger_key_code: params.trigger.key_code,
-            trigger_alt_key_code: params.trigger.alt_key_code,
-            trigger_modifier_flag: params.trigger.modifier_flag,
-            cancel_key_code: params.cancel.key_code,
-            cancel_alt_key_code: params.cancel.alt_key_code,
-            cancel_modifier_flag: params.cancel.modifier_flag,
+            trigger_key_code: params.key_code,
+            trigger_alt_key_code: params.alt_key_code,
+            trigger_modifier_flag: params.modifier_flag,
+            trigger_match_kind: params.match_kind as u8,
             trigger_mode,
         }
     } else {
@@ -817,9 +832,7 @@ pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
             trigger_key_code: 63,
             trigger_alt_key_code: 179,
             trigger_modifier_flag: 0x00800000,
-            cancel_key_code: 58,
-            cancel_alt_key_code: 0,
-            cancel_modifier_flag: 0x00000020,
+            trigger_match_kind: 0,
             trigger_mode: 0,
         }
     }
@@ -1395,19 +1408,8 @@ pub unsafe extern "C" fn sp_config_set(key_path: *const c_char, value: *const c_
 #[no_mangle]
 pub extern "C" fn sp_config_resolved_trigger_key() -> *mut c_char {
     let key = match config::load_config() {
-        Ok(cfg) => cfg.hotkey.normalized_keys().0,
+        Ok(cfg) => cfg.hotkey.normalized_trigger_key(),
         Err(_) => "fn".into(),
-    };
-    CString::new(key).unwrap_or_default().into_raw()
-}
-
-/// Returns the resolved cancel hotkey name after normalization and dedup.
-/// The caller must free the returned string with sp_core_free_string().
-#[no_mangle]
-pub extern "C" fn sp_config_resolved_cancel_key() -> *mut c_char {
-    let key = match config::load_config() {
-        Ok(cfg) => cfg.hotkey.normalized_keys().1,
-        Err(_) => "left_option".into(),
     };
     CString::new(key).unwrap_or_default().into_raw()
 }
@@ -1454,6 +1456,7 @@ pub unsafe extern "C" fn sp_llm_test(
     // Build an LlmSection that merges UI-editable fields with disk config
     let llm_cfg = config::LlmSection {
         enabled: true,
+        prompt_templates_enabled: cfg.llm.prompt_templates_enabled,
         provider: "openai".into(),
         base_url,
         api_key,

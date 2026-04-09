@@ -4,6 +4,7 @@
 #import "SPHistoryManager.h"
 #import "koe_core.h"
 #import <Cocoa/Cocoa.h>
+#import <Carbon/Carbon.h>
 #import <ServiceManagement/ServiceManagement.h>
 #import <UserNotifications/UserNotifications.h>
 
@@ -69,8 +70,115 @@ static NSString *displayNameForKeycode(int keycode) {
         case 124: return @"Right Arrow";
         case 125: return @"Down Arrow";
         case 126: return @"Up Arrow";
-        default:  return [NSString stringWithFormat:@"Key %d", keycode];
+        default: break;
     }
+
+    TISInputSourceRef inputSource = TISCopyCurrentKeyboardLayoutInputSource();
+    if (inputSource) {
+        CFDataRef layoutData = TISGetInputSourceProperty(inputSource, kTISPropertyUnicodeKeyLayoutData);
+        if (layoutData) {
+            const UCKeyboardLayout *keyboardLayout = (const UCKeyboardLayout *)CFDataGetBytePtr(layoutData);
+            if (keyboardLayout) {
+                UInt32 deadKeyState = 0;
+                UniChar chars[4];
+                UniCharCount length = 0;
+                OSStatus status = UCKeyTranslate(keyboardLayout,
+                                                 (UInt16)keycode,
+                                                 kUCKeyActionDisplay,
+                                                 0,
+                                                 LMGetKbdType(),
+                                                 kUCKeyTranslateNoDeadKeysBit,
+                                                 &deadKeyState,
+                                                 sizeof(chars) / sizeof(chars[0]),
+                                                 &length,
+                                                 chars);
+                if (status == noErr && length > 0) {
+                    NSString *result = [[NSString stringWithCharacters:chars length:(NSUInteger)length]
+                        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                    CFRelease(inputSource);
+                    if (result.length > 0) {
+                        return result.uppercaseString;
+                    }
+                    return [NSString stringWithFormat:@"Key %d", keycode];
+                }
+            }
+        }
+        CFRelease(inputSource);
+    }
+
+    return [NSString stringWithFormat:@"Key %d", keycode];
+}
+
+static BOOL isNumericHotkeyValue(NSString *value) {
+    if (value.length == 0) return NO;
+    NSScanner *scanner = [NSScanner scannerWithString:value];
+    int keycode = 0;
+    return [scanner scanInt:&keycode] && [scanner isAtEnd];
+}
+
+static NSDictionary<NSString *, NSString *> *comboModifierDisplayNames(void) {
+    static NSDictionary<NSString *, NSString *> *displayNames;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        displayNames = @{
+            @"command": @"Command",
+            @"option": @"Option",
+            @"control": @"Control",
+            @"shift": @"Shift",
+            @"fn": @"Fn",
+        };
+    });
+    return displayNames;
+}
+
+static NSArray<NSString *> *comboModifierOrder(void) {
+    return @[@"command", @"option", @"control", @"shift", @"fn"];
+}
+
+static NSString *normalizedHotkeyComboValue(NSString *value) {
+    if (![value containsString:@"+"]) return nil;
+
+    NSMutableOrderedSet<NSString *> *modifiers = [NSMutableOrderedSet orderedSet];
+    NSString *keyToken = nil;
+
+    for (NSString *rawPart in [value componentsSeparatedByString:@"+"]) {
+        NSString *part = [[rawPart stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+        if (part.length == 0) return nil;
+
+        NSString *normalizedModifier = nil;
+        if ([part isEqualToString:@"cmd"] || [part isEqualToString:@"command"]) {
+            normalizedModifier = @"command";
+        } else if ([part isEqualToString:@"alt"] || [part isEqualToString:@"option"]) {
+            normalizedModifier = @"option";
+        } else if ([part isEqualToString:@"ctrl"] || [part isEqualToString:@"control"]) {
+            normalizedModifier = @"control";
+        } else if ([part isEqualToString:@"shift"]) {
+            normalizedModifier = @"shift";
+        } else if ([part isEqualToString:@"fn"] || [part isEqualToString:@"function"] || [part isEqualToString:@"globe"]) {
+            normalizedModifier = @"fn";
+        }
+
+        if (normalizedModifier) {
+            [modifiers addObject:normalizedModifier];
+            continue;
+        }
+
+        if (keyToken != nil || !isNumericHotkeyValue(part)) {
+            return nil;
+        }
+        keyToken = [NSString stringWithFormat:@"%ld", (long)part.integerValue];
+    }
+
+    if (modifiers.count == 0 || keyToken.length == 0) return nil;
+
+    NSMutableArray<NSString *> *parts = [NSMutableArray array];
+    for (NSString *modifier in comboModifierOrder()) {
+        if ([modifiers containsObject:modifier]) {
+            [parts addObject:modifier];
+        }
+    }
+    [parts addObject:keyToken];
+    return [parts componentsJoinedByString:@"+"];
 }
 
 static NSString *displayNameForHotkeyValue(NSString *value) {
@@ -95,13 +203,25 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     if ([value isEqualToString:@"fn"]) {
         return @"Fn (Globe)";
     }
-    // Numeric keycode: show friendly name or "Keycode XX"
-    NSScanner *scanner = [NSScanner scannerWithString:value];
-    int keycode;
-    if ([scanner scanInt:&keycode] && [scanner isAtEnd]) {
+    NSString *normalizedCombo = normalizedHotkeyComboValue(value);
+    if (normalizedCombo.length > 0) {
+        NSMutableArray<NSString *> *parts = [NSMutableArray array];
+        NSArray<NSString *> *tokens = [normalizedCombo componentsSeparatedByString:@"+"];
+        NSDictionary<NSString *, NSString *> *displayNames = comboModifierDisplayNames();
+        for (NSInteger idx = 0; idx < (NSInteger)tokens.count; idx++) {
+            NSString *token = tokens[idx];
+            if (idx == (NSInteger)tokens.count - 1) {
+                [parts addObject:displayNameForKeycode(token.intValue)];
+            } else {
+                [parts addObject:displayNames[token] ?: token.capitalizedString];
+            }
+        }
+        return [parts componentsJoinedByString:@" + "];
+    }
+    if (isNumericHotkeyValue(value)) {
+        int keycode = value.intValue;
         return displayNameForKeycode(keycode);
     }
-    // Unknown string value: show as-is
     return value;
 }
 
@@ -143,7 +263,7 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     self.statusMenuItem.enabled = NO;
     [menu addItem:self.statusMenuItem];
 
-    self.hotkeyDisplayItem = [[NSMenuItem alloc] initWithTitle:@"Hotkeys: Fn / Left Option"
+    self.hotkeyDisplayItem = [[NSMenuItem alloc] initWithTitle:@"Shortcut: Fn"
                                                         action:nil
                                                  keyEquivalent:@""];
     self.hotkeyDisplayItem.enabled = NO;
@@ -384,15 +504,11 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
 
 - (void)refreshHotkeyDisplay {
     char *t = sp_config_resolved_trigger_key();
-    char *c = sp_config_resolved_cancel_key();
     NSString *triggerKey = t ? @(t) : @"fn";
-    NSString *cancelKey  = c ? @(c) : @"left_option";
     sp_core_free_string(t);
-    sp_core_free_string(c);
 
-    self.hotkeyDisplayItem.title = [NSString stringWithFormat:@"Hotkeys: %@ / %@",
-                                    displayNameForHotkeyValue(triggerKey),
-                                    displayNameForHotkeyValue(cancelKey)];
+    self.hotkeyDisplayItem.title = [NSString stringWithFormat:@"Shortcut: %@",
+                                    displayNameForHotkeyValue(triggerKey)];
 }
 
 #pragma mark - Microphone Selection

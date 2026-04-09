@@ -169,14 +169,12 @@ pub struct SPHotkeyConfig {
     pub trigger_key_code: u16,
     /// Trigger hotkey alternative key code (e.g. 179 for Globe key), 0 if none
     pub trigger_alt_key_code: u16,
-    /// Trigger hotkey modifier flag (e.g. 0x800000 for Fn)
+    /// Trigger hotkey modifier flag. For modifier-only hotkeys this is the
+    /// observed key-state flag; for keyDown hotkeys this is the required
+    /// generic modifier mask.
     pub trigger_modifier_flag: u64,
-    /// Cancel hotkey primary key code
-    pub cancel_key_code: u16,
-    /// Cancel hotkey alternative key code, 0 if none
-    pub cancel_alt_key_code: u16,
-    /// Cancel hotkey modifier flag
-    pub cancel_modifier_flag: u64,
+    /// Trigger hotkey match kind: 0 = modifier-only, 1 = keyDown/keyUp.
+    pub trigger_match_kind: u8,
     /// Trigger mode: 0 = hold (press-and-hold), 1 = toggle (tap to start/stop)
     pub trigger_mode: u8,
 }

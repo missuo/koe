@@ -6,8 +6,12 @@
 - (void)hotkeyMonitorDidDetectHoldEnd;
 - (void)hotkeyMonitorDidDetectTapStart;
 - (void)hotkeyMonitorDidDetectTapEnd;
-- (void)hotkeyMonitorDidDetectCancel;
 @end
+
+typedef NS_ENUM(uint8_t, SPHotkeyMatchKind) {
+    SPHotkeyMatchKindModifierOnly = 0,
+    SPHotkeyMatchKindKeyDown = 1,
+};
 
 @interface SPHotkeyMonitor : NSObject
 
@@ -26,14 +30,8 @@
 /// Modifier flag to check for key state (default: 0x800000 = NSEventModifierFlagFunction)
 @property (nonatomic, assign) NSUInteger targetModifierFlag;
 
-/// Primary key code for the cancel hotkey.
-@property (nonatomic, assign) NSInteger cancelKeyCode;
-
-/// Alternative key code for the cancel hotkey, 0 to disable.
-@property (nonatomic, assign) NSInteger cancelAltKeyCode;
-
-/// Modifier flag to check for cancel key state.
-@property (nonatomic, assign) NSUInteger cancelModifierFlag;
+/// How the trigger hotkey should be matched.
+@property (nonatomic, assign) uint8_t targetMatchKind;
 
 - (instancetype)initWithDelegate:(id<SPHotkeyMonitorDelegate>)delegate;
 - (void)start;
@@ -46,9 +44,8 @@
 /// terminates a recording session outside the normal hotkey flow.
 - (void)resetToIdle;
 
-/// Optional block called on the main thread when a number key (1-9) is pressed.
-/// Set to non-nil to enable number key forwarding via the existing CGEventTap.
-/// The block receives the number (1-9). Set to nil to disable.
-@property (nonatomic, copy) void (^numberKeyHandler)(NSInteger number);
+/// Optional block called when a number key (1-9) is pressed.
+/// Return YES to consume the key event so it does not continue to the target app.
+@property (nonatomic, copy) BOOL (^numberKeyHandler)(NSInteger number);
 
 @end

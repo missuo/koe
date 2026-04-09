@@ -31,6 +31,9 @@ static const NSTimeInterval kAnimInterval      = 1.0 / 30.0;
 static const NSTimeInterval kFadeInDuration    = 0.2;
 static const NSTimeInterval kFadeOutDuration   = 0.3;
 static const NSTimeInterval kResizeDuration    = 0.15;
+static const NSTimeInterval kMinLingerDuration = 0.45;
+static const NSTimeInterval kMaxLingerDuration = 1.2;
+static const NSTimeInterval kTemplateLingerDuration = 3.0;
 
 // ── Animation mode ───────────────────────────────────────
 typedef NS_ENUM(NSInteger, SPOverlayMode) {
@@ -64,6 +67,112 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     }
     [super keyDown:event];
 }
+@end
+
+// ── Hover-aware effect view ──────────────────────────────
+
+@interface SPHoverEffectView : NSVisualEffectView
+@property (nonatomic, copy) void (^hoverChangedHandler)(BOOL hovering);
+@end
+
+@implementation SPHoverEffectView {
+    NSTrackingArea *_trackingArea;
+}
+
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+
+    if (_trackingArea) {
+        [self removeTrackingArea:_trackingArea];
+        _trackingArea = nil;
+    }
+
+    _trackingArea = [[NSTrackingArea alloc] initWithRect:NSZeroRect
+                                                 options:NSTrackingMouseEnteredAndExited |
+                                                         NSTrackingActiveAlways |
+                                                         NSTrackingInVisibleRect
+                                                   owner:self
+                                                userInfo:nil];
+    [self addTrackingArea:_trackingArea];
+}
+
+- (void)mouseEntered:(NSEvent *)event {
+    if (self.hoverChangedHandler) {
+        self.hoverChangedHandler(YES);
+    }
+}
+
+- (void)mouseExited:(NSEvent *)event {
+    if (self.hoverChangedHandler) {
+        self.hoverChangedHandler(NO);
+    }
+}
+
+@end
+
+// ── Hover-aware template button ──────────────────────────
+
+@interface SPTemplateButton : NSButton
+@property (nonatomic, assign, getter=isHovering) BOOL hovering;
+@property (nonatomic, assign, getter=isEmphasized) BOOL emphasized;
+- (void)applyCurrentAppearance;
+@end
+
+@implementation SPTemplateButton {
+    NSTrackingArea *_trackingArea;
+}
+
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+
+    if (_trackingArea) {
+        [self removeTrackingArea:_trackingArea];
+        _trackingArea = nil;
+    }
+
+    _trackingArea = [[NSTrackingArea alloc] initWithRect:NSZeroRect
+                                                 options:NSTrackingMouseEnteredAndExited |
+                                                         NSTrackingActiveAlways |
+                                                         NSTrackingInVisibleRect
+                                                   owner:self
+                                                userInfo:nil];
+    [self addTrackingArea:_trackingArea];
+}
+
+- (void)mouseEntered:(NSEvent *)event {
+    self.hovering = YES;
+    [self applyCurrentAppearance];
+}
+
+- (void)mouseExited:(NSEvent *)event {
+    self.hovering = NO;
+    [self applyCurrentAppearance];
+}
+
+- (void)setEmphasized:(BOOL)emphasized {
+    _emphasized = emphasized;
+    [self applyCurrentAppearance];
+}
+
+- (void)applyCurrentAppearance {
+    if (!self.layer) return;
+
+    CGFloat backgroundAlpha = 0.1;
+    CGFloat textAlpha = 0.85;
+    CGFloat borderAlpha = 0.0;
+
+    if (self.isEmphasized || self.isHovering) {
+        backgroundAlpha = 0.3;
+        textAlpha = 1.0;
+        borderAlpha = 0.2;
+    }
+
+    self.layer.backgroundColor = [[NSColor colorWithWhite:1.0 alpha:backgroundAlpha] CGColor];
+    self.layer.borderWidth = borderAlpha > 0 ? 1.0 : 0.0;
+    self.layer.borderColor = [[NSColor colorWithWhite:1.0 alpha:borderAlpha] CGColor];
+    self.contentTintColor = [NSColor colorWithWhite:1.0 alpha:textAlpha];
+}
+
 @end
 
 // ── Content view ─────────────────────────────────────────
@@ -242,7 +351,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @interface SPOverlayPanel ()
 
 @property (nonatomic, strong) NSPanel *panel;
-@property (nonatomic, strong) NSVisualEffectView *effectView;
+@property (nonatomic, strong) SPHoverEffectView *effectView;
 @property (nonatomic, strong) SPOverlayContentView *contentView;
 @property (nonatomic, strong) NSTimer *animationTimer;
 @property (nonatomic, strong) NSTimer *lingerTimer;
@@ -250,9 +359,14 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, assign) CGFloat sessionMaxWidth;
 @property (nonatomic, assign) CGFloat sessionMaxHeight;
 @property (nonatomic, strong) NSArray<NSDictionary *> *templateButtons;
+@property (nonatomic, strong) NSArray<NSNumber *> *templateShortcutNumbers;
 @property (nonatomic, assign) BOOL showingTemplates;
 @property (nonatomic, strong) SPKeyablePanel *buttonBarPanel;
 @property (nonatomic, strong) NSMutableArray<NSButton *> *templateButtonViews;
+@property (nonatomic, assign) BOOL mainPanelHovered;
+@property (nonatomic, assign) BOOL templateBarHovered;
+@property (nonatomic, assign) NSTimeInterval remainingLingerDuration;
+@property (nonatomic, strong) NSDate *lingerDeadline;
 
 @end
 
@@ -286,13 +400,18 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     panel.alphaValue = 0.0;
 
     // Visual effect background (HUD material for contrast on any desktop)
-    NSVisualEffectView *effectView = [[NSVisualEffectView alloc] initWithFrame:rect];
+    SPHoverEffectView *effectView = [[SPHoverEffectView alloc] initWithFrame:rect];
     effectView.material     = NSVisualEffectMaterialHUDWindow;
     effectView.blendingMode = NSVisualEffectBlendingModeBehindWindow;
     effectView.state        = NSVisualEffectStateActive;
     effectView.appearance   = [NSAppearance appearanceNamed:NSAppearanceNameVibrantDark];
     effectView.wantsLayer   = YES;
     effectView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+    __weak typeof(self) weakSelf = self;
+    effectView.hoverChangedHandler = ^(BOOL hovering) {
+        [weakSelf setMainPanelHovered:hovering];
+    };
 
     // Pill shape via maskImage (Apple-recommended for shaping NSVisualEffectView)
     CGFloat diameter = kPillCornerRadius * 2;
@@ -328,12 +447,88 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     self.panel = panel;
 }
 
+- (void)setMainPanelInteractive:(BOOL)interactive {
+    self.panel.ignoresMouseEvents = !interactive;
+}
+
+- (BOOL)isHoveringOverlay {
+    return self.mainPanelHovered || self.templateBarHovered;
+}
+
+- (void)clearLingerTimer {
+    [self.lingerTimer invalidate];
+    self.lingerTimer = nil;
+    self.lingerDeadline = nil;
+    self.remainingLingerDuration = 0;
+}
+
+- (void)updateLingerTimerForHoverState {
+    if (self.showingTemplates == NO && self.currentState != nil &&
+        ([self.currentState isEqualToString:@"idle"] || [self.currentState isEqualToString:@"completed"])) {
+        return;
+    }
+
+    if ([self isHoveringOverlay]) {
+        if (self.lingerTimer && self.lingerDeadline) {
+            self.remainingLingerDuration = fmax(0.1, [self.lingerDeadline timeIntervalSinceNow]);
+            [self.lingerTimer invalidate];
+            self.lingerTimer = nil;
+            self.lingerDeadline = nil;
+        }
+        return;
+    }
+
+    if (!self.lingerTimer && self.remainingLingerDuration > 0) {
+        [self scheduleDismissAfter:self.remainingLingerDuration];
+    }
+}
+
+- (void)setMainPanelHovered:(BOOL)mainPanelHovered {
+    _mainPanelHovered = mainPanelHovered;
+    [self updateLingerTimerForHoverState];
+}
+
+- (void)setTemplateBarHovered:(BOOL)templateBarHovered {
+    _templateBarHovered = templateBarHovered;
+    [self updateLingerTimerForHoverState];
+}
+
+- (void)dismissToIdle {
+    [self clearLingerTimer];
+    self.sessionMaxWidth = 0;
+    self.sessionMaxHeight = 0;
+    self.currentState = @"idle";
+    [self hide];
+}
+
+- (void)scheduleDismissAfter:(NSTimeInterval)duration {
+    [self.lingerTimer invalidate];
+    self.lingerTimer = nil;
+
+    self.remainingLingerDuration = duration;
+    self.lingerDeadline = [NSDate dateWithTimeIntervalSinceNow:duration];
+
+    __weak typeof(self) weakSelf = self;
+    self.lingerTimer = [NSTimer scheduledTimerWithTimeInterval:duration
+                                                       repeats:NO
+                                                         block:^(NSTimer *timer) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf.lingerTimer = nil;
+        strongSelf.lingerDeadline = nil;
+        strongSelf.remainingLingerDuration = 0;
+        [strongSelf dismissToIdle];
+    }];
+}
+
 #pragma mark - Public
 
 - (void)updateState:(NSString *)state {
     // Cancel any pending linger dismiss from a previous session
-    [self.lingerTimer invalidate];
-    self.lingerTimer = nil;
+    [self clearLingerTimer];
+    [self setMainPanelInteractive:NO];
+    self.mainPanelHovered = NO;
+    self.templateBarHovered = NO;
 
     self.currentState = state;
     [self stopAnimation];
@@ -405,41 +600,68 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
 - (void)updateDisplayText:(NSString *)text {
     self.contentView.interimText = text;
+    [self setMainPanelInteractive:YES];
     [self resizeAndCenterAnimated:YES];
     [self.contentView setNeedsDisplay:YES];
 }
 
 - (void)lingerAndDismiss {
-    [self.lingerTimer invalidate];
-    self.lingerTimer = nil;
+    [self clearLingerTimer];
+    [self setMainPanelInteractive:YES];
 
-    // Dynamic linger: clamp(charCount * 0.03, 0.8, 2.5)
+    // Keep the confirmation short by default, but allow hover to pin it.
     NSString *displayText = self.contentView.interimText ?: self.contentView.statusText ?: @"";
     NSUInteger charCount = displayText.length;
-    NSTimeInterval linger = fmin(fmax(charCount * 0.03, 0.8), 2.5);
+    NSTimeInterval linger = fmin(fmax(charCount * 0.015, kMinLingerDuration), kMaxLingerDuration);
+    self.remainingLingerDuration = linger;
+    if (![self isHoveringOverlay]) {
+        [self scheduleDismissAfter:linger];
+    }
+}
 
-    self.lingerTimer = [NSTimer scheduledTimerWithTimeInterval:linger
-                                                      repeats:NO
-                                                        block:^(NSTimer *timer) {
-        self.lingerTimer = nil;
-        self.sessionMaxWidth = 0;
-        self.sessionMaxHeight = 0;
-        [self hide];
-        self.currentState = @"idle";
-    }];
+- (NSArray<NSNumber *> *)resolvedShortcutNumbersForTemplates:(NSArray<NSDictionary *> *)templates {
+    NSMutableArray<NSNumber *> *resolved = [NSMutableArray arrayWithCapacity:templates.count];
+    NSMutableSet<NSNumber *> *used = [NSMutableSet set];
+
+    for (NSDictionary *tmpl in templates) {
+        NSNumber *shortcut = [tmpl[@"shortcut"] isKindOfClass:[NSNumber class]] ? tmpl[@"shortcut"] : nil;
+        NSInteger value = shortcut.integerValue;
+        if (shortcut && value >= 1 && value <= 9 && ![used containsObject:shortcut]) {
+            [resolved addObject:@(value)];
+            [used addObject:@(value)];
+        } else {
+            [resolved addObject:@0];
+        }
+    }
+
+    NSInteger nextShortcut = 1;
+    for (NSUInteger i = 0; i < resolved.count; i++) {
+        if (resolved[i].integerValue > 0) continue;
+        while (nextShortcut <= 9 && [used containsObject:@(nextShortcut)]) {
+            nextShortcut += 1;
+        }
+        if (nextShortcut > 9) break;
+        resolved[i] = @(nextShortcut);
+        [used addObject:@(nextShortcut)];
+    }
+
+    return resolved;
 }
 
 - (void)showTemplateButtons:(NSArray<NSDictionary *> *)templates {
     if (templates.count == 0) return;
     self.templateButtons = templates;
+    self.templateShortcutNumbers = [self resolvedShortcutNumbersForTemplates:templates];
     self.showingTemplates = YES;
+    self.templateBarHovered = NO;
+    [self setMainPanelInteractive:YES];
 
     // Remove old button bar
     [self.buttonBarPanel orderOut:nil];
     self.buttonBarPanel = nil;
     self.templateButtonViews = nil;
 
-    // Calculate button sizes — only show name, no shortcut number
+    // Calculate button sizes using only the template label.
     CGFloat btnH = 26;
     CGFloat btnSpacing = 8;
     CGFloat barPad = 6;
@@ -449,7 +671,8 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
     CGFloat totalW = 0;
     NSMutableArray<NSNumber *> *widths = [NSMutableArray array];
-    for (NSDictionary *tmpl in templates) {
+    for (NSUInteger i = 0; i < templates.count; i++) {
+        NSDictionary *tmpl = templates[i];
         NSString *label = tmpl[@"name"] ?: @"";
         CGFloat w = [label sizeWithAttributes:attrs].width + 24;
         w = fmax(w, 60); // minimum button width
@@ -475,12 +698,16 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     bar.hidesOnDeactivate = NO;
 
     // Background with vibrancy
-    NSVisualEffectView *bgView = [[NSVisualEffectView alloc] initWithFrame:NSMakeRect(0, 0, totalW, barH)];
+    SPHoverEffectView *bgView = [[SPHoverEffectView alloc] initWithFrame:NSMakeRect(0, 0, totalW, barH)];
     bgView.material = NSVisualEffectMaterialHUDWindow;
     bgView.blendingMode = NSVisualEffectBlendingModeBehindWindow;
     bgView.state = NSVisualEffectStateActive;
     bgView.appearance = [NSAppearance appearanceNamed:NSAppearanceNameVibrantDark];
     bgView.wantsLayer = YES;
+    __weak typeof(self) weakSelf = self;
+    bgView.hoverChangedHandler = ^(BOOL hovering) {
+        [weakSelf setTemplateBarHovered:hovering];
+    };
 
     // Pill shape mask for button bar
     CGFloat cornerR = barH / 2.0;
@@ -518,18 +745,17 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         NSString *label = tmpl[@"name"] ?: @"";
         CGFloat w = [widths[i] floatValue];
 
-        NSButton *btn = [[NSButton alloc] initWithFrame:NSMakeRect(x, barPad, w, btnH)];
+        SPTemplateButton *btn = [[SPTemplateButton alloc] initWithFrame:NSMakeRect(x, barPad, w, btnH)];
         btn.title = label;
         btn.bordered = NO;
         btn.focusRingType = NSFocusRingTypeNone;
         btn.wantsLayer = YES;
         btn.layer.cornerRadius = btnH / 2.0;
-        btn.layer.backgroundColor = [[NSColor colorWithWhite:1.0 alpha:0.1] CGColor];
         btn.font = [NSFont systemFontOfSize:11 weight:NSFontWeightMedium];
-        btn.contentTintColor = [NSColor colorWithWhite:1.0 alpha:0.85];
         btn.tag = (NSInteger)i;
         btn.target = self;
         btn.action = @selector(templateButtonClicked:);
+        [btn applyCurrentAppearance];
         [bgView addSubview:btn];
         [self.templateButtonViews addObject:btn];
 
@@ -552,30 +778,17 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
     self.buttonBarPanel = bar;
 
-    // Set up keyboard handler for number keys
-    __weak typeof(self) weakSelf = self;
+    // Set up keyboard handler for future consumers that choose to focus the bar explicitly.
     bar.keyHandler = ^(NSInteger number) {
         [weakSelf handleNumberKey:number];
     };
 
-    // Make the button bar the key window so it receives keyboard events.
-    // NSNonactivatingPanel + canBecomeKeyWindow = receives keys without
-    // stealing focus from the user's frontmost app.
-    [bar makeKeyAndOrderFront:nil];
-
-    // Extend linger time when templates are showing
-    [self.lingerTimer invalidate];
-    self.lingerTimer = nil;
-    self.lingerTimer = [NSTimer scheduledTimerWithTimeInterval:5.0
-                                                      repeats:NO
-                                                        block:^(NSTimer *timer) {
-        self.lingerTimer = nil;
-        [self hideTemplateButtons];
-        self.sessionMaxWidth = 0;
-        self.sessionMaxHeight = 0;
-        [self hide];
-        self.currentState = @"idle";
-    }];
+    // Keep the template bar around a bit longer, and pause auto-dismiss while hovered.
+    [self clearLingerTimer];
+    self.remainingLingerDuration = kTemplateLingerDuration;
+    if (![self isHoveringOverlay]) {
+        [self scheduleDismissAfter:kTemplateLingerDuration];
+    }
 }
 
 - (void)templateButtonClicked:(NSButton *)sender {
@@ -586,7 +799,9 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 - (void)hideTemplateButtons {
     self.showingTemplates = NO;
     self.templateButtons = nil;
+    self.templateShortcutNumbers = nil;
     self.templateButtonViews = nil;
+    self.templateBarHovered = NO;
     if (self.buttonBarPanel) {
         NSPanel *barToHide = self.buttonBarPanel;
         self.buttonBarPanel = nil;
@@ -602,9 +817,8 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 - (BOOL)handleNumberKey:(NSInteger)number {
     if (!self.showingTemplates || !self.templateButtons) return NO;
     for (NSUInteger i = 0; i < self.templateButtons.count; i++) {
-        NSDictionary *tmpl = self.templateButtons[i];
-        NSNumber *shortcut = tmpl[@"shortcut"];
-        if (shortcut && shortcut.integerValue == number) {
+        NSInteger shortcut = i < self.templateShortcutNumbers.count ? self.templateShortcutNumbers[i].integerValue : 0;
+        if (shortcut == number) {
             [self highlightButtonAtIndex:(NSInteger)i thenDismiss:YES];
             return YES;
         }
@@ -617,13 +831,19 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     if (index < 0 || index >= (NSInteger)self.templateButtonViews.count) return;
 
     NSButton *btn = self.templateButtonViews[index];
-    NSInteger templateIndex = index;
+    NSDictionary *templateData = index < (NSInteger)self.templateButtons.count ? self.templateButtons[index] : nil;
+    NSNumber *sourceIndex = [templateData[@"source_index"] isKindOfClass:[NSNumber class]] ? templateData[@"source_index"] : nil;
+    NSInteger templateIndex = sourceIndex != nil ? sourceIndex.integerValue : index;
 
     // Dim all other buttons, brighten selected one
     for (NSButton *b in self.templateButtonViews) {
         b.alphaValue = (b == btn) ? 1.0 : 0.3;
     }
-    btn.layer.backgroundColor = [[NSColor colorWithWhite:1.0 alpha:0.3] CGColor];
+    for (NSButton *button in self.templateButtonViews) {
+        if ([button isKindOfClass:[SPTemplateButton class]]) {
+            ((SPTemplateButton *)button).emphasized = (button == btn);
+        }
+    }
 
     // Brief hold then dismiss
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
@@ -711,6 +931,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 - (void)hide {
     [self hideTemplateButtons];
     [self stopAnimation];
+    [self setMainPanelInteractive:NO];
     [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
         ctx.duration = kFadeOutDuration;
         self.panel.animator.alphaValue = 0.0;

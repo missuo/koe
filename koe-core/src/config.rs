@@ -15,15 +15,18 @@ pub struct Config {
     pub dictionary: DictionarySection,
     #[serde(default)]
     pub hotkey: HotkeySection,
-    #[serde(default)]
+    #[serde(default = "default_prompt_templates")]
     pub prompt_templates: Vec<PromptTemplate>,
 }
 
 /// A named prompt template selectable from the overlay UI.
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct PromptTemplate {
     /// Display name shown on the overlay button
     pub name: String,
+    /// Whether this template should be shown in the overlay selector
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     /// Shortcut key number (1-9)
     pub shortcut: u8,
     /// Inline system prompt text (mutually exclusive with system_prompt_path)
@@ -223,6 +226,8 @@ fn default_apple_speech_locale() -> String {
 pub struct LlmSection {
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default = "default_false")]
+    pub prompt_templates_enabled: bool,
     /// LLM provider: "openai" (default) or "mlx"
     #[serde(default = "default_llm_provider")]
     pub provider: String,
@@ -340,19 +345,20 @@ pub struct HotkeySection {
     )]
     pub trigger_key: String,
 
-    /// Cancel key for aborting the current voice input session.
-    /// Options: "fn", "left_option", "right_option", "left_command", "right_command", "left_control", "right_control"
-    /// Or a raw keycode number (e.g. 122 for F1) for non-modifier keys.
-    /// Default: "left_option"
-    #[serde(
-        default = "default_cancel_key",
-        deserialize_with = "deserialize_string_or_int"
-    )]
+    /// Legacy field kept only so older configs still deserialize cleanly.
+    /// Runtime no longer exposes or resolves a separate cancel hotkey.
+    #[serde(default, deserialize_with = "deserialize_string_or_int")]
     pub cancel_key: String,
 
     /// Trigger mode: "hold" (press-and-hold, default) or "toggle" (tap to start/stop).
     #[serde(default = "default_trigger_mode")]
     pub trigger_mode: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HotkeyMatchKind {
+    ModifierOnly = 0,
+    KeyDown = 1,
 }
 
 /// Resolved hotkey parameters for the native side
@@ -362,63 +368,36 @@ pub struct HotkeyParams {
     pub key_code: u16,
     /// Alternative key code (e.g. 179 for Globe key), 0 if none
     pub alt_key_code: u16,
-    /// Modifier flag to check (e.g. NSEventModifierFlagFunction = 0x800000)
+    /// Modifier flag to check. For modifier-only hotkeys this is the key-state
+    /// flag to observe on flagsChanged. For keyDown hotkeys this is the exact
+    /// generic modifier mask required alongside the main key code.
     pub modifier_flag: u64,
-}
-
-/// Resolved trigger/cancel hotkey parameters for the native side.
-#[derive(Debug, Clone, Copy)]
-pub struct ResolvedHotkeyConfig {
-    pub trigger: HotkeyParams,
-    pub cancel: HotkeyParams,
+    /// Whether this hotkey is modifier-only or should be matched on keyDown/up.
+    pub match_kind: HotkeyMatchKind,
 }
 
 impl HotkeySection {
-    pub fn normalized_keys(&self) -> (String, String) {
-        let trigger_key = self.normalized_trigger_key();
-        let cancel_key = self.normalized_cancel_key(&trigger_key);
-        (trigger_key, cancel_key)
+    /// Resolve the configured trigger hotkey into concrete key codes and
+    /// modifier flags for the native side.
+    pub fn resolve(&self) -> HotkeyParams {
+        Self::resolve_key(&self.normalized_trigger_key())
     }
 
-    /// Resolve the configured trigger/cancel hotkeys into concrete key codes
-    /// and modifier flags. If both hotkeys are configured to the same key,
-    /// keep the trigger key and fall back the cancel key to a distinct default.
-    pub fn resolve(&self) -> ResolvedHotkeyConfig {
-        let (trigger_key, cancel_key) = self.normalized_keys();
-        ResolvedHotkeyConfig {
-            trigger: Self::resolve_key(&trigger_key),
-            cancel: Self::resolve_key(&cancel_key),
-        }
-    }
-
-    fn normalized_trigger_key(&self) -> String {
+    pub fn normalized_trigger_key(&self) -> String {
         Self::normalize_trigger_key_name(&self.trigger_key)
-    }
-
-    fn normalized_cancel_key(&self, trigger_key: &str) -> String {
-        let cancel_key = Self::normalize_cancel_key_name(&self.cancel_key);
-        if cancel_key == trigger_key {
-            default_cancel_key_for_trigger(trigger_key).into()
-        } else {
-            cancel_key
-        }
     }
 
     fn normalize_trigger_key_name(value: &str) -> String {
         match value {
             "left_option" | "right_option" | "left_command" | "right_command" | "left_control"
             | "right_control" | "fn" => value.into(),
-            _ if Self::parse_raw_keycode(value).is_some() => value.into(),
+            _ if Self::parse_raw_keycode(value).is_some() => {
+                Self::parse_raw_keycode(value).unwrap().to_string()
+            }
+            _ if Self::parse_hotkey_combo(value).is_some() => {
+                Self::parse_hotkey_combo(value).unwrap().normalized_value
+            }
             _ => default_trigger_key(),
-        }
-    }
-
-    fn normalize_cancel_key_name(value: &str) -> String {
-        match value {
-            "left_option" | "right_option" | "left_command" | "right_command" | "left_control"
-            | "right_control" | "fn" => value.into(),
-            _ if Self::parse_raw_keycode(value).is_some() => value.into(),
-            _ => default_cancel_key(),
         }
     }
 
@@ -436,37 +415,124 @@ impl HotkeySection {
         }
     }
 
+    fn parse_hotkey_combo(value: &str) -> Option<ParsedHotkeyCombo> {
+        if !value.contains('+') {
+            return None;
+        }
+
+        let mut key_code = None;
+        let mut modifier_mask = 0_u64;
+
+        for raw_token in value.split('+') {
+            let token = raw_token.trim().to_ascii_lowercase();
+            if token.is_empty() {
+                return None;
+            }
+
+            if let Some(flag) = Self::combo_modifier_flag(&token) {
+                modifier_mask |= flag;
+                continue;
+            }
+
+            if key_code.is_some() {
+                return None;
+            }
+            key_code = Self::parse_raw_keycode(&token);
+            if key_code.is_none() {
+                return None;
+            }
+        }
+
+        let key_code = key_code?;
+        if modifier_mask == 0 {
+            return None;
+        }
+
+        let mut parts: Vec<String> = Self::combo_modifier_tokens_from_mask(modifier_mask)
+            .into_iter()
+            .map(|token| token.to_string())
+            .collect();
+        parts.push(key_code.to_string());
+
+        Some(ParsedHotkeyCombo {
+            key_code,
+            modifier_mask,
+            normalized_value: parts.join("+"),
+        })
+    }
+
+    fn combo_modifier_flag(token: &str) -> Option<u64> {
+        match token {
+            "command" | "cmd" => Some(0x0010_0000),
+            "option" | "alt" => Some(0x0008_0000),
+            "control" | "ctrl" => Some(0x0004_0000),
+            "shift" => Some(0x0002_0000),
+            "fn" | "function" | "globe" => Some(0x0080_0000),
+            _ => None,
+        }
+    }
+
+    fn combo_modifier_tokens_from_mask(mask: u64) -> Vec<&'static str> {
+        let ordered = [
+            ("command", 0x0010_0000_u64),
+            ("option", 0x0008_0000_u64),
+            ("control", 0x0004_0000_u64),
+            ("shift", 0x0002_0000_u64),
+            ("fn", 0x0080_0000_u64),
+        ];
+
+        ordered
+            .into_iter()
+            .filter_map(|(token, flag)| ((mask & flag) != 0).then_some(token))
+            .collect()
+    }
+
     fn resolve_key(key: &str) -> HotkeyParams {
         match key {
             "left_option" => HotkeyParams {
                 key_code: 58, // kVK_Option
                 alt_key_code: 0,
                 modifier_flag: 0x00000020, // NX_DEVICELALTKEYMASK
+                match_kind: HotkeyMatchKind::ModifierOnly,
             },
             "right_option" => HotkeyParams {
                 key_code: 61, // kVK_RightOption
                 alt_key_code: 0,
                 modifier_flag: 0x00000040, // NX_DEVICERALTKEYMASK
+                match_kind: HotkeyMatchKind::ModifierOnly,
             },
             "left_command" => HotkeyParams {
                 key_code: 55, // kVK_Command
                 alt_key_code: 0,
                 modifier_flag: 0x00000008, // NX_DEVICELCMDKEYMASK
+                match_kind: HotkeyMatchKind::ModifierOnly,
             },
             "right_command" => HotkeyParams {
                 key_code: 54, // kVK_RightCommand
                 alt_key_code: 0,
                 modifier_flag: 0x00000010, // NX_DEVICERCMDKEYMASK
+                match_kind: HotkeyMatchKind::ModifierOnly,
             },
             "left_control" => HotkeyParams {
                 key_code: 59, // kVK_Control
                 alt_key_code: 0,
                 modifier_flag: 0x00000001, // NX_DEVICELCTLKEYMASK
+                match_kind: HotkeyMatchKind::ModifierOnly,
             },
             "right_control" => HotkeyParams {
                 key_code: 62, // kVK_RightControl
                 alt_key_code: 0,
                 modifier_flag: 0x00002000, // NX_DEVICERCTLKEYMASK
+                match_kind: HotkeyMatchKind::ModifierOnly,
+            },
+            _ if Self::parse_hotkey_combo(key).is_some() => {
+                let combo = Self::parse_hotkey_combo(key).unwrap();
+                HotkeyParams {
+                    key_code: combo.key_code,
+                    alt_key_code: 0,
+                    modifier_flag: combo.modifier_mask,
+                    match_kind: HotkeyMatchKind::KeyDown,
+                }
             },
             // Raw keycode (non-modifier key, detected via keyDown/keyUp)
             _ if Self::parse_raw_keycode(key).is_some() => {
@@ -475,6 +541,7 @@ impl HotkeySection {
                     key_code: code,
                     alt_key_code: 0,
                     modifier_flag: 0,
+                    match_kind: HotkeyMatchKind::KeyDown,
                 }
             }
             // "fn" or anything else defaults to Fn/Globe
@@ -482,9 +549,17 @@ impl HotkeySection {
                 key_code: 63,              // kVK_Function (Fn)
                 alt_key_code: 179,         // Globe key on newer keyboards
                 modifier_flag: 0x00800000, // NSEventModifierFlagFunction
+                match_kind: HotkeyMatchKind::ModifierOnly,
             },
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedHotkeyCombo {
+    key_code: u16,
+    modifier_mask: u64,
+    normalized_value: String,
 }
 
 // ─── Defaults ───────────────────────────────────────────────────────
@@ -540,6 +615,9 @@ fn default_final_wait_timeout() -> u64 {
 fn default_true() -> bool {
     true
 }
+fn default_false() -> bool {
+    false
+}
 fn default_top_p() -> f64 {
     1.0
 }
@@ -571,28 +649,75 @@ fn default_trigger_key() -> String {
     "fn".into()
 }
 
-fn default_cancel_key() -> String {
-    "left_option".into()
-}
-
 fn default_trigger_mode() -> String {
     "hold".into()
 }
 
-fn default_cancel_key_for_trigger(trigger_key: &str) -> &'static str {
-    match trigger_key {
-        "fn" => "left_option",
-        "left_option" => "right_option",
-        "right_option" => "left_command",
-        "left_command" => "right_command",
-        "right_command" => "left_control",
-        "left_control" => "right_control",
-        "right_control" => "fn",
-        _ => "left_option",
-    }
-}
 fn default_user_prompt_path() -> String {
     "user_prompt.txt".into()
+}
+
+fn default_translate_to_english_prompt_template() -> PromptTemplate {
+    PromptTemplate {
+        name: "翻译英文".into(),
+        enabled: true,
+        shortcut: 1,
+        system_prompt: Some(
+            "将用户的语音输入翻译为流畅的英文。保持原意，不要添加额外内容。只输出翻译结果。"
+                .into(),
+        ),
+        system_prompt_path: None,
+    }
+}
+
+fn default_prompt_templates() -> Vec<PromptTemplate> {
+    vec![default_translate_to_english_prompt_template()]
+}
+
+fn legacy_default_prompt_templates() -> Vec<PromptTemplate> {
+    vec![
+        default_translate_to_english_prompt_template(),
+        PromptTemplate {
+            name: "繁体中文".into(),
+            enabled: true,
+            shortcut: 2,
+            system_prompt: Some(
+                "将用户的语音输入翻译为流畅的繁体中文。保持原意，不要添加额外内容。只输出翻译结果。"
+                    .into(),
+            ),
+            system_prompt_path: None,
+        },
+        PromptTemplate {
+            name: "推文风格".into(),
+            enabled: true,
+            shortcut: 3,
+            system_prompt: Some(
+                "将用户的语音输入改写为适合发 Twitter/X 的简短推文。280字符以内，可适当加emoji。只输出推文内容。"
+                    .into(),
+            ),
+            system_prompt_path: None,
+        },
+        PromptTemplate {
+            name: "小红书".into(),
+            enabled: true,
+            shortcut: 4,
+            system_prompt: Some(
+                "将用户的语音输入改写为适合小红书的帖子风格。加上合适的emoji和标题，语气活泼亲切。只输出帖子内容。"
+                    .into(),
+            ),
+            system_prompt_path: None,
+        },
+        PromptTemplate {
+            name: "优化技术名词".into(),
+            enabled: true,
+            shortcut: 5,
+            system_prompt: Some(
+                "将用户的语音输入中包含的技术相关名词进行校正。保持原意，不要添加额外内容。只输出校正之后的结果。"
+                    .into(),
+            ),
+            system_prompt_path: None,
+        },
+    ]
 }
 
 impl Default for Config {
@@ -826,9 +951,9 @@ fn migrate_config_v1_to_v2(path: &Path) -> Result<bool> {
     Ok(true)
 }
 
-/// Ensure hotkey config persisted on disk includes both trigger and cancel keys.
-/// This backfills `hotkey.cancel_key` for older configs and normalizes duplicate
-/// trigger/cancel combinations into a valid persisted config.
+/// Ensure hotkey config persisted on disk uses the normalized trigger key.
+/// The legacy `hotkey.cancel_key` field is ignored at runtime and no longer
+/// written back to disk.
 fn normalize_hotkey_config(path: &Path, config: &Config) -> Result<bool> {
     let raw = std::fs::read_to_string(path)
         .map_err(|e| KoeError::Config(format!("read {}: {e}", path.display())))?;
@@ -841,7 +966,7 @@ fn normalize_hotkey_config(path: &Path, config: &Config) -> Result<bool> {
         None => return Ok(false),
     };
 
-    let (normalized_trigger, normalized_cancel) = config.hotkey.normalized_keys();
+    let normalized_trigger = config.hotkey.normalized_trigger_key();
     let hotkey_key = serde_yaml::Value::String("hotkey".into());
 
     let hotkey_value = doc_map
@@ -854,19 +979,13 @@ fn normalize_hotkey_config(path: &Path, config: &Config) -> Result<bool> {
     };
 
     let trigger_key = serde_yaml::Value::String("trigger_key".into());
-    let cancel_key = serde_yaml::Value::String("cancel_key".into());
-
     let stored_trigger = hotkey_map.get(&trigger_key).and_then(|v| v.as_str());
-    let stored_cancel = hotkey_map.get(&cancel_key).and_then(|v| v.as_str());
 
-    if stored_trigger == Some(normalized_trigger.as_str())
-        && stored_cancel == Some(normalized_cancel.as_str())
-    {
+    if stored_trigger == Some(normalized_trigger.as_str()) {
         return Ok(false);
     }
 
     hotkey_map.insert(trigger_key, serde_yaml::Value::String(normalized_trigger));
-    hotkey_map.insert(cancel_key, serde_yaml::Value::String(normalized_cancel));
 
     let yaml_str = serde_yaml::to_string(&doc)
         .map_err(|e| KoeError::Config(format!("serialize normalized config: {e}")))?;
@@ -880,6 +999,47 @@ fn normalize_hotkey_config(path: &Path, config: &Config) -> Result<bool> {
     atomic_write_file(path, &output)?;
 
     log::info!("normalized hotkey config on disk");
+    Ok(true)
+}
+
+/// Replace the previous bundled template set with the new minimal default,
+/// but only when the user still has the legacy built-in templates unchanged.
+fn normalize_prompt_templates_config(path: &Path, config: &Config) -> Result<bool> {
+    if config.prompt_templates != legacy_default_prompt_templates() {
+        return Ok(false);
+    }
+
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| KoeError::Config(format!("read {}: {e}", path.display())))?;
+
+    let mut doc: serde_yaml::Value = serde_yaml::from_str(&raw)
+        .map_err(|e| KoeError::Config(format!("parse {}: {e}", path.display())))?;
+
+    let doc_map = match doc.as_mapping_mut() {
+        Some(map) => map,
+        None => return Ok(false),
+    };
+
+    let yaml_templates = serde_yaml::to_value(default_prompt_templates())
+        .map_err(|e| KoeError::Config(format!("serialize prompt templates: {e}")))?;
+
+    doc_map.insert(
+        serde_yaml::Value::String("prompt_templates".into()),
+        yaml_templates,
+    );
+
+    let yaml_str = serde_yaml::to_string(&doc)
+        .map_err(|e| KoeError::Config(format!("serialize normalized config: {e}")))?;
+
+    let output = format!(
+        "# Koe - Voice Input Tool Configuration\n\
+         # ~/.koe/config.yaml\n\n\
+         {yaml_str}"
+    );
+
+    atomic_write_file(path, &output)?;
+
+    log::info!("normalized legacy prompt templates on disk");
     Ok(true)
 }
 
@@ -910,8 +1070,21 @@ pub fn load_config() -> Result<Config> {
 
     let substituted = substitute_env_vars(&raw);
 
-    let config: Config = serde_yaml::from_str(&substituted)
+    let mut config: Config = serde_yaml::from_str(&substituted)
         .map_err(|e| KoeError::Config(format!("parse {}: {e}", path.display())))?;
+
+    match normalize_prompt_templates_config(&path, &config) {
+        Ok(true) => {
+            log::info!("config file updated with minimal default prompt templates");
+            let raw = std::fs::read_to_string(&path)
+                .map_err(|e| KoeError::Config(format!("read {}: {e}", path.display())))?;
+            let substituted = substitute_env_vars(&raw);
+            config = serde_yaml::from_str(&substituted)
+                .map_err(|e| KoeError::Config(format!("parse {}: {e}", path.display())))?;
+        }
+        Ok(false) => {}
+        Err(e) => log::warn!("prompt templates normalization failed: {e}"),
+    }
 
     match normalize_hotkey_config(&path, &config) {
         Ok(true) => log::info!("config file updated with normalized hotkey settings"),
@@ -1142,6 +1315,7 @@ asr:
 
 llm:
   enabled: true        # set to false to skip LLM correction entirely
+  prompt_templates_enabled: false  # show rewrite template buttons above the overlay after transcription
   provider: "openai"   # "openai" (default) or "mlx" (local Apple Silicon)
 
   # OpenAI-compatible endpoint for text correction
@@ -1174,9 +1348,12 @@ hotkey:
   # 触发键：fn | left_option | right_option | left_command | right_command | left_control | right_control
   # 也可以填 macOS keycode 数字来使用非修饰键，例如 122 (F1)、120 (F2)、99 (F3) 等
   trigger_key: "fn"
-  # 取消键：fn | left_option | right_option | left_command | right_command | left_control | right_control
-  # 也可以填 macOS keycode 数字（不能与触发键重复）
-  cancel_key: "left_option"
+
+prompt_templates:
+  - name: "翻译英文"
+    enabled: true
+    shortcut: 1
+    system_prompt: "将用户的语音输入翻译为流畅的英文。保持原意，不要添加额外内容。只输出翻译结果。"
 "#;
 
 const DEFAULT_DICTIONARY_TXT: &str = r#"# Koe User Dictionary
@@ -1221,80 +1398,99 @@ mod tests {
     }
 
     #[test]
-    fn normalized_keys_dedup_fn() {
-        let h = HotkeySection {
-            trigger_key: "fn".into(),
-            cancel_key: "fn".into(),
-        };
-        let (t, c) = h.normalized_keys();
-        assert_eq!(t, "fn");
-        assert_eq!(c, "left_option");
-    }
-
-    #[test]
-    fn normalized_keys_dedup_left_option() {
-        // Status bar used to fallback to "fn" here, but core uses "right_option"
-        let h = HotkeySection {
-            trigger_key: "left_option".into(),
-            cancel_key: "left_option".into(),
-        };
-        let (t, c) = h.normalized_keys();
-        assert_eq!(t, "left_option");
-        assert_eq!(c, "right_option");
-    }
-
-    #[test]
-    fn normalized_keys_dedup_right_option() {
-        let h = HotkeySection {
-            trigger_key: "right_option".into(),
-            cancel_key: "right_option".into(),
-        };
-        let (t, c) = h.normalized_keys();
-        assert_eq!(t, "right_option");
-        assert_eq!(c, "left_command");
-    }
-
-    #[test]
-    fn normalized_keys_distinct_passes_through() {
-        let h = HotkeySection {
-            trigger_key: "fn".into(),
-            cancel_key: "right_command".into(),
-        };
-        let (t, c) = h.normalized_keys();
-        assert_eq!(t, "fn");
-        assert_eq!(c, "right_command");
-    }
-
-    #[test]
     fn normalized_keys_invalid_trigger_falls_back_to_fn() {
         let h = HotkeySection {
             trigger_key: "nonexistent".into(),
             cancel_key: "left_option".into(),
+            trigger_mode: "hold".into(),
         };
-        let (t, c) = h.normalized_keys();
-        assert_eq!(t, "fn");
-        assert_eq!(c, "left_option");
+        assert_eq!(h.normalized_trigger_key(), "fn");
     }
 
     #[test]
-    fn normalize_hotkey_config_backfills_missing_cancel_key() {
+    fn normalize_hotkey_config_normalizes_trigger_only() {
         let path = temp_config_path("hotkey-config");
-        fs::write(&path, "hotkey:\n  trigger_key: left_option\n").unwrap();
+        fs::write(&path, "hotkey:\n  trigger_key: 0x7A\n").unwrap();
 
         let config = Config {
             hotkey: HotkeySection {
-                trigger_key: "left_option".into(),
+                trigger_key: "0x7A".into(),
                 cancel_key: "".into(),
+                trigger_mode: "hold".into(),
             },
             ..Config::default()
         };
 
         let changed = normalize_hotkey_config(&path, &config).unwrap();
         let output = fs::read_to_string(&path).unwrap();
+        let doc: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
+        let hotkey = doc.get("hotkey").and_then(|v| v.as_mapping()).unwrap();
+        let trigger = hotkey
+            .get(serde_yaml::Value::String("trigger_key".into()))
+            .and_then(|v| v.as_str())
+            .unwrap();
 
         assert!(changed);
-        assert!(output.contains("trigger_key: left_option"));
-        assert!(output.contains("cancel_key: right_option"));
+        assert_eq!(trigger, "122");
+        assert!(!output.contains("cancel_key:"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn normalized_keys_canonicalize_combo() {
+        let h = HotkeySection {
+            trigger_key: "shift+cmd+49".into(),
+            cancel_key: "command+shift+49".into(),
+            trigger_mode: "hold".into(),
+        };
+        assert_eq!(h.normalized_trigger_key(), "command+shift+49");
+    }
+
+    #[test]
+    fn resolve_combo_hotkey_uses_keydown_match_kind() {
+        let h = HotkeySection {
+            trigger_key: "cmd+shift+49".into(),
+            cancel_key: "option+53".into(),
+            trigger_mode: "hold".into(),
+        };
+        let resolved = h.resolve();
+
+        assert_eq!(resolved.key_code, 49);
+        assert_eq!(resolved.alt_key_code, 0);
+        assert_eq!(resolved.modifier_flag, 0x0010_0000 | 0x0002_0000);
+        assert_eq!(resolved.match_kind, HotkeyMatchKind::KeyDown);
+    }
+
+    #[test]
+    fn config_default_includes_single_translation_template() {
+        let config = Config::default();
+        assert_eq!(config.prompt_templates, default_prompt_templates());
+    }
+
+    #[test]
+    fn normalize_prompt_templates_config_replaces_legacy_defaults() {
+        let path = temp_config_path("prompt-templates");
+        let mut doc = serde_yaml::Mapping::new();
+        doc.insert(
+            serde_yaml::Value::String("prompt_templates".into()),
+            serde_yaml::to_value(legacy_default_prompt_templates()).unwrap(),
+        );
+        fs::write(&path, serde_yaml::to_string(&serde_yaml::Value::Mapping(doc)).unwrap()).unwrap();
+
+        let config = Config {
+            prompt_templates: legacy_default_prompt_templates(),
+            ..Config::default()
+        };
+
+        let changed = normalize_prompt_templates_config(&path, &config).unwrap();
+        let output = fs::read_to_string(&path).unwrap();
+        let doc: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
+        let stored_templates: Vec<PromptTemplate> =
+            serde_yaml::from_value(doc.get("prompt_templates").cloned().unwrap()).unwrap();
+
+        assert!(changed);
+        assert_eq!(stored_templates, default_prompt_templates());
 
         let _ = fs::remove_file(path);
     }
