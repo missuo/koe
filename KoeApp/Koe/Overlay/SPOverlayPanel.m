@@ -43,6 +43,12 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
 // ── Content view ─────────────────────────────────────────
 
+@class SPOverlayPanel;
+
+@interface SPOverlayPanel (ContentViewCallbacks)
+- (void)handleTemplateClick:(NSInteger)index;
+@end
+
 @interface SPOverlayContentView : NSView
 @property (nonatomic, copy)   NSString      *statusText;
 @property (nonatomic, copy)   NSString      *interimText;
@@ -50,6 +56,10 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, assign) SPOverlayMode  mode;
 @property (nonatomic, assign) NSInteger      tick;  // animation counter
 @property (nonatomic, assign) CGFloat       layoutWidth;
+@property (nonatomic, strong) NSArray<NSDictionary *> *templates;
+@property (nonatomic, assign) BOOL showingTemplates;
+@property (nonatomic, assign) NSInteger hoveredIndex;
+@property (nonatomic, weak)   SPOverlayPanel *owner;
 @end
 
 @implementation SPOverlayContentView
@@ -109,6 +119,48 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         CGFloat textY = (bounds.size.height - textRect.size.height) / 2.0;
         [str drawWithRect:NSMakeRect(textX, textY, textMaxW, textRect.size.height)
                   options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingTruncatesLastVisibleLine];
+    }
+
+    // Draw template buttons if showing
+    if (self.showingTemplates && self.templates.count > 0) {
+        CGFloat buttonY = 4;
+        CGFloat buttonH = 28;
+        CGFloat buttonPad = 8;
+        CGFloat buttonSpacing = 8;
+        CGFloat startX = kHorizontalPad;
+
+        // Separator line
+        CGFloat sepY = buttonH + buttonPad + 2;
+        [[NSColor colorWithWhite:1.0 alpha:0.15] setFill];
+        NSRectFill(NSMakeRect(kHorizontalPad, sepY, bounds.size.width - 2 * kHorizontalPad, 1));
+
+        CGFloat x = startX;
+        for (NSUInteger i = 0; i < self.templates.count; i++) {
+            NSDictionary *tmpl = self.templates[i];
+            NSString *name = tmpl[@"name"] ?: @"";
+            NSNumber *shortcut = tmpl[@"shortcut"];
+            NSString *label = [NSString stringWithFormat:@"%@  %@", shortcut, name];
+
+            NSDictionary *attrs = @{
+                NSFontAttributeName: [NSFont systemFontOfSize:12 weight:NSFontWeightMedium],
+                NSForegroundColorAttributeName: [NSColor colorWithWhite:1.0 alpha:0.9],
+            };
+            NSSize textSize = [label sizeWithAttributes:attrs];
+            CGFloat btnW = textSize.width + 16;
+
+            // Button background
+            NSRect btnRect = NSMakeRect(x, buttonY, btnW, buttonH);
+            CGFloat alpha = (self.hoveredIndex == (NSInteger)i) ? 0.35 : 0.15;
+            NSBezierPath *btnPath = [NSBezierPath bezierPathWithRoundedRect:btnRect xRadius:6 yRadius:6];
+            [[NSColor colorWithWhite:1.0 alpha:alpha] setFill];
+            [btnPath fill];
+
+            // Button text
+            NSRect textRect = NSMakeRect(x + 8, buttonY + (buttonH - textSize.height) / 2.0, textSize.width, textSize.height);
+            [label drawInRect:textRect withAttributes:attrs];
+
+            x += btnW + buttonSpacing;
+        }
     }
 }
 
@@ -209,6 +261,76 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     [path stroke];
 }
 
+#pragma mark - Mouse tracking for template buttons
+
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    for (NSTrackingArea *area in self.trackingAreas) {
+        [self removeTrackingArea:area];
+    }
+    if (self.showingTemplates) {
+        NSTrackingArea *area = [[NSTrackingArea alloc]
+            initWithRect:self.bounds
+                 options:NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways
+                   owner:self
+                userInfo:nil];
+        [self addTrackingArea:area];
+    }
+}
+
+- (void)mouseMoved:(NSEvent *)event {
+    if (!self.showingTemplates) return;
+    NSPoint point = [self convertPoint:event.locationInWindow fromView:nil];
+    NSInteger newIndex = [self templateIndexAtPoint:point];
+    if (newIndex != self.hoveredIndex) {
+        self.hoveredIndex = newIndex;
+        [self setNeedsDisplay:YES];
+    }
+}
+
+- (void)mouseExited:(NSEvent *)event {
+    if (self.hoveredIndex != -1) {
+        self.hoveredIndex = -1;
+        [self setNeedsDisplay:YES];
+    }
+}
+
+- (void)mouseDown:(NSEvent *)event {
+    if (!self.showingTemplates) return;
+    NSPoint point = [self convertPoint:event.locationInWindow fromView:nil];
+    NSInteger idx = [self templateIndexAtPoint:point];
+    if (idx >= 0 && idx < (NSInteger)self.templates.count) {
+        [self.owner handleTemplateClick:idx];
+    }
+}
+
+- (NSInteger)templateIndexAtPoint:(NSPoint)point {
+    CGFloat buttonY = 4;
+    CGFloat buttonH = 28;
+    if (point.y < buttonY || point.y > buttonY + buttonH) return -1;
+
+    CGFloat x = kHorizontalPad;
+    CGFloat buttonSpacing = 8;
+    NSDictionary *attrs = @{
+        NSFontAttributeName: [NSFont systemFontOfSize:12 weight:NSFontWeightMedium],
+    };
+
+    for (NSUInteger i = 0; i < self.templates.count; i++) {
+        NSDictionary *tmpl = self.templates[i];
+        NSString *name = tmpl[@"name"] ?: @"";
+        NSNumber *shortcut = tmpl[@"shortcut"];
+        NSString *label = [NSString stringWithFormat:@"%@  %@", shortcut, name];
+        NSSize textSize = [label sizeWithAttributes:attrs];
+        CGFloat btnW = textSize.width + 16;
+
+        if (point.x >= x && point.x <= x + btnW) {
+            return (NSInteger)i;
+        }
+        x += btnW + buttonSpacing;
+    }
+    return -1;
+}
+
 @end
 
 // ── Main overlay controller ──────────────────────────────
@@ -223,6 +345,9 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, copy)   NSString *currentState;
 @property (nonatomic, assign) CGFloat sessionMaxWidth;
 @property (nonatomic, assign) CGFloat sessionMaxHeight;
+@property (nonatomic, strong) NSArray<NSDictionary *> *templateButtons;
+@property (nonatomic, assign) BOOL showingTemplates;
+@property (nonatomic, assign) NSInteger hoveredButtonIndex;
 
 @end
 
@@ -293,6 +418,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     self.contentView = [[SPOverlayContentView alloc] initWithFrame:rect];
     self.contentView.wantsLayer = YES;
     self.contentView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    self.contentView.owner = self;
     [effectView addSubview:self.contentView];
 
     self.panel = panel;
@@ -399,6 +525,64 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     }];
 }
 
+- (void)showTemplateButtons:(NSArray<NSDictionary *> *)templates {
+    if (templates.count == 0) return;
+    self.templateButtons = templates;
+    self.showingTemplates = YES;
+    self.hoveredButtonIndex = -1;
+    self.contentView.templates = templates;
+    self.contentView.showingTemplates = YES;
+    self.contentView.hoveredIndex = -1;
+
+    // Make panel interactive
+    self.panel.ignoresMouseEvents = NO;
+
+    // Extend linger time when templates are showing
+    [self.lingerTimer invalidate];
+    self.lingerTimer = nil;
+    self.lingerTimer = [NSTimer scheduledTimerWithTimeInterval:5.0
+                                                      repeats:NO
+                                                        block:^(NSTimer *timer) {
+        self.lingerTimer = nil;
+        [self hideTemplateButtons];
+        self.sessionMaxWidth = 0;
+        self.sessionMaxHeight = 0;
+        [self hide];
+        self.currentState = @"idle";
+    }];
+
+    [self resizeAndCenterAnimated:YES];
+    [self.contentView setNeedsDisplay:YES];
+}
+
+- (void)hideTemplateButtons {
+    self.showingTemplates = NO;
+    self.templateButtons = nil;
+    self.contentView.showingTemplates = NO;
+    self.contentView.templates = nil;
+    self.panel.ignoresMouseEvents = YES;
+    [self.contentView setNeedsDisplay:YES];
+}
+
+- (BOOL)handleNumberKey:(NSInteger)number {
+    if (!self.showingTemplates || !self.templateButtons) return NO;
+    for (NSUInteger i = 0; i < self.templateButtons.count; i++) {
+        NSDictionary *tmpl = self.templateButtons[i];
+        NSNumber *shortcut = tmpl[@"shortcut"];
+        if (shortcut && shortcut.integerValue == number) {
+            [self hideTemplateButtons];
+            [self.delegate overlayPanel:self didSelectTemplateAtIndex:i];
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (void)handleTemplateClick:(NSInteger)index {
+    [self hideTemplateButtons];
+    [self.delegate overlayPanel:self didSelectTemplateAtIndex:index];
+}
+
 #pragma mark - Layout
 
 - (void)resizeAndCenterAnimated:(BOOL)animated {
@@ -424,13 +608,24 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     CGFloat pillW = desiredW;
     CGFloat pillH = kPillHeight;
 
+    // Add height for template buttons row
+    if (self.showingTemplates && self.contentView.templates.count > 0) {
+        pillH += 38; // button row height (28) + padding (10)
+    }
+
     if (desiredW > absoluteMaxW) {
         pillW = absoluteMaxW;
         // Only calculate height (multi-line) if it actually overflows absoluteMaxW
         CGFloat textMaxW = pillW - iconSpace - kHorizontalPad;
         NSRect textRect = [str boundingRectWithSize:NSMakeSize(textMaxW, kMaxHeight)
                                             options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingTruncatesLastVisibleLine];
-        pillH = fmax(kPillHeight, ceil(textRect.size.height) + 20.0);
+        CGFloat textH = fmax(kPillHeight, ceil(textRect.size.height) + 20.0);
+        // Preserve template button row height if already added
+        if (self.showingTemplates && self.contentView.templates.count > 0) {
+            pillH = fmax(textH, pillH);
+        } else {
+            pillH = textH;
+        }
     }
 
     // 3. Stabilization: Only-grow during active session
