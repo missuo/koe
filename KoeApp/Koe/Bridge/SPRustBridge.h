@@ -14,6 +14,7 @@ typedef NS_ENUM(NSInteger, SPSessionModeObjC) {
 - (void)rustBridgeDidChangeState:(NSString *)state;
 - (void)rustBridgeDidReceiveInterimText:(NSString *)text;
 - (void)rustBridgeDidReceiveAsrFinalText:(NSString *)text;
+- (void)rustBridgeDidReceiveRewriteText:(NSString *)text;
 @end
 
 @interface SPRustBridge : NSObject
@@ -72,6 +73,14 @@ typedef NS_ENUM(NSInteger, SPModelVerifyMode) {
 
 /// Cancel an active download.
 - (void)cancelDownload:(NSString *)modelPath;
+
+// ─── Rewrite / Prompt Templates ───────────────────────────────────
+
+/// Get prompt templates as JSON array string. Returns nil if none configured.
+- (NSArray<NSDictionary *> *)promptTemplates;
+
+/// Rewrite ASR text using template at given index. Returns YES on success.
+- (BOOL)rewriteWithTemplateIndex:(NSInteger)index asrText:(NSString *)text;
 
 /// Remove downloaded model files (keeps manifest). Returns files removed.
 - (NSInteger)removeModelFiles:(NSString *)modelPath;
