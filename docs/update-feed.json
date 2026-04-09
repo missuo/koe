@@ -7,10 +7,13 @@
   "release_notes_url": "https://github.com/missuo/koe/releases/tag/v1.0.14",
   "notes": [
     "Add a full overlay lifecycle that shows ASR final text, corrected text, and optional follow-up template actions.",
+    "Add Overlay settings for font family, text size, bottom offset, and long-text line limiting.",
     "Add a Templates settings pane to add, edit, reorder, and hide prompt templates.",
     "Add overlay rewrite templates with click, hover, and contextual 1-9 shortcuts.",
     "Add configurable trigger modes for hold-to-talk and tap-to-toggle workflows.",
     "Add custom shortcut recording for trigger keys, including modifier combinations.",
+    "Preview Overlay style changes directly in the real desktop overlay position instead of an in-window mock preview.",
+    "Improve long live transcript rendering with stable scrolling, dynamic font-based spacing, and cleaner edge treatment.",
     "Simplify hotkeys to a single trigger shortcut that starts and stops recording.",
     "Reduce the built-in prompt templates to a minimal English-translation starter template.",
     "Fix template editor state loss and prompt cross-contamination when switching rows.",

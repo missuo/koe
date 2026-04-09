@@ -15,6 +15,8 @@ pub struct Config {
     pub dictionary: DictionarySection,
     #[serde(default)]
     pub hotkey: HotkeySection,
+    #[serde(default)]
+    pub overlay: OverlaySection,
     #[serde(default = "default_prompt_templates")]
     pub prompt_templates: Vec<PromptTemplate>,
 }
@@ -305,6 +307,20 @@ pub struct FeedbackSection {
 pub struct DictionarySection {
     #[serde(default = "default_dictionary_path")]
     pub path: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct OverlaySection {
+    #[serde(default = "default_overlay_font_family")]
+    pub font_family: String,
+    #[serde(default = "default_overlay_font_size")]
+    pub font_size: u16,
+    #[serde(default = "default_overlay_bottom_margin")]
+    pub bottom_margin: u16,
+    #[serde(default = "default_overlay_limit_visible_lines")]
+    pub limit_visible_lines: bool,
+    #[serde(default = "default_overlay_max_visible_lines")]
+    pub max_visible_lines: u16,
 }
 
 /// Deserialize a YAML value that can be either a string ("fn") or an integer (96)
@@ -657,6 +673,26 @@ fn default_user_prompt_path() -> String {
     "user_prompt.txt".into()
 }
 
+fn default_overlay_font_family() -> String {
+    "system".to_string()
+}
+
+fn default_overlay_font_size() -> u16 {
+    13
+}
+
+fn default_overlay_bottom_margin() -> u16 {
+    10
+}
+
+fn default_overlay_limit_visible_lines() -> bool {
+    true
+}
+
+fn default_overlay_max_visible_lines() -> u16 {
+    3
+}
+
 fn default_translate_to_english_prompt_template() -> PromptTemplate {
     PromptTemplate {
         name: "翻译英文".into(),
@@ -746,6 +782,11 @@ impl Default for FeedbackSection {
     }
 }
 impl Default for DictionarySection {
+    fn default() -> Self {
+        serde_yaml::from_str("{}").unwrap()
+    }
+}
+impl Default for OverlaySection {
     fn default() -> Self {
         serde_yaml::from_str("{}").unwrap()
     }
@@ -1349,6 +1390,13 @@ hotkey:
   # 也可以填 macOS keycode 数字来使用非修饰键，例如 122 (F1)、120 (F2)、99 (F3) 等
   trigger_key: "fn"
 
+overlay:
+  font_family: "system"
+  font_size: 13
+  bottom_margin: 10
+  limit_visible_lines: true
+  max_visible_lines: 3
+
 prompt_templates:
   - name: "翻译英文"
     enabled: true
@@ -1466,6 +1514,11 @@ mod tests {
     fn config_default_includes_single_translation_template() {
         let config = Config::default();
         assert_eq!(config.prompt_templates, default_prompt_templates());
+        assert_eq!(config.overlay.font_family, "system");
+        assert_eq!(config.overlay.font_size, 13);
+        assert_eq!(config.overlay.bottom_margin, 10);
+        assert!(config.overlay.limit_visible_lines);
+        assert_eq!(config.overlay.max_visible_lines, 3);
     }
 
     #[test]

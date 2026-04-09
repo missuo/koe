@@ -26,6 +26,20 @@
 /// Dismiss the overlay after a dynamic linger period based on text length.
 - (void)lingerAndDismiss;
 
+/// Reload overlay typography and bottom position from config.yaml.
+- (void)reloadAppearanceFromConfig;
+
+/// Show a temporary on-screen preview using unsaved overlay settings.
+- (void)showPreviewWithText:(NSString *)text
+                   fontSize:(CGFloat)fontSize
+                 fontFamily:(NSString *)fontFamily
+               bottomMargin:(CGFloat)bottomMargin
+          limitVisibleLines:(BOOL)limitVisibleLines
+            maxVisibleLines:(NSInteger)maxVisibleLines;
+
+/// Hide the temporary on-screen preview and restore configured appearance.
+- (void)hidePreview;
+
 /// Show template selection buttons. Templates is array of dicts with "name" and "shortcut" keys.
 /// Optional "source_index" is preserved and returned to the delegate on selection.
 - (void)showTemplateButtons:(NSArray<NSDictionary *> *)templates;

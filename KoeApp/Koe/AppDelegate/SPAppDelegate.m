@@ -261,6 +261,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
           (unsigned long long)newConfig.trigger_modifier_flag,
           newConfig.trigger_match_kind);
     [self applyHotkeyConfig:newConfig restartMonitorIfNeeded:YES];
+    [self.overlayPanel reloadAppearanceFromConfig];
 }
 
 #pragma mark - SPHotkeyMonitorDelegate
@@ -599,6 +600,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
 - (void)setupWizardDidSaveConfig {
     NSLog(@"[Koe] Setup wizard saved config, reloading...");
     [self.rustBridge reloadConfig];
+    [self.overlayPanel reloadAppearanceFromConfig];
 
     if (![self shouldShowPromptTemplateButtons]) {
         [self stopNumberKeyMonitoring];

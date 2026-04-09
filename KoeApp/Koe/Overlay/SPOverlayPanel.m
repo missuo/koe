@@ -1,15 +1,21 @@
 #import "SPOverlayPanel.h"
+#import "koe_core.h"
 #import <QuartzCore/QuartzCore.h>
 
 // ── Geometry ──────────────────────────────────────────────
-static const CGFloat kPillHeight       = 36.0;
-static const CGFloat kPillCornerRadius = 18.0;
-static const CGFloat kBottomMargin     = 10.0;
-static const CGFloat kHorizontalPad    = 14.0;
-static const CGFloat kIconAreaWidth    = 28.0;
-static const CGFloat kIconTextGap      = 6.0;
+static const CGFloat kMinimumPillHeight = 36.0;
+static const CGFloat kDefaultBottomMargin = 10.0;
+static const CGFloat kDefaultTextFontSize = 13.0;
+static NSString *const kDefaultFontFamily = @"system";
+static const BOOL kDefaultLimitVisibleLines = YES;
+static const NSInteger kDefaultMaxVisibleLines = 3;
+static const NSInteger kMinVisibleLines = 3;
+static const NSInteger kMaxVisibleLines = 5;
+static const CGFloat kMinTextFontSize = 12.0;
+static const CGFloat kMaxTextFontSize = 28.0;
+static const CGFloat kMaxBottomMargin = 180.0;
 static const CGFloat kMaxWidth         = 600.0;
-static const CGFloat kMaxHeight        = 300.0;
+static const NSTimeInterval kTextScrollDuration = 0.18;
 
 // Waveform bars
 static const NSInteger kBarCount   = 5;
@@ -34,6 +40,215 @@ static const NSTimeInterval kResizeDuration    = 0.15;
 static const NSTimeInterval kMinLingerDuration = 0.45;
 static const NSTimeInterval kMaxLingerDuration = 1.2;
 static const NSTimeInterval kTemplateLingerDuration = 3.0;
+
+static CGFloat SPOverlayClampTextFontSize(CGFloat fontSize) {
+    return fmin(fmax(fontSize, kMinTextFontSize), kMaxTextFontSize);
+}
+
+static CGFloat SPOverlayClampBottomMargin(CGFloat bottomMargin) {
+    return fmin(fmax(bottomMargin, 0.0), kMaxBottomMargin);
+}
+
+static NSInteger SPOverlayClampMaxVisibleLines(NSInteger maxVisibleLines) {
+    return MAX(kMinVisibleLines, MIN(kMaxVisibleLines, maxVisibleLines));
+}
+
+static CGFloat SPOverlayConfigCGFloat(const char *keyPath, CGFloat fallback) {
+    char *raw = sp_config_get(keyPath);
+    if (!raw) return fallback;
+
+    NSString *value = [NSString stringWithUTF8String:raw];
+    sp_core_free_string(raw);
+    if (value.length == 0) return fallback;
+
+    NSScanner *scanner = [NSScanner scannerWithString:value];
+    double parsedValue = 0.0;
+    if (![scanner scanDouble:&parsedValue] || !scanner.isAtEnd) {
+        return fallback;
+    }
+
+    return parsedValue;
+}
+
+static BOOL SPOverlayConfigBOOL(const char *keyPath, BOOL fallback) {
+    char *raw = sp_config_get(keyPath);
+    if (!raw) return fallback;
+
+    NSString *value = [[[NSString stringWithUTF8String:raw] ?: @""
+        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+    sp_core_free_string(raw);
+    if (value.length == 0) return fallback;
+
+    if ([value isEqualToString:@"1"] ||
+        [value isEqualToString:@"true"] ||
+        [value isEqualToString:@"yes"] ||
+        [value isEqualToString:@"on"]) {
+        return YES;
+    }
+
+    if ([value isEqualToString:@"0"] ||
+        [value isEqualToString:@"false"] ||
+        [value isEqualToString:@"no"] ||
+        [value isEqualToString:@"off"]) {
+        return NO;
+    }
+
+    return fallback;
+}
+
+static NSString *SPOverlayNormalizeFontFamily(NSString *fontFamily) {
+    NSString *normalized = [[fontFamily ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    if (normalized.length == 0) {
+        return kDefaultFontFamily;
+    }
+    return normalized;
+}
+
+static BOOL SPOverlayUsesSystemFont(NSString *fontFamily) {
+    return [SPOverlayNormalizeFontFamily(fontFamily) caseInsensitiveCompare:kDefaultFontFamily] == NSOrderedSame;
+}
+
+static NSString *SPOverlayConfigString(const char *keyPath, NSString *fallback) {
+    char *raw = sp_config_get(keyPath);
+    if (!raw) return fallback;
+
+    NSString *value = [NSString stringWithUTF8String:raw] ?: @"";
+    sp_core_free_string(raw);
+    NSString *normalized = SPOverlayNormalizeFontFamily(value);
+    return normalized.length > 0 ? normalized : fallback;
+}
+
+static NSFont *SPOverlayFontForFamily(NSString *fontFamily, CGFloat fontSize) {
+    CGFloat clampedFontSize = SPOverlayClampTextFontSize(fontSize);
+    NSString *normalized = SPOverlayNormalizeFontFamily(fontFamily);
+
+    if (SPOverlayUsesSystemFont(normalized)) {
+        return [NSFont systemFontOfSize:clampedFontSize weight:NSFontWeightMedium];
+    }
+
+    NSFont *font = [NSFont fontWithName:normalized size:clampedFontSize];
+    if (font) {
+        return font;
+    }
+
+    NSFontManager *fontManager = [NSFontManager sharedFontManager];
+    font = [fontManager fontWithFamily:normalized traits:0 weight:5 size:clampedFontSize];
+    if (font) {
+        return font;
+    }
+
+    for (NSArray *member in [fontManager availableMembersOfFontFamily:normalized]) {
+        if (member.count == 0) continue;
+        NSString *memberName = member[0];
+        font = [NSFont fontWithName:memberName size:clampedFontSize];
+        if (font) {
+            return font;
+        }
+    }
+
+    return [NSFont systemFontOfSize:clampedFontSize weight:NSFontWeightMedium];
+}
+
+static CGFloat SPOverlayLineHeightForFont(NSFont *font) {
+    if (!font) return ceil(kDefaultTextFontSize);
+    NSLayoutManager *layoutManager = [[NSLayoutManager alloc] init];
+    return ceil([layoutManager defaultLineHeightForFont:font]);
+}
+
+static CGFloat SPOverlayHorizontalPadForFont(NSFont *font) {
+    CGFloat lineHeight = SPOverlayLineHeightForFont(font);
+    return ceil(MAX(14.0, MIN(22.0, lineHeight * 0.55)));
+}
+
+static CGFloat SPOverlayIconTextGapForFont(NSFont *font) {
+    CGFloat lineHeight = SPOverlayLineHeightForFont(font);
+    return ceil(MAX(6.0, MIN(10.0, lineHeight * 0.24)));
+}
+
+static CGFloat SPOverlayTextTopPadForFont(NSFont *font) {
+    CGFloat lineHeight = SPOverlayLineHeightForFont(font);
+    return ceil(MAX(12.0, MIN(18.0, lineHeight * 0.48)));
+}
+
+static CGFloat SPOverlayTextBottomPadForFont(NSFont *font) {
+    CGFloat lineHeight = SPOverlayLineHeightForFont(font);
+    return ceil(MAX(12.0, MIN(18.0, lineHeight * 0.44)));
+}
+
+static CGFloat SPOverlayTextTrailingPadForFont(NSFont *font) {
+    CGFloat lineHeight = SPOverlayLineHeightForFont(font);
+    return ceil(MAX(18.0, MIN(26.0, lineHeight * 0.72)));
+}
+
+static CGFloat SPOverlayLineLimitSlackForFont(NSFont *font) {
+    CGFloat lineHeight = SPOverlayLineHeightForFont(font);
+    return ceil(MAX(2.0, MIN(4.0, lineHeight * 0.12)));
+}
+
+static NSDictionary *SPOverlayTextAttributes(NSFont *font) {
+    NSMutableParagraphStyle *paragraphStyle = [[NSMutableParagraphStyle alloc] init];
+    paragraphStyle.lineBreakMode = NSLineBreakByWordWrapping;
+    return @{
+        NSFontAttributeName: font ?: [NSFont systemFontOfSize:kDefaultTextFontSize weight:NSFontWeightMedium],
+        NSForegroundColorAttributeName: [NSColor colorWithWhite:1.0 alpha:0.92],
+        NSParagraphStyleAttributeName: paragraphStyle,
+    };
+}
+
+static CGFloat SPOverlayMeasureTextHeight(NSString *text, NSFont *font, CGFloat width) {
+    CGFloat safeWidth = fmax(1.0, width);
+    NSTextStorage *textStorage = [[NSTextStorage alloc] initWithAttributedString:
+        [[NSAttributedString alloc] initWithString:text ?: @""
+                                        attributes:SPOverlayTextAttributes(font)]];
+    NSLayoutManager *layoutManager = [[NSLayoutManager alloc] init];
+    NSTextContainer *textContainer = [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(safeWidth, CGFLOAT_MAX)];
+    textContainer.lineFragmentPadding = 0.0;
+    textContainer.widthTracksTextView = NO;
+    [layoutManager addTextContainer:textContainer];
+    [textStorage addLayoutManager:layoutManager];
+    [layoutManager ensureLayoutForTextContainer:textContainer];
+    return ceil([layoutManager usedRectForTextContainer:textContainer].size.height);
+}
+
+static CGFloat SPOverlayMeasureVisibleHeightForLineLimit(NSString *text, NSFont *font, CGFloat width, NSInteger maxVisibleLines) {
+    CGFloat safeWidth = fmax(1.0, width);
+    NSInteger clampedMaxVisibleLines = SPOverlayClampMaxVisibleLines(maxVisibleLines);
+    NSDictionary *attrs = SPOverlayTextAttributes(font);
+    NSTextStorage *textStorage = [[NSTextStorage alloc] initWithAttributedString:
+        [[NSAttributedString alloc] initWithString:text ?: @""
+                                        attributes:attrs]];
+    NSLayoutManager *layoutManager = [[NSLayoutManager alloc] init];
+    NSTextContainer *textContainer = [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(safeWidth, CGFLOAT_MAX)];
+    textContainer.lineFragmentPadding = 0.0;
+    textContainer.widthTracksTextView = NO;
+    [layoutManager addTextContainer:textContainer];
+    [textStorage addLayoutManager:layoutManager];
+    [layoutManager ensureLayoutForTextContainer:textContainer];
+
+    NSUInteger glyphCount = layoutManager.numberOfGlyphs;
+    if (glyphCount == 0) {
+        return SPOverlayLineHeightForFont(font);
+    }
+
+    NSUInteger glyphIndex = 0;
+    NSInteger lineCount = 0;
+    CGFloat visibleHeight = 0.0;
+    while (glyphIndex < glyphCount) {
+        NSRange lineGlyphRange = NSMakeRange(0, 0);
+        NSRect lineFragmentRect = [layoutManager lineFragmentRectForGlyphAtIndex:glyphIndex
+                                                                  effectiveRange:&lineGlyphRange
+                                                            withoutAdditionalLayout:YES];
+        lineCount += 1;
+        visibleHeight = ceil(NSMaxY(lineFragmentRect));
+        glyphIndex = NSMaxRange(lineGlyphRange);
+        if (lineCount >= clampedMaxVisibleLines) {
+            break;
+        }
+    }
+
+    CGFloat totalHeight = ceil([layoutManager usedRectForTextContainer:textContainer].size.height);
+    return fmin(fmax(SPOverlayLineHeightForFont(font), visibleHeight), totalHeight);
+}
 
 // ── Animation mode ───────────────────────────────────────
 typedef NS_ENUM(NSInteger, SPOverlayMode) {
@@ -184,14 +399,176 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, assign) SPOverlayMode  mode;
 @property (nonatomic, assign) NSInteger      tick;  // animation counter
 @property (nonatomic, assign) CGFloat        layoutWidth;
+@property (nonatomic, assign) CGFloat        textFontSize;
+@property (nonatomic, copy)   NSString      *fontFamily;
+@property (nonatomic, assign) CGFloat        cornerRadius;
+@property (nonatomic, assign) CGFloat        iconAreaWidth;
+@property (nonatomic, assign) CGFloat        textViewportHeight;
+- (void)updateTextAttributes;
+- (void)refreshDisplayedTextAnimated:(BOOL)animated;
+@end
+
+@interface SPOverlayContentView ()
+@property (nonatomic, strong) NSScrollView *textScrollView;
+@property (nonatomic, strong) NSTextView *textView;
 @end
 
 @implementation SPOverlayContentView
 
 - (BOOL)isFlipped { return NO; }
 
+- (instancetype)initWithFrame:(NSRect)frameRect {
+    self = [super initWithFrame:frameRect];
+    if (self) {
+        [self setupTextViewport];
+    }
+    return self;
+}
+
+- (NSFont *)contentFont {
+    return SPOverlayFontForFamily(self.fontFamily, self.textFontSize > 0 ? self.textFontSize : kDefaultTextFontSize);
+}
+
+- (void)setupTextViewport {
+    self.textScrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    self.textScrollView.drawsBackground = NO;
+    self.textScrollView.borderType = NSNoBorder;
+    self.textScrollView.hasVerticalScroller = NO;
+    self.textScrollView.hasHorizontalScroller = NO;
+    self.textScrollView.autohidesScrollers = YES;
+    self.textScrollView.scrollerStyle = NSScrollerStyleOverlay;
+    self.textScrollView.verticalScrollElasticity = NSScrollElasticityNone;
+    self.textScrollView.horizontalScrollElasticity = NSScrollElasticityNone;
+    self.textScrollView.wantsLayer = YES;
+
+    NSTextView *textView = [[NSTextView alloc] initWithFrame:NSZeroRect];
+    textView.drawsBackground = NO;
+    textView.editable = NO;
+    textView.selectable = NO;
+    textView.richText = NO;
+    textView.importsGraphics = NO;
+    textView.usesFontPanel = NO;
+    textView.usesFindPanel = NO;
+    textView.textContainerInset = NSZeroSize;
+    textView.textContainer.lineFragmentPadding = 0.0;
+    textView.verticallyResizable = YES;
+    textView.horizontallyResizable = NO;
+    textView.autoresizingMask = NSViewWidthSizable;
+    textView.textContainer.widthTracksTextView = YES;
+    textView.textContainer.containerSize = NSMakeSize(1.0, CGFLOAT_MAX);
+
+    self.textView = textView;
+    self.textScrollView.documentView = textView;
+    [self addSubview:self.textScrollView];
+}
+
+- (NSString *)displayText {
+    return (self.interimText.length > 0) ? self.interimText : self.statusText;
+}
+
+- (void)setLayoutWidth:(CGFloat)layoutWidth {
+    _layoutWidth = layoutWidth;
+    [self setNeedsLayout:YES];
+}
+
+- (void)setIconAreaWidth:(CGFloat)iconAreaWidth {
+    _iconAreaWidth = iconAreaWidth;
+    [self setNeedsLayout:YES];
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setTextViewportHeight:(CGFloat)textViewportHeight {
+    _textViewportHeight = textViewportHeight;
+    [self setNeedsLayout:YES];
+}
+
+- (void)setTextFontSize:(CGFloat)textFontSize {
+    _textFontSize = textFontSize;
+    [self updateTextAttributes];
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setFontFamily:(NSString *)fontFamily {
+    _fontFamily = [fontFamily copy];
+    [self updateTextAttributes];
+    [self setNeedsDisplay:YES];
+}
+
+- (NSRect)textViewportFrame {
+    NSFont *font = [self contentFont];
+    CGFloat effectiveWidth = self.layoutWidth > 0 ? self.layoutWidth : NSWidth(self.bounds);
+    CGFloat topPad = SPOverlayTextTopPadForFont(font);
+    CGFloat bottomPad = SPOverlayTextBottomPadForFont(font);
+    CGFloat horizontalPad = SPOverlayHorizontalPadForFont(font);
+    CGFloat iconGap = SPOverlayIconTextGapForFont(font);
+    CGFloat trailingPad = SPOverlayTextTrailingPadForFont(font);
+    CGFloat effectiveViewportHeight = self.textViewportHeight > 0
+        ? self.textViewportHeight
+        : fmax(1.0, NSHeight(self.bounds) - topPad - bottomPad);
+    CGFloat textX = horizontalPad + (self.iconAreaWidth > 0 ? self.iconAreaWidth : 28.0) + iconGap;
+    CGFloat textWidth = fmax(1.0, effectiveWidth - textX - trailingPad);
+    return NSMakeRect(textX, bottomPad, textWidth, effectiveViewportHeight);
+}
+
+- (void)layout {
+    [super layout];
+    [self updateTextLayout];
+}
+
+- (void)updateTextLayout {
+    if (!self.textScrollView || !self.textView) return;
+
+    NSRect textFrame = [self textViewportFrame];
+    self.textScrollView.frame = textFrame;
+    self.textView.frame = NSMakeRect(0, 0, textFrame.size.width, MAX(textFrame.size.height, self.textView.frame.size.height));
+    self.textView.textContainer.containerSize = NSMakeSize(textFrame.size.width, CGFLOAT_MAX);
+}
+
+- (void)updateTextAttributes {
+    NSDictionary *attrs = SPOverlayTextAttributes([self contentFont]);
+    if (self.textView.string.length > 0) {
+        [self.textView.textStorage setAttributedString:[[NSAttributedString alloc] initWithString:self.textView.string attributes:attrs]];
+    } else {
+        self.textView.typingAttributes = attrs;
+    }
+}
+
+- (void)refreshDisplayedTextAnimated:(BOOL)animated {
+    NSString *displayText = [self displayText] ?: @"";
+    NSDictionary *attrs = SPOverlayTextAttributes([self contentFont]);
+    NSClipView *clipView = self.textScrollView.contentView;
+    CGFloat oldOffsetY = clipView.bounds.origin.y;
+
+    [self.textView.textStorage setAttributedString:[[NSAttributedString alloc] initWithString:displayText attributes:attrs]];
+    [self updateTextLayout];
+
+    [self.textView.layoutManager ensureLayoutForTextContainer:self.textView.textContainer];
+    CGFloat contentHeight = ceil([self.textView.layoutManager usedRectForTextContainer:self.textView.textContainer].size.height);
+    CGFloat viewportHeight = NSHeight(self.textScrollView.frame);
+    CGFloat documentHeight = MAX(viewportHeight, contentHeight);
+    self.textView.frame = NSMakeRect(0, 0, NSWidth(self.textScrollView.frame), documentHeight);
+
+    CGFloat targetOffsetY = MAX(0.0, documentHeight - viewportHeight);
+    NSPoint targetPoint = NSMakePoint(0.0, targetOffsetY);
+    if (animated && targetOffsetY > oldOffsetY + 0.5) {
+        [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
+            ctx.duration = kTextScrollDuration;
+            ctx.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+            [[clipView animator] setBoundsOrigin:targetPoint];
+        } completionHandler:^{
+            [self.textScrollView reflectScrolledClipView:clipView];
+        }];
+    } else {
+        [clipView setBoundsOrigin:targetPoint];
+        [self.textScrollView reflectScrolledClipView:clipView];
+    }
+}
+
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = self.bounds;
+    CGFloat cornerRadius = self.cornerRadius > 0 ? self.cornerRadius : 18.0;
+    CGFloat iconAreaWidth = self.iconAreaWidth > 0 ? self.iconAreaWidth : 28.0;
+    CGFloat horizontalPad = SPOverlayHorizontalPadForFont([self contentFont]);
 
     // ── Dark tint (minimum contrast for white text on any background) ──
     [[NSColor colorWithWhite:0.0 alpha:0.35] setFill];
@@ -199,14 +576,14 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
     // ── Border (edge definition on dark backgrounds) ──
     NSBezierPath *border = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(bounds, 0.5, 0.5)
-                                                            xRadius:kPillCornerRadius
-                                                            yRadius:kPillCornerRadius];
+                                                            xRadius:cornerRadius
+                                                            yRadius:cornerRadius];
     [[NSColor colorWithWhite:1.0 alpha:0.20] setStroke];
     border.lineWidth = 0.5;
     [border stroke];
 
     // ── Left icon area ──
-    CGFloat iconCenterX = kHorizontalPad + kIconAreaWidth / 2.0;
+    CGFloat iconCenterX = horizontalPad + iconAreaWidth / 2.0;
     CGFloat centerY = NSMidY(bounds);
 
     switch (self.mode) {
@@ -225,26 +602,6 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         default:
             break;
     }
-
-    // ── Text ──
-    NSString *displayText = (self.interimText.length > 0) ? self.interimText : self.statusText;
-    if (displayText.length > 0) {
-        NSDictionary *attrs = @{
-            NSFontAttributeName: [NSFont systemFontOfSize:13.0 weight:NSFontWeightMedium],
-            NSForegroundColorAttributeName: [NSColor colorWithWhite:1.0 alpha:0.92],
-        };
-        NSAttributedString *str = [[NSAttributedString alloc] initWithString:displayText
-                                                                  attributes:attrs];
-        CGFloat textX = kHorizontalPad + kIconAreaWidth + kIconTextGap;
-        // Use layoutWidth to avoid wrapping into animated/intermediate bounds
-        CGFloat textMaxW = fmax(1.0, self.layoutWidth - textX - kHorizontalPad);
-        NSRect textRect = [str boundingRectWithSize:NSMakeSize(textMaxW, CGFLOAT_MAX)
-                                            options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingTruncatesLastVisibleLine];
-        CGFloat textY = (bounds.size.height - textRect.size.height) / 2.0;
-        [str drawWithRect:NSMakeRect(textX, textY, textMaxW, textRect.size.height)
-                  options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingTruncatesLastVisibleLine];
-    }
-
 }
 
 #pragma mark - Waveform (recording)
@@ -367,6 +724,17 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, assign) BOOL templateBarHovered;
 @property (nonatomic, assign) NSTimeInterval remainingLingerDuration;
 @property (nonatomic, strong) NSDate *lingerDeadline;
+@property (nonatomic, assign) CGFloat textFontSize;
+@property (nonatomic, assign) CGFloat bottomMargin;
+@property (nonatomic, copy) NSString *fontFamily;
+@property (nonatomic, assign) CGFloat configuredTextFontSize;
+@property (nonatomic, assign) CGFloat configuredBottomMargin;
+@property (nonatomic, copy) NSString *configuredFontFamily;
+@property (nonatomic, assign) BOOL limitVisibleLinesEnabled;
+@property (nonatomic, assign) NSInteger maxVisibleLines;
+@property (nonatomic, assign) BOOL configuredLimitVisibleLinesEnabled;
+@property (nonatomic, assign) NSInteger configuredMaxVisibleLines;
+@property (nonatomic, assign, getter=isPreviewActive) BOOL previewActive;
 
 @end
 
@@ -376,13 +744,135 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     self = [super init];
     if (self) {
         _currentState = @"idle";
+        _textFontSize = kDefaultTextFontSize;
+        _bottomMargin = kDefaultBottomMargin;
+        _fontFamily = kDefaultFontFamily;
+        _configuredTextFontSize = kDefaultTextFontSize;
+        _configuredBottomMargin = kDefaultBottomMargin;
+        _configuredFontFamily = kDefaultFontFamily;
+        _limitVisibleLinesEnabled = kDefaultLimitVisibleLines;
+        _maxVisibleLines = kDefaultMaxVisibleLines;
+        _configuredLimitVisibleLinesEnabled = kDefaultLimitVisibleLines;
+        _configuredMaxVisibleLines = kDefaultMaxVisibleLines;
         [self setupPanel];
+        [self reloadAppearanceFromConfig];
     }
     return self;
 }
 
+- (NSFont *)contentFont {
+    return SPOverlayFontForFamily(self.fontFamily, self.textFontSize);
+}
+
+- (CGFloat)basePillHeight {
+    NSFont *font = [self contentFont];
+    CGFloat lineHeight = SPOverlayLineHeightForFont(font);
+    return fmax(kMinimumPillHeight, lineHeight + SPOverlayTextTopPadForFont(font) + SPOverlayTextBottomPadForFont(font));
+}
+
+- (CGFloat)overlayCornerRadius {
+    return floor(fmin(24.0, [self basePillHeight] / 2.0));
+}
+
+- (CGFloat)iconAreaWidth {
+    return fmax(28.0, floor([self basePillHeight] * 0.78));
+}
+
+- (CGFloat)textVerticalPadding {
+    NSFont *font = [self contentFont];
+    return SPOverlayTextTopPadForFont(font) + SPOverlayTextBottomPadForFont(font);
+}
+
+- (void)updateContentAppearance {
+    self.contentView.textFontSize = self.textFontSize;
+    self.contentView.fontFamily = self.fontFamily;
+    self.contentView.cornerRadius = [self overlayCornerRadius];
+    self.contentView.iconAreaWidth = [self iconAreaWidth];
+    [self.contentView updateTextAttributes];
+    [self.contentView setNeedsLayout:YES];
+}
+
+- (NSString *)currentDisplayText {
+    return (self.contentView.interimText.length > 0) ? self.contentView.interimText : self.contentView.statusText;
+}
+
+- (BOOL)shouldUseScrollingTranscriptLayout {
+    return self.limitVisibleLinesEnabled && self.contentView.interimText.length > 0;
+}
+
+- (NSInteger)visibleLineLimitForCurrentState {
+    return SPOverlayClampMaxVisibleLines(self.maxVisibleLines);
+}
+
+- (void)applyAppearanceWithFontSize:(CGFloat)fontSize
+                         fontFamily:(NSString *)fontFamily
+                       bottomMargin:(CGFloat)bottomMargin
+                  limitVisibleLines:(BOOL)limitVisibleLines
+                    maxVisibleLines:(NSInteger)maxVisibleLines
+                resetSessionMetrics:(BOOL)resetMetrics {
+    self.textFontSize = SPOverlayClampTextFontSize(fontSize);
+    self.bottomMargin = SPOverlayClampBottomMargin(bottomMargin);
+    self.fontFamily = SPOverlayNormalizeFontFamily(fontFamily);
+    self.limitVisibleLinesEnabled = limitVisibleLines;
+    self.maxVisibleLines = SPOverlayClampMaxVisibleLines(maxVisibleLines);
+    [self updateContentAppearance];
+    if (resetMetrics) {
+        self.sessionMaxWidth = 0;
+        self.sessionMaxHeight = 0;
+    }
+}
+
+- (void)restoreConfiguredAppearanceIfNeeded {
+    if (!self.isPreviewActive) return;
+    self.previewActive = NO;
+    [self applyAppearanceWithFontSize:self.configuredTextFontSize
+                           fontFamily:self.configuredFontFamily
+                         bottomMargin:self.configuredBottomMargin
+                   limitVisibleLines:self.configuredLimitVisibleLinesEnabled
+                     maxVisibleLines:self.configuredMaxVisibleLines
+                  resetSessionMetrics:YES];
+}
+
+- (void)updateMainPanelMaskForHeight:(CGFloat)height {
+    if (!self.effectView) return;
+
+    CGFloat cornerRadius = [self overlayCornerRadius];
+    CGFloat maskHeight = fmax(height, [self basePillHeight]);
+    NSImage *mask = [NSImage imageWithSize:NSMakeSize(cornerRadius * 2 + 1, maskHeight)
+                                   flipped:NO
+                            drawingHandler:^BOOL(NSRect dstRect) {
+        [[NSColor blackColor] setFill];
+        [[NSBezierPath bezierPathWithRoundedRect:dstRect
+                                         xRadius:cornerRadius
+                                         yRadius:cornerRadius] fill];
+        return YES;
+    }];
+    mask.capInsets = NSEdgeInsetsMake(cornerRadius, cornerRadius, cornerRadius, cornerRadius);
+    mask.resizingMode = NSImageResizingModeStretch;
+    self.effectView.maskImage = mask;
+}
+
+- (void)repositionTemplateBarAnimated:(BOOL)animated {
+    if (!self.buttonBarPanel) return;
+
+    NSRect pillFrame = self.panel.frame;
+    NSRect barFrame = self.buttonBarPanel.frame;
+    NSRect newFrame = NSMakeRect(NSMidX(pillFrame) - barFrame.size.width / 2.0,
+                                 NSMaxY(pillFrame) + 6.0,
+                                 barFrame.size.width,
+                                 barFrame.size.height);
+    if (animated) {
+        [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
+            ctx.duration = kResizeDuration;
+            [[self.buttonBarPanel animator] setFrame:newFrame display:YES];
+        }];
+    } else {
+        [self.buttonBarPanel setFrame:newFrame display:YES];
+    }
+}
+
 - (void)setupPanel {
-    NSRect rect = NSMakeRect(0, 0, 180, kPillHeight);
+    NSRect rect = NSMakeRect(0, 0, 180, [self basePillHeight]);
 
     NSPanel *panel = [[NSPanel alloc] initWithContentRect:rect
                                                  styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
@@ -413,22 +903,6 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         [weakSelf setMainPanelHovered:hovering];
     };
 
-    // Pill shape via maskImage (Apple-recommended for shaping NSVisualEffectView)
-    CGFloat diameter = kPillCornerRadius * 2;
-    NSImage *mask = [NSImage imageWithSize:NSMakeSize(diameter + 1, kPillHeight)
-                                   flipped:NO
-                            drawingHandler:^BOOL(NSRect dstRect) {
-        [[NSColor blackColor] setFill];
-        [[NSBezierPath bezierPathWithRoundedRect:dstRect
-                                         xRadius:kPillCornerRadius
-                                         yRadius:kPillCornerRadius] fill];
-        return YES;
-    }];
-    mask.capInsets     = NSEdgeInsetsMake(kPillCornerRadius, kPillCornerRadius,
-                                          kPillCornerRadius, kPillCornerRadius);
-    mask.resizingMode  = NSImageResizingModeStretch;
-    effectView.maskImage = mask;
-
     // Light glow shadow (visible on dark backgrounds)
     effectView.layer.shadowColor   = [[NSColor whiteColor] CGColor];
     effectView.layer.shadowOpacity = 0.15;
@@ -443,6 +917,8 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     self.contentView.wantsLayer = YES;
     self.contentView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [effectView addSubview:self.contentView];
+    [self updateContentAppearance];
+    [self updateMainPanelMaskForHeight:rect.size.height];
 
     self.panel = panel;
 }
@@ -524,6 +1000,11 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 #pragma mark - Public
 
 - (void)updateState:(NSString *)state {
+    BOOL isPreviewState = [state hasSuffix:@"_preview"];
+    if (self.isPreviewActive && !isPreviewState) {
+        [self restoreConfiguredAppearanceIfNeeded];
+    }
+
     // Cancel any pending linger dismiss from a previous session
     [self clearLingerTimer];
     [self setMainPanelInteractive:NO];
@@ -603,6 +1084,71 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     [self setMainPanelInteractive:YES];
     [self resizeAndCenterAnimated:YES];
     [self.contentView setNeedsDisplay:YES];
+}
+
+- (void)reloadAppearanceFromConfig {
+    NSString *configuredFontFamily = SPOverlayConfigString("overlay.font_family", kDefaultFontFamily);
+    CGFloat configuredFontSize = SPOverlayConfigCGFloat("overlay.font_size", kDefaultTextFontSize);
+    CGFloat configuredBottomMargin = SPOverlayConfigCGFloat("overlay.bottom_margin", kDefaultBottomMargin);
+    BOOL configuredLimitVisibleLinesEnabled = SPOverlayConfigBOOL("overlay.limit_visible_lines", kDefaultLimitVisibleLines);
+    NSInteger configuredMaxVisibleLines = SPOverlayClampMaxVisibleLines(lround(SPOverlayConfigCGFloat("overlay.max_visible_lines", kDefaultMaxVisibleLines)));
+
+    self.configuredFontFamily = SPOverlayNormalizeFontFamily(configuredFontFamily);
+    self.configuredTextFontSize = SPOverlayClampTextFontSize(configuredFontSize);
+    self.configuredBottomMargin = SPOverlayClampBottomMargin(configuredBottomMargin);
+    self.configuredLimitVisibleLinesEnabled = configuredLimitVisibleLinesEnabled;
+    self.configuredMaxVisibleLines = configuredMaxVisibleLines;
+
+    if (!self.isPreviewActive) {
+        [self applyAppearanceWithFontSize:self.configuredTextFontSize
+                               fontFamily:self.configuredFontFamily
+                             bottomMargin:self.configuredBottomMargin
+                       limitVisibleLines:self.configuredLimitVisibleLinesEnabled
+                         maxVisibleLines:self.configuredMaxVisibleLines
+                      resetSessionMetrics:YES];
+        [self resizeAndCenterAnimated:NO];
+        [self.contentView setNeedsDisplay:YES];
+        [self repositionTemplateBarAnimated:NO];
+    }
+}
+
+- (void)showPreviewWithText:(NSString *)text
+                   fontSize:(CGFloat)fontSize
+                 fontFamily:(NSString *)fontFamily
+               bottomMargin:(CGFloat)bottomMargin
+          limitVisibleLines:(BOOL)limitVisibleLines
+            maxVisibleLines:(NSInteger)maxVisibleLines {
+    if (!self.isPreviewActive &&
+        self.currentState.length > 0 &&
+        ![self.currentState isEqualToString:@"idle"] &&
+        ![self.currentState isEqualToString:@"completed"]) {
+        return;
+    }
+
+    self.previewActive = YES;
+    [self hideTemplateButtons];
+    [self applyAppearanceWithFontSize:fontSize
+                           fontFamily:fontFamily
+                         bottomMargin:bottomMargin
+                   limitVisibleLines:limitVisibleLines
+                     maxVisibleLines:maxVisibleLines
+                  resetSessionMetrics:YES];
+    [self updateState:@"recording_preview"];
+    [self updateInterimText:text ?: @""];
+}
+
+- (void)hidePreview {
+    if (!self.isPreviewActive) return;
+
+    [self clearLingerTimer];
+    [self hideTemplateButtons];
+    [self setMainPanelInteractive:NO];
+    self.mainPanelHovered = NO;
+    self.templateBarHovered = NO;
+    self.contentView.interimText = nil;
+    [self restoreConfiguredAppearanceIfNeeded];
+    self.currentState = @"idle";
+    [self hide];
 }
 
 - (void)lingerAndDismiss {
@@ -856,55 +1402,79 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 #pragma mark - Layout
 
 - (void)resizeAndCenterAnimated:(BOOL)animated {
+    NSFont *font = [self contentFont];
     NSDictionary *attrs = @{
-        NSFontAttributeName: [NSFont systemFontOfSize:13.0 weight:NSFontWeightMedium],
+        NSFontAttributeName: font,
     };
-    NSString *displayText = (self.contentView.interimText.length > 0)
-                            ? self.contentView.interimText
-                            : self.contentView.statusText;
+    NSString *displayText = [self currentDisplayText];
     NSAttributedString *str = [[NSAttributedString alloc] initWithString:displayText ?: @"" attributes:attrs];
-    
-    CGFloat iconSpace = kHorizontalPad + kIconAreaWidth + kIconTextGap;
-    
+
+    CGFloat horizontalPad = SPOverlayHorizontalPadForFont(font);
+    CGFloat iconGap = SPOverlayIconTextGapForFont(font);
+    CGFloat trailingPad = SPOverlayTextTrailingPadForFont(font);
+    CGFloat iconSpace = horizontalPad + [self iconAreaWidth] + iconGap;
+
     // 1. Determine natural single-line width
     CGFloat naturalW = [str size].width;
-    CGFloat desiredW = iconSpace + naturalW + kHorizontalPad;
-    
+    CGFloat desiredW = iconSpace + naturalW + trailingPad;
+
     // 2. Clamp to screen/max limits
     NSScreen *screen = [NSScreen mainScreen];
     NSRect visible = screen.visibleFrame;
     CGFloat absoluteMaxW = fmin(kMaxWidth, visible.size.width - 2 * kScreenHorizontalMargin);
-    
+
     CGFloat pillW = desiredW;
-    CGFloat pillH = kPillHeight;
+    CGFloat pillH = [self basePillHeight];
+    CGFloat lineHeight = SPOverlayLineHeightForFont(font);
+    CGFloat textViewportHeight = lineHeight;
+    BOOL usesScrollingTranscriptLayout = [self shouldUseScrollingTranscriptLayout];
+    BOOL shouldStabilizeWidth = animated && self.sessionMaxWidth > 0;
+    BOOL shouldStabilizeHeight = animated && usesScrollingTranscriptLayout && self.sessionMaxHeight > 0;
 
-    if (desiredW > absoluteMaxW) {
-        pillW = absoluteMaxW;
-        CGFloat textMaxW = pillW - iconSpace - kHorizontalPad;
-        NSRect textRect = [str boundingRectWithSize:NSMakeSize(textMaxW, kMaxHeight)
-                                            options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingTruncatesLastVisibleLine];
-        pillH = fmax(kPillHeight, ceil(textRect.size.height) + 20.0);
+    if (displayText.length > 0) {
+        pillW = fmin(MAX(desiredW, iconSpace + 120.0), absoluteMaxW);
+
+        // Keep width monotonic during a live session first, then measure height
+        // using that final width so we don't preserve a stale tall layout.
+        if (shouldStabilizeWidth) {
+            pillW = fmax(pillW, self.sessionMaxWidth);
+        }
+
+        CGFloat textMaxW = fmax(1.0, pillW - iconSpace - trailingPad);
+        CGFloat measuredTextHeight = SPOverlayMeasureTextHeight(displayText, font, textMaxW);
+
+        if (usesScrollingTranscriptLayout) {
+            CGFloat maxVisibleTextHeight = SPOverlayMeasureVisibleHeightForLineLimit(displayText,
+                                                                                    font,
+                                                                                    textMaxW,
+                                                                                    [self visibleLineLimitForCurrentState]) + SPOverlayLineLimitSlackForFont(font);
+            textViewportHeight = fmin(fmax(lineHeight, measuredTextHeight), maxVisibleTextHeight);
+        } else {
+            textViewportHeight = fmax(lineHeight, measuredTextHeight);
+        }
+
+        pillH = fmax([self basePillHeight], ceil(textViewportHeight) + [self textVerticalPadding]);
     }
 
-    // 3. Stabilization: Only-grow during active session
-    if (animated && self.sessionMaxWidth > 0) {
-        pillW = fmax(pillW, self.sessionMaxWidth);
-    }
-    if (animated && self.sessionMaxHeight > 0) {
+    // 3. Stabilization: only keep height monotonic when line limiting is enabled.
+    if (shouldStabilizeHeight) {
         pillH = fmax(pillH, self.sessionMaxHeight);
     }
     
     if (animated) {
         self.sessionMaxWidth = pillW;
-        self.sessionMaxHeight = pillH;
+        self.sessionMaxHeight = usesScrollingTranscriptLayout ? pillH : 0;
     }
 
     // 4. Update internal layout width to prevent wrapping mid-animation
     self.contentView.layoutWidth = pillW;
+    self.contentView.textViewportHeight = textViewportHeight;
+    [self updateMainPanelMaskForHeight:pillH];
+    [self.contentView refreshDisplayedTextAnimated:animated];
 
     // 5. Final Frame
     CGFloat x = NSMidX(visible) - pillW / 2.0;
-    CGFloat y = NSMinY(visible) + kBottomMargin;
+    CGFloat y = NSMinY(visible) + self.bottomMargin;
     NSRect newFrame = NSMakeRect(x, y, pillW, pillH);
 
     if (animated) {
@@ -913,8 +1483,10 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
             ctx.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
             [[self.panel animator] setFrame:newFrame display:YES];
         }];
+        [self repositionTemplateBarAnimated:YES];
     } else {
         [self.panel setFrame:newFrame display:YES];
+        [self repositionTemplateBarAnimated:NO];
     }
 }
 

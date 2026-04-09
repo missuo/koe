@@ -1,4 +1,5 @@
 #import "SPSetupWizardWindowController.h"
+#import "SPOverlayPanel.h"
 #import "SPRustBridge.h"
 #import <Cocoa/Cocoa.h>
 #import <Carbon/Carbon.h>
@@ -20,10 +21,23 @@ static NSString *const kDictionaryFile = @"dictionary.txt";
 static NSString *const kSystemPromptFile = @"system_prompt.txt";
 static NSString *const kTemplateEditablePromptKey = @"__editable_prompt";
 static NSString *const kTemplateOriginalPromptKey = @"__original_prompt";
+static NSString *const kOverlayFontFamilyDefault = @"system";
+static NSString *const kOverlayFontFamilySystemLabel = @"System Default";
+static const NSInteger kOverlayFontSizeDefault = 13;
+static const NSInteger kOverlayFontSizeMin = 12;
+static const NSInteger kOverlayFontSizeMax = 28;
+static const NSInteger kOverlayBottomMarginDefault = 10;
+static const NSInteger kOverlayBottomMarginMax = 180;
+static const BOOL kOverlayLimitVisibleLinesDefault = YES;
+static const NSInteger kOverlayMaxVisibleLinesDefault = 3;
+static const NSInteger kOverlayMaxVisibleLinesMin = 3;
+static const NSInteger kOverlayMaxVisibleLinesMax = 5;
+static NSString *const kOverlayPreviewSampleText = @"今天下午三点我们先开评审会，然后把设计方案、PR 评论和接口联调一起过一遍；如果我这段话持续很久，也希望底部实时字幕保持稳定，不要遮住文字边缘，同时完整保留整段转写内容。";
 
 // Toolbar item identifiers
 static NSToolbarItemIdentifier const kToolbarASR = @"asr";
 static NSToolbarItemIdentifier const kToolbarLLM = @"llm";
+static NSToolbarItemIdentifier const kToolbarOverlay = @"overlay";
 static NSToolbarItemIdentifier const kToolbarHotkey = @"hotkey";
 static NSToolbarItemIdentifier const kToolbarDictionary = @"dictionary";
 static NSToolbarItemIdentifier const kToolbarSystemPrompt = @"system_prompt";
@@ -48,6 +62,84 @@ static NSString *configGet(NSString *keyPath) {
 
 static BOOL configSet(NSString *keyPath, NSString *value) {
     return sp_config_set(keyPath.UTF8String, (value ?: @"").UTF8String) == 0;
+}
+
+static NSInteger clampedOverlayFontSizeValue(NSInteger value) {
+    return MAX(kOverlayFontSizeMin, MIN(kOverlayFontSizeMax, value));
+}
+
+static NSInteger clampedOverlayBottomMarginValue(NSInteger value) {
+    return MAX(0, MIN(kOverlayBottomMarginMax, value));
+}
+
+static NSInteger clampedOverlayMaxVisibleLinesValue(NSInteger value) {
+    return MAX(kOverlayMaxVisibleLinesMin, MIN(kOverlayMaxVisibleLinesMax, value));
+}
+
+static BOOL overlayLimitVisibleLinesEnabledValue(NSString *value) {
+    NSString *normalized = [[[value ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString] copy];
+    if (normalized.length == 0) {
+        return kOverlayLimitVisibleLinesDefault;
+    }
+
+    if ([normalized isEqualToString:@"1"] ||
+        [normalized isEqualToString:@"true"] ||
+        [normalized isEqualToString:@"yes"] ||
+        [normalized isEqualToString:@"on"]) {
+        return YES;
+    }
+
+    if ([normalized isEqualToString:@"0"] ||
+        [normalized isEqualToString:@"false"] ||
+        [normalized isEqualToString:@"no"] ||
+        [normalized isEqualToString:@"off"]) {
+        return NO;
+    }
+
+    return kOverlayLimitVisibleLinesDefault;
+}
+
+static NSString *normalizedOverlayFontFamilyValue(NSString *value) {
+    NSString *normalized = [[value ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    if (normalized.length == 0) {
+        return kOverlayFontFamilyDefault;
+    }
+    return normalized;
+}
+
+static BOOL overlayUsesSystemFontFamily(NSString *value) {
+    return [normalizedOverlayFontFamilyValue(value) caseInsensitiveCompare:kOverlayFontFamilyDefault] == NSOrderedSame;
+}
+
+static NSFont *overlayFontForFamily(NSString *fontFamily, CGFloat fontSize) {
+    CGFloat clampedFontSize = clampedOverlayFontSizeValue(lround(fontSize));
+    NSString *normalized = normalizedOverlayFontFamilyValue(fontFamily);
+
+    if (overlayUsesSystemFontFamily(normalized)) {
+        return [NSFont systemFontOfSize:clampedFontSize weight:NSFontWeightMedium];
+    }
+
+    NSFont *font = [NSFont fontWithName:normalized size:clampedFontSize];
+    if (font) {
+        return font;
+    }
+
+    NSFontManager *fontManager = [NSFontManager sharedFontManager];
+    font = [fontManager fontWithFamily:normalized traits:0 weight:5 size:clampedFontSize];
+    if (font) {
+        return font;
+    }
+
+    for (NSArray *member in [fontManager availableMembersOfFontFamily:normalized]) {
+        if (member.count == 0) continue;
+        NSString *memberName = member[0];
+        font = [NSFont fontWithName:memberName size:clampedFontSize];
+        if (font) {
+            return font;
+        }
+    }
+
+    return [NSFont systemFontOfSize:clampedFontSize weight:NSFontWeightMedium];
 }
 
 static BOOL isNumericKeycode(NSString *value) {
@@ -309,7 +401,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
 // ─── Window Controller ──────────────────────────────────────────────
 
-@interface SPSetupWizardWindowController () <NSToolbarDelegate, NSTableViewDelegate, NSTableViewDataSource, NSTextFieldDelegate, NSTextViewDelegate>
+@interface SPSetupWizardWindowController () <NSToolbarDelegate, NSTableViewDelegate, NSTableViewDataSource, NSTextFieldDelegate, NSTextViewDelegate, NSWindowDelegate>
 
 // Current pane
 @property (nonatomic, copy) NSString *currentPaneIdentifier;
@@ -375,6 +467,16 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property (nonatomic, strong) NSSwitch *stopSoundCheckbox;
 @property (nonatomic, strong) NSSwitch *errorSoundCheckbox;
 
+// Overlay
+@property (nonatomic, strong) NSPopUpButton *overlayFontFamilyPopup;
+@property (nonatomic, copy) NSArray<NSString *> *overlayAvailableFontFamilies;
+@property (nonatomic, strong) NSSlider *overlayFontSizeSlider;
+@property (nonatomic, strong) NSTextField *overlayFontSizeValueLabel;
+@property (nonatomic, strong) NSSlider *overlayBottomMarginSlider;
+@property (nonatomic, strong) NSTextField *overlayBottomMarginValueLabel;
+@property (nonatomic, strong) NSSwitch *overlayLimitVisibleLinesSwitch;
+@property (nonatomic, strong) NSPopUpButton *overlayMaxVisibleLinesPopup;
+
 // Dictionary
 @property (nonatomic, strong) NSTextView *dictionaryTextView;
 
@@ -412,6 +514,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     self = [super initWithWindow:window];
     if (self) {
         _verifyQueue = dispatch_queue_create("koe.model.verify", DISPATCH_QUEUE_SERIAL);
+        window.delegate = self;
         [self setupToolbar];
     }
     return self;
@@ -427,6 +530,11 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [NSApp activateIgnoringOtherApps:YES];
 }
 
+- (void)windowWillClose:(NSNotification *)notification {
+    [self endHotkeyRecording];
+    [self hideRuntimeOverlayPreview];
+}
+
 // ─── Toolbar ────────────────────────────────────────────────────────
 
 - (void)setupToolbar {
@@ -438,15 +546,15 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
-    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarTemplates, kToolbarAbout];
+    return @[kToolbarASR, kToolbarLLM, kToolbarOverlay, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarTemplates, kToolbarAbout];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
-    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarTemplates, kToolbarAbout];
+    return @[kToolbarASR, kToolbarLLM, kToolbarOverlay, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarTemplates, kToolbarAbout];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarSelectableItemIdentifiers:(NSToolbar *)toolbar {
-    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarTemplates, kToolbarAbout];
+    return @[kToolbarASR, kToolbarLLM, kToolbarOverlay, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarTemplates, kToolbarAbout];
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier willBeInsertedIntoToolbar:(BOOL)flag {
@@ -460,6 +568,9 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     } else if ([itemIdentifier isEqualToString:kToolbarLLM]) {
         item.label = @"LLM";
         item.image = [NSImage imageWithSystemSymbolName:@"cpu" accessibilityDescription:@"LLM"];
+    } else if ([itemIdentifier isEqualToString:kToolbarOverlay]) {
+        item.label = @"Overlay";
+        item.image = [NSImage imageWithSystemSymbolName:@"captions.bubble" accessibilityDescription:@"Overlay"];
     } else if ([itemIdentifier isEqualToString:kToolbarHotkey]) {
         item.label = @"Controls";
         item.image = [NSImage imageWithSystemSymbolName:@"slider.horizontal.3" accessibilityDescription:@"Controls"];
@@ -492,6 +603,8 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Save template edits before switching away
     if ([self.currentPaneIdentifier isEqualToString:kToolbarTemplates]) {
         [self saveCurrentTemplateEdits];
+    } else if ([self.currentPaneIdentifier isEqualToString:kToolbarOverlay]) {
+        [self hideRuntimeOverlayPreview];
     }
     [self endHotkeyRecording];
 
@@ -506,6 +619,8 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
         paneView = [self buildAsrPane];
     } else if ([identifier isEqualToString:kToolbarLLM]) {
         paneView = [self buildLlmPane];
+    } else if ([identifier isEqualToString:kToolbarOverlay]) {
+        paneView = [self buildOverlayPane];
     } else if ([identifier isEqualToString:kToolbarHotkey]) {
         paneView = [self buildHotkeyPane];
     } else if ([identifier isEqualToString:kToolbarDictionary]) {
@@ -968,6 +1083,145 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     return pane;
 }
 
+- (NSView *)buildOverlayPane {
+    CGFloat paneWidth = 600.0;
+    CGFloat contentX = 24.0;
+    CGFloat contentW = paneWidth - 48.0;
+    NSString *descriptionText = @"Adjust the bottom live transcript overlay. Choose a system font, tune text size, set the bottom distance, and decide whether long live text stays capped to a few lines or expands fully. Every change is previewed directly in the real desktop overlay position.";
+
+    self.overlayFontFamilyPopup = [self overlayFontFamilyPopupControl];
+
+    self.overlayFontSizeSlider = [self overlaySliderWithMin:kOverlayFontSizeMin
+                                                        max:kOverlayFontSizeMax
+                                                     action:@selector(overlayControlChanged:)];
+    self.overlayFontSizeValueLabel = [self overlayValueLabel];
+    NSView *fontSliderControl = [self sliderControlWithSlider:self.overlayFontSizeSlider
+                                                   valueLabel:self.overlayFontSizeValueLabel
+                                                        width:290.0];
+
+    self.overlayBottomMarginSlider = [self overlaySliderWithMin:0
+                                                            max:kOverlayBottomMarginMax
+                                                         action:@selector(overlayControlChanged:)];
+    self.overlayBottomMarginValueLabel = [self overlayValueLabel];
+    NSView *bottomSliderControl = [self sliderControlWithSlider:self.overlayBottomMarginSlider
+                                                     valueLabel:self.overlayBottomMarginValueLabel
+                                                          width:290.0];
+
+    self.overlayLimitVisibleLinesSwitch = [self settingsSwitchWithAction:@selector(overlayControlChanged:)];
+    self.overlayMaxVisibleLinesPopup = [self overlayMaxVisibleLinesPopupControl];
+
+    NSButton *resetButton = [NSButton buttonWithTitle:@"Reset to Default"
+                                               target:self
+                                               action:@selector(resetOverlaySettings:)];
+    resetButton.bezelStyle = NSBezelStyleRounded;
+    resetButton.frame = NSMakeRect(0, 0, 126.0, 28.0);
+
+    NSView *controlsCard = [self cardWithTitle:@"Overlay"
+                                          rows:@[
+        [self cardRowWithLabel:@"Font" control:self.overlayFontFamilyPopup],
+        [self cardRowWithLabel:@"Text Size" control:fontSliderControl],
+        [self cardRowWithLabel:@"Distance from Bottom" control:bottomSliderControl],
+        [self cardRowWithLabel:@"Limit Visible Lines" control:self.overlayLimitVisibleLinesSwitch],
+        [self cardRowWithLabel:@"Max Visible Lines" control:self.overlayMaxVisibleLinesPopup],
+        [self cardRowWithLabel:@"Defaults" control:resetButton],
+    ]
+                                         width:contentW];
+    CGFloat descriptionHeight = [self fittingHeightForWrappingLabel:[self descriptionLabel:descriptionText] width:contentW];
+    CGFloat paneHeight = 30.0 + descriptionHeight + 18.0 + 20.0 + 12.0 + controlsCard.frame.size.height + 60.0;
+
+    NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, paneHeight)];
+    [self applySettingsPaneBackgroundToView:pane];
+
+    CGFloat y = paneHeight - 30.0;
+    NSTextField *desc = [self addSettingsDescriptionText:descriptionText
+                                                  toPane:pane
+                                                   topY:y
+                                                      x:contentX
+                                                  width:contentW];
+    y = NSMinY(desc.frame) - 18.0;
+
+    CGFloat controlsTitleY = y - 20.0;
+    NSTextField *controlsTitle = [self sectionTitleLabel:@"Style Controls"
+                                                   frame:NSMakeRect(contentX, controlsTitleY, contentW, 20.0)];
+    [pane addSubview:controlsTitle];
+    controlsCard.frame = NSMakeRect(contentX,
+                                    NSMinY(controlsTitle.frame) - 12.0 - controlsCard.frame.size.height,
+                                    contentW,
+                                    controlsCard.frame.size.height);
+    [pane addSubview:controlsCard];
+    NSView *controlsCardBody = controlsCard.subviews.count > 1 ? controlsCard.subviews[1] : controlsCard.subviews[0];
+    [self layoutCardRowControls:controlsCardBody width:contentW];
+    [self updateOverlayLineLimitControlsEnabled];
+
+    [self addButtonsToPane:pane atY:16 width:paneWidth];
+
+    return pane;
+}
+
+- (void)updateOverlayControlValueLabels {
+    self.overlayFontSizeValueLabel.stringValue = [NSString stringWithFormat:@"%ld pt", (long)clampedOverlayFontSizeValue(lround(self.overlayFontSizeSlider.doubleValue))];
+    self.overlayBottomMarginValueLabel.stringValue = [NSString stringWithFormat:@"%ld pt", (long)clampedOverlayBottomMarginValue(lround(self.overlayBottomMarginSlider.doubleValue))];
+}
+
+- (SPOverlayPanel *)runtimeOverlayPanel {
+    id appDelegate = NSApp.delegate;
+    if (!appDelegate) {
+        return nil;
+    }
+
+    id overlayPanel = nil;
+    @try {
+        overlayPanel = [appDelegate valueForKey:@"overlayPanel"];
+    } @catch (__unused NSException *exception) {
+        return nil;
+    }
+
+    if (![overlayPanel isKindOfClass:[SPOverlayPanel class]]) {
+        return nil;
+    }
+    return (SPOverlayPanel *)overlayPanel;
+}
+
+- (void)showRuntimeOverlayPreview {
+    SPOverlayPanel *overlayPanel = [self runtimeOverlayPanel];
+    if (!overlayPanel) return;
+
+    NSInteger fontSize = clampedOverlayFontSizeValue(lround(self.overlayFontSizeSlider.doubleValue));
+    NSInteger bottomMargin = clampedOverlayBottomMarginValue(lround(self.overlayBottomMarginSlider.doubleValue));
+    NSString *fontFamily = [self selectedOverlayFontFamilyValue];
+    BOOL limitVisibleLines = self.overlayLimitVisibleLinesSwitch.state == NSControlStateValueOn;
+    NSInteger maxVisibleLines = [self selectedOverlayMaxVisibleLinesValue];
+    [overlayPanel showPreviewWithText:kOverlayPreviewSampleText
+                             fontSize:(CGFloat)fontSize
+                           fontFamily:fontFamily
+                         bottomMargin:(CGFloat)bottomMargin
+                    limitVisibleLines:limitVisibleLines
+                      maxVisibleLines:maxVisibleLines];
+}
+
+- (void)hideRuntimeOverlayPreview {
+    [[self runtimeOverlayPanel] hidePreview];
+}
+
+- (void)syncOverlayPreviewFromControls {
+    [self updateOverlayLineLimitControlsEnabled];
+    [self updateOverlayControlValueLabels];
+    [self showRuntimeOverlayPreview];
+}
+
+- (void)overlayControlChanged:(id)sender {
+    [self syncOverlayPreviewFromControls];
+}
+
+- (void)resetOverlaySettings:(id)sender {
+    [self selectOverlayFontFamilyValue:kOverlayFontFamilyDefault];
+    self.overlayFontSizeSlider.integerValue = kOverlayFontSizeDefault;
+    self.overlayBottomMarginSlider.integerValue = kOverlayBottomMarginDefault;
+    self.overlayLimitVisibleLinesSwitch.state = kOverlayLimitVisibleLinesDefault ? NSControlStateValueOn : NSControlStateValueOff;
+    [self selectOverlayMaxVisibleLinesValue:kOverlayMaxVisibleLinesDefault];
+    [self syncOverlayPreviewFromControls];
+}
+
 - (NSView *)buildHotkeyPane {
     CGFloat paneWidth = 600;
     CGFloat cardWidth = paneWidth - 48;
@@ -1094,11 +1348,17 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
 - (void)setRuntimeHotkeyMonitoringSuspended:(BOOL)suspended {
     id appDelegate = NSApp.delegate;
-    if ([appDelegate respondsToSelector:@selector(hotkeyMonitor)]) {
-        id monitor = [appDelegate valueForKey:@"hotkeyMonitor"];
-        if ([monitor respondsToSelector:@selector(setSuspended:)]) {
-            [monitor setSuspended:suspended];
-        }
+    if (!appDelegate) return;
+
+    id monitor = nil;
+    @try {
+        monitor = [appDelegate valueForKey:@"hotkeyMonitor"];
+    } @catch (__unused NSException *exception) {
+        return;
+    }
+
+    if ([monitor respondsToSelector:@selector(setSuspended:)]) {
+        [monitor setSuspended:suspended];
     }
 }
 
@@ -1990,6 +2250,154 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     return field;
 }
 
+- (NSSlider *)overlaySliderWithMin:(double)minValue max:(double)maxValue action:(SEL)action {
+    NSSlider *slider = [[NSSlider alloc] initWithFrame:NSMakeRect(0, 0, 228, 24)];
+    slider.minValue = minValue;
+    slider.maxValue = maxValue;
+    slider.numberOfTickMarks = 0;
+    slider.continuous = YES;
+    slider.target = self;
+    slider.action = action;
+    return slider;
+}
+
+- (NSTextField *)overlayValueLabel {
+    NSTextField *label = [NSTextField labelWithString:@""];
+    label.alignment = NSTextAlignmentRight;
+    label.font = [NSFont monospacedDigitSystemFontOfSize:12 weight:NSFontWeightMedium];
+    label.textColor = [NSColor secondaryLabelColor];
+    label.frame = NSMakeRect(0, 0, 54, 18);
+    return label;
+}
+
+- (NSArray<NSString *> *)availableOverlayFontFamilies {
+    if (self.overlayAvailableFontFamilies.count > 0) {
+        return self.overlayAvailableFontFamilies;
+    }
+
+    NSMutableOrderedSet<NSString *> *families = [NSMutableOrderedSet orderedSet];
+    for (NSString *family in [[NSFontManager sharedFontManager] availableFontFamilies]) {
+        NSString *normalized = normalizedOverlayFontFamilyValue(family);
+        if (!overlayUsesSystemFontFamily(normalized)) {
+            [families addObject:normalized];
+        }
+    }
+
+    NSArray<NSString *> *sortedFamilies = [[families array] sortedArrayUsingComparator:^NSComparisonResult(NSString *lhs, NSString *rhs) {
+        return [lhs localizedStandardCompare:rhs];
+    }];
+    self.overlayAvailableFontFamilies = sortedFamilies;
+    return sortedFamilies;
+}
+
+- (NSAttributedString *)overlayFontMenuTitleWithLabel:(NSString *)label value:(NSString *)value {
+    NSFont *font = overlayFontForFamily(value, 13.0);
+    return [[NSAttributedString alloc] initWithString:label
+                                           attributes:@{
+        NSFontAttributeName: font,
+        NSForegroundColorAttributeName: [NSColor labelColor],
+    }];
+}
+
+- (NSPopUpButton *)overlayFontFamilyPopupControl {
+    NSPopUpButton *popup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 290, 26) pullsDown:NO];
+    popup.target = self;
+    popup.action = @selector(overlayControlChanged:);
+
+    [popup removeAllItems];
+
+    NSMenuItem *systemItem = [[NSMenuItem alloc] initWithTitle:kOverlayFontFamilySystemLabel action:nil keyEquivalent:@""];
+    systemItem.representedObject = kOverlayFontFamilyDefault;
+    systemItem.attributedTitle = [self overlayFontMenuTitleWithLabel:kOverlayFontFamilySystemLabel value:kOverlayFontFamilyDefault];
+    [popup.menu addItem:systemItem];
+
+    for (NSString *family in [self availableOverlayFontFamilies]) {
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:family action:nil keyEquivalent:@""];
+        item.representedObject = family;
+        item.attributedTitle = [self overlayFontMenuTitleWithLabel:family value:family];
+        [popup.menu addItem:item];
+    }
+
+    return popup;
+}
+
+- (NSPopUpButton *)overlayMaxVisibleLinesPopupControl {
+    NSPopUpButton *popup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 118.0, 28.0) pullsDown:NO];
+    popup.target = self;
+    popup.action = @selector(overlayControlChanged:);
+
+    for (NSInteger value = kOverlayMaxVisibleLinesMin; value <= kOverlayMaxVisibleLinesMax; value++) {
+        NSString *title = [NSString stringWithFormat:@"%ld lines", (long)value];
+        [popup addItemWithTitle:title];
+        popup.lastItem.representedObject = @(value);
+    }
+
+    [popup selectItemAtIndex:0];
+    return popup;
+}
+
+- (NSString *)selectedOverlayFontFamilyValue {
+    NSString *selectedValue = self.overlayFontFamilyPopup.selectedItem.representedObject;
+    return normalizedOverlayFontFamilyValue(selectedValue);
+}
+
+- (NSInteger)selectedOverlayMaxVisibleLinesValue {
+    NSNumber *selectedValue = [self.overlayMaxVisibleLinesPopup.selectedItem.representedObject isKindOfClass:[NSNumber class]]
+        ? self.overlayMaxVisibleLinesPopup.selectedItem.representedObject
+        : nil;
+    return clampedOverlayMaxVisibleLinesValue(selectedValue.integerValue > 0 ? selectedValue.integerValue : kOverlayMaxVisibleLinesDefault);
+}
+
+- (void)selectOverlayFontFamilyValue:(NSString *)value {
+    NSString *normalized = normalizedOverlayFontFamilyValue(value);
+
+    for (NSMenuItem *item in self.overlayFontFamilyPopup.itemArray) {
+        NSString *representedValue = item.representedObject;
+        if (representedValue.length == 0) continue;
+        if ([representedValue isEqualToString:normalized]) {
+            [self.overlayFontFamilyPopup selectItem:item];
+            return;
+        }
+    }
+
+    [self.overlayFontFamilyPopup selectItemAtIndex:0];
+}
+
+- (void)selectOverlayMaxVisibleLinesValue:(NSInteger)value {
+    NSInteger clampedValue = clampedOverlayMaxVisibleLinesValue(value);
+    for (NSMenuItem *item in self.overlayMaxVisibleLinesPopup.itemArray) {
+        NSNumber *representedValue = [item.representedObject isKindOfClass:[NSNumber class]] ? item.representedObject : nil;
+        if (representedValue.integerValue == clampedValue) {
+            [self.overlayMaxVisibleLinesPopup selectItem:item];
+            return;
+        }
+    }
+
+    [self.overlayMaxVisibleLinesPopup selectItemAtIndex:0];
+}
+
+- (void)updateOverlayLineLimitControlsEnabled {
+    self.overlayMaxVisibleLinesPopup.enabled = self.overlayLimitVisibleLinesSwitch.state == NSControlStateValueOn;
+}
+
+- (NSView *)sliderControlWithSlider:(NSSlider *)slider valueLabel:(NSTextField *)valueLabel width:(CGFloat)width {
+    CGFloat spacing = 10.0;
+    CGFloat height = MAX(slider.frame.size.height, valueLabel.frame.size.height);
+    NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
+
+    slider.frame = NSMakeRect(0,
+                              floor((height - slider.frame.size.height) / 2.0),
+                              width - valueLabel.frame.size.width - spacing,
+                              slider.frame.size.height);
+    valueLabel.frame = NSMakeRect(CGRectGetMaxX(slider.frame) + spacing,
+                                  floor((height - valueLabel.frame.size.height) / 2.0),
+                                  valueLabel.frame.size.width,
+                                  valueLabel.frame.size.height);
+    [container addSubview:slider];
+    [container addSubview:valueLabel];
+    return container;
+}
+
 - (NSTextField *)descriptionLabel:(NSString *)text {
     NSTextField *label = [NSTextField wrappingLabelWithString:text];
     label.font = [NSFont systemFontOfSize:12];
@@ -2818,6 +3226,24 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
         self.llmTestResultLabel.stringValue = @"";
         [self updateLlmFieldsEnabled];
+    } else if ([identifier isEqualToString:kToolbarOverlay]) {
+        NSString *fontFamilyRaw = configGet(@"overlay.font_family");
+        NSString *fontSizeRaw = configGet(@"overlay.font_size");
+        NSString *bottomMarginRaw = configGet(@"overlay.bottom_margin");
+        NSString *limitVisibleLinesRaw = configGet(@"overlay.limit_visible_lines");
+        NSString *maxVisibleLinesRaw = configGet(@"overlay.max_visible_lines");
+        NSString *fontFamily = fontFamilyRaw.length > 0 ? normalizedOverlayFontFamilyValue(fontFamilyRaw) : kOverlayFontFamilyDefault;
+        NSInteger fontSize = fontSizeRaw.length > 0 ? clampedOverlayFontSizeValue(fontSizeRaw.integerValue) : kOverlayFontSizeDefault;
+        NSInteger bottomMargin = bottomMarginRaw.length > 0 ? clampedOverlayBottomMarginValue(bottomMarginRaw.integerValue) : kOverlayBottomMarginDefault;
+        BOOL limitVisibleLines = overlayLimitVisibleLinesEnabledValue(limitVisibleLinesRaw);
+        NSInteger maxVisibleLines = maxVisibleLinesRaw.length > 0 ? clampedOverlayMaxVisibleLinesValue(maxVisibleLinesRaw.integerValue) : kOverlayMaxVisibleLinesDefault;
+
+        [self selectOverlayFontFamilyValue:fontFamily];
+        self.overlayFontSizeSlider.integerValue = fontSize;
+        self.overlayBottomMarginSlider.integerValue = bottomMargin;
+        self.overlayLimitVisibleLinesSwitch.state = limitVisibleLines ? NSControlStateValueOn : NSControlStateValueOff;
+        [self selectOverlayMaxVisibleLinesValue:maxVisibleLines];
+        [self syncOverlayPreviewFromControls];
     } else if ([identifier isEqualToString:kToolbarHotkey]) {
         NSString *triggerKeyRaw = configGet(@"hotkey.trigger_key");
         NSString *triggerKey = normalizedHotkeyValue(triggerKeyRaw);
@@ -2981,6 +3407,18 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         NSString *triggerModeValue = [self.triggerModePopup selectedItem].representedObject ?: @"hold";
         saveOk &= configSet(@"hotkey.trigger_mode", triggerModeValue);
     }
+    if (self.overlayFontSizeSlider) {
+        NSString *fontFamily = [self selectedOverlayFontFamilyValue];
+        NSInteger fontSize = clampedOverlayFontSizeValue(lround(self.overlayFontSizeSlider.doubleValue));
+        NSInteger bottomMargin = clampedOverlayBottomMarginValue(lround(self.overlayBottomMarginSlider.doubleValue));
+        BOOL limitVisibleLines = self.overlayLimitVisibleLinesSwitch.state == NSControlStateValueOn;
+        NSInteger maxVisibleLines = [self selectedOverlayMaxVisibleLinesValue];
+        saveOk &= configSet(@"overlay.font_family", fontFamily);
+        saveOk &= configSet(@"overlay.font_size", [NSString stringWithFormat:@"%ld", (long)fontSize]);
+        saveOk &= configSet(@"overlay.bottom_margin", [NSString stringWithFormat:@"%ld", (long)bottomMargin]);
+        saveOk &= configSet(@"overlay.limit_visible_lines", limitVisibleLines ? @"true" : @"false");
+        saveOk &= configSet(@"overlay.max_visible_lines", [NSString stringWithFormat:@"%ld", (long)maxVisibleLines]);
+    }
     if (self.startSoundCheckbox) {
         NSString *startSound = (self.startSoundCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
         NSString *stopSound = (self.stopSoundCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
@@ -3051,6 +3489,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
 - (void)cancelSetup:(id)sender {
     [self endHotkeyRecording];
+    [self hideRuntimeOverlayPreview];
     [self.window close];
 }
 
