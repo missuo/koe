@@ -473,13 +473,28 @@
 - (void)rustBridgeDidReceiveRewriteText:(NSString *)text {
     NSLog(@"[Koe] Rewrite text received (%lu chars)", (unsigned long)text.length);
 
-    // Copy to clipboard (don't auto-paste)
+    // Show rewritten text in overlay
+    [self.overlayPanel updateDisplayText:text];
+    [self.overlayPanel updateState:@"pasting"];
+
+    // Write to clipboard and auto-paste
+    [self.clipboardManager backup];
     [self.clipboardManager writeText:text];
 
-    // Show result with "Copied" indicator
-    [self.overlayPanel updateDisplayText:text];
-    [self.overlayPanel updateState:@"pasting"]; // green checkmark
-    [self.overlayPanel lingerAndDismiss];
+    uint64_t token = self.rustBridge.currentSessionToken;
+
+    if ([self.permissionManager isAccessibilityGranted]) {
+        [self.pasteManager simulatePasteWithCompletion:^{
+            [self.clipboardManager scheduleRestoreAfterDelay:1500];
+            if (token != self.rustBridge.currentSessionToken) return;
+            [self.statusBarManager updateState:@"idle"];
+            [self.overlayPanel lingerAndDismiss];
+        }];
+    } else {
+        NSLog(@"[Koe] Accessibility not granted — rewrite text copied to clipboard only");
+        [self.statusBarManager updateState:@"idle"];
+        [self.overlayPanel lingerAndDismiss];
+    }
 }
 
 - (void)rustBridgeDidChangeState:(NSString *)state {
