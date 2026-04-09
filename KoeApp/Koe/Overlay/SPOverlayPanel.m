@@ -219,6 +219,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, strong) NSVisualEffectView *effectView;
 @property (nonatomic, strong) SPOverlayContentView *contentView;
 @property (nonatomic, strong) NSTimer *animationTimer;
+@property (nonatomic, strong) NSTimer *lingerTimer;
 @property (nonatomic, copy)   NSString *currentState;
 @property (nonatomic, assign) CGFloat sessionMaxWidth;
 @property (nonatomic, assign) CGFloat sessionMaxHeight;
@@ -300,11 +301,17 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 #pragma mark - Public
 
 - (void)updateState:(NSString *)state {
+    // Cancel any pending linger dismiss from a previous session
+    [self.lingerTimer invalidate];
+    self.lingerTimer = nil;
+
     self.currentState = state;
     [self stopAnimation];
 
-    // Clear interim text on any state change
-    self.contentView.interimText = nil;
+    // Only clear display text when starting a new recording session
+    if ([state hasPrefix:@"recording"]) {
+        self.contentView.interimText = nil;
+    }
 
     if ([state isEqualToString:@"idle"] || [state isEqualToString:@"completed"]) {
         self.sessionMaxWidth = 0;
@@ -364,6 +371,32 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     self.contentView.interimText = text;
     [self resizeAndCenterAnimated:YES];
     [self.contentView setNeedsDisplay:YES];
+}
+
+- (void)updateDisplayText:(NSString *)text {
+    self.contentView.interimText = text;
+    [self resizeAndCenterAnimated:YES];
+    [self.contentView setNeedsDisplay:YES];
+}
+
+- (void)lingerAndDismiss {
+    [self.lingerTimer invalidate];
+    self.lingerTimer = nil;
+
+    // Dynamic linger: clamp(charCount * 0.03, 0.8, 2.5)
+    NSString *displayText = self.contentView.interimText ?: self.contentView.statusText ?: @"";
+    NSUInteger charCount = displayText.length;
+    NSTimeInterval linger = fmin(fmax(charCount * 0.03, 0.8), 2.5);
+
+    self.lingerTimer = [NSTimer scheduledTimerWithTimeInterval:linger
+                                                      repeats:NO
+                                                        block:^(NSTimer *timer) {
+        self.lingerTimer = nil;
+        self.sessionMaxWidth = 0;
+        self.sessionMaxHeight = 0;
+        [self hide];
+        self.currentState = @"idle";
+    }];
 }
 
 #pragma mark - Layout

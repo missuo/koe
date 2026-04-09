@@ -12,4 +12,10 @@
 /// Update interim ASR text shown during recording.
 - (void)updateInterimText:(NSString *)text;
 
+/// Update display text shown during non-recording phases (ASR result, LLM result).
+- (void)updateDisplayText:(NSString *)text;
+
+/// Dismiss the overlay after a dynamic linger period based on text length.
+- (void)lingerAndDismiss;
+
 @end
