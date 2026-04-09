@@ -41,6 +41,31 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     SPOverlayModeError,
 };
 
+// ── Key-accepting panel for template button bar ─────────
+// NSPanel subclass that can become key window without activating the app.
+// This allows it to receive keyboard events (number keys 1-9) while
+// the user's frontmost app retains focus.
+
+@interface SPKeyablePanel : NSPanel
+@property (nonatomic, copy) void (^keyHandler)(NSInteger number);
+@end
+
+@implementation SPKeyablePanel
+- (BOOL)canBecomeKeyWindow { return YES; }
+
+- (void)keyDown:(NSEvent *)event {
+    NSString *chars = event.charactersIgnoringModifiers;
+    if (chars.length == 1 && self.keyHandler) {
+        unichar ch = [chars characterAtIndex:0];
+        if (ch >= '1' && ch <= '9') {
+            self.keyHandler(ch - '0');
+            return;
+        }
+    }
+    [super keyDown:event];
+}
+@end
+
 // ── Content view ─────────────────────────────────────────
 
 @interface SPOverlayContentView : NSView
@@ -226,7 +251,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, assign) CGFloat sessionMaxHeight;
 @property (nonatomic, strong) NSArray<NSDictionary *> *templateButtons;
 @property (nonatomic, assign) BOOL showingTemplates;
-@property (nonatomic, strong) NSPanel *buttonBarPanel;
+@property (nonatomic, strong) SPKeyablePanel *buttonBarPanel;
 @property (nonatomic, strong) NSMutableArray<NSButton *> *templateButtonViews;
 
 @end
@@ -434,11 +459,11 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     totalW += (templates.count - 1) * btnSpacing + 2 * barPad;
     CGFloat barH = btnH + 2 * barPad;
 
-    // Create button bar panel
-    NSPanel *bar = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, totalW, barH)
-                                              styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
-                                                backing:NSBackingStoreBuffered
-                                                  defer:YES];
+    // Create button bar panel (SPKeyablePanel to receive keyboard events)
+    SPKeyablePanel *bar = [[SPKeyablePanel alloc] initWithContentRect:NSMakeRect(0, 0, totalW, barH)
+                                                            styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
+                                                              backing:NSBackingStoreBuffered
+                                                                defer:YES];
     bar.level = NSStatusWindowLevel;
     bar.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
                              NSWindowCollectionBehaviorStationary |
@@ -520,6 +545,17 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     }];
 
     self.buttonBarPanel = bar;
+
+    // Set up keyboard handler for number keys
+    __weak typeof(self) weakSelf = self;
+    bar.keyHandler = ^(NSInteger number) {
+        [weakSelf handleNumberKey:number];
+    };
+
+    // Make the button bar the key window so it receives keyboard events.
+    // NSNonactivatingPanel + canBecomeKeyWindow = receives keys without
+    // stealing focus from the user's frontmost app.
+    [bar makeKeyAndOrderFront:nil];
 
     // Extend linger time when templates are showing
     [self.lingerTimer invalidate];

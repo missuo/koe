@@ -64,6 +64,9 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         }
 
         // Forward number keys 1-9 if handler is set
+        if (type == kCGEventKeyDown) {
+            NSLog(@"[Koe] CGEventTap keyDown: keyCode=%ld handler=%@", (long)keyCode, monitor.numberKeyHandler ? @"YES" : @"NO");
+        }
         if (type == kCGEventKeyDown && monitor.numberKeyHandler) {
             // macOS keycodes: 1=18, 2=19, 3=20, 4=21, 5=23, 6=22, 7=26, 8=28, 9=25
             NSInteger number = 0;

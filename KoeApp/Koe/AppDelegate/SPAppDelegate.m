@@ -22,6 +22,7 @@
 @property (nonatomic, copy) dispatch_block_t pendingSessionEndBlock;
 @property (nonatomic, assign) BOOL showingError;
 @property (nonatomic, copy) NSString *lastAsrText;
+@property (nonatomic, strong) id numberKeyMonitor;
 @end
 
 @implementation SPAppDelegate
@@ -601,17 +602,13 @@
 #pragma mark - Number Key Monitoring
 
 - (void)startNumberKeyMonitoring {
-    __weak typeof(self) weakSelf = self;
-    self.hotkeyMonitor.numberKeyHandler = ^(NSInteger number) {
-        if ([weakSelf.overlayPanel handleNumberKey:number]) {
-            [weakSelf stopNumberKeyMonitoring];
-        }
-    };
-    NSLog(@"[Koe] Number key monitoring started");
+    // Number key handling is done by the SPKeyablePanel (button bar) itself.
+    // It becomes key window and receives keyDown: events directly.
+    // This method is kept for the start/stop logging pattern.
+    NSLog(@"[Koe] Number key monitoring active (via button bar key window)");
 }
 
 - (void)stopNumberKeyMonitoring {
-    self.hotkeyMonitor.numberKeyHandler = nil;
     NSLog(@"[Koe] Number key monitoring stopped");
 }
 
