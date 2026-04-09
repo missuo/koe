@@ -12,8 +12,9 @@ pub mod telemetry;
 use crate::config::Config;
 use crate::ffi::{
     cstr_to_str, invoke_asr_final_text, invoke_final_text_ready, invoke_interim_text,
-    invoke_session_error, invoke_session_ready, invoke_session_warning, invoke_state_changed,
-    SPCallbacks, SPFeedbackConfig, SPHotkeyConfig, SPSessionContext, SPSessionMode,
+    invoke_rewrite_text_ready, invoke_session_error, invoke_session_ready,
+    invoke_session_warning, invoke_state_changed, SPCallbacks, SPFeedbackConfig, SPHotkeyConfig,
+    SPSessionContext, SPSessionMode,
 };
 #[cfg(feature = "mlx")]
 use crate::llm::mlx::MlxLlmProvider;
@@ -67,6 +68,9 @@ struct Core {
     user_prompt_template: String,
     llm_http_client: Client,
     llm_warmup_state: Arc<Mutex<LlmWarmupState>>,
+    /// Session token from the most recent sp_core_session_begin call.
+    /// Used by sp_core_rewrite_with_template to route callbacks.
+    current_session_token: u64,
 }
 
 static CORE: Mutex<Option<Core>> = Mutex::new(None);
@@ -146,6 +150,7 @@ pub unsafe extern "C" fn sp_core_create(config_path: *const c_char) -> i32 {
         user_prompt_template,
         llm_http_client,
         llm_warmup_state: Arc::new(Mutex::new(LlmWarmupState::default())),
+        current_session_token: 0,
     };
 
     let mut global = CORE.lock().unwrap();
@@ -269,6 +274,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
     let session = Session::new(context.mode, bundle_id, context.frontmost_pid);
     let session_id = session.id.clone();
     let session_token = context.session_token;
+    core.current_session_token = session_token;
     let mode = context.mode;
 
     // Abort any still-running old session: signal its cancelled flag and close
@@ -537,6 +543,158 @@ pub extern "C" fn sp_core_session_cancel() -> i32 {
         // Drop the audio sender to unblock the session task
         core.audio_tx = None;
     }
+    0
+}
+
+/// Return prompt templates as JSON array.
+/// Each entry: {"name":"...","shortcut":N}
+/// Caller must free with sp_core_free_string().
+#[no_mangle]
+pub extern "C" fn sp_core_get_prompt_templates_json() -> *mut c_char {
+    let global = CORE.lock().unwrap();
+    if let Some(ref core) = *global {
+        let templates: Vec<serde_json::Value> = core
+            .config
+            .prompt_templates
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "shortcut": t.shortcut,
+                })
+            })
+            .collect();
+        let json = serde_json::to_string(&templates).unwrap_or_else(|_| "[]".into());
+        CString::new(json).unwrap_or_default().into_raw()
+    } else {
+        CString::new("[]").unwrap_or_default().into_raw()
+    }
+}
+
+/// Rewrite ASR text using a specific prompt template.
+/// template_index is 0-based into the prompt_templates array.
+/// The rewrite runs asynchronously; result delivered via on_rewrite_text_ready callback.
+///
+/// # Safety
+/// `asr_text_ptr` must be a valid null-terminated C string.
+#[no_mangle]
+pub unsafe extern "C" fn sp_core_rewrite_with_template(
+    template_index: i32,
+    asr_text_ptr: *const c_char,
+) -> i32 {
+    let asr_text = match unsafe { cstr_to_str(asr_text_ptr) } {
+        Some(s) => s.to_string(),
+        None => return -1,
+    };
+
+    let global = CORE.lock().unwrap();
+    let core = match global.as_ref() {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    let idx = template_index as usize;
+    let template = match core.config.prompt_templates.get(idx) {
+        Some(t) => t.clone(),
+        None => {
+            log::error!(
+                "sp_core_rewrite_with_template: invalid index {idx}"
+            );
+            return -1;
+        }
+    };
+
+    let template_system_prompt = match template.resolve_system_prompt() {
+        Some(p) => p,
+        None => {
+            log::error!(
+                "sp_core_rewrite_with_template: no system prompt for template '{}'",
+                template.name
+            );
+            return -1;
+        }
+    };
+
+    // Gather LLM config and dependencies
+    let llm_config = core.config.llm.clone();
+    let dictionary = core.dictionary.clone();
+    let user_prompt_template = core.user_prompt_template.clone();
+    let llm_http_client = core.llm_http_client.clone();
+    let session_token = core.current_session_token;
+    let runtime_handle = core.runtime.handle().clone();
+
+    drop(global); // Release lock before spawning
+
+    runtime_handle.spawn(async move {
+        log::info!(
+            "rewrite: using template '{}' with {} chars of ASR text",
+            template.name,
+            asr_text.len()
+        );
+
+        let llm: Box<dyn LlmProvider> = match llm_config.provider.as_str() {
+            #[cfg(feature = "mlx")]
+            "mlx" => {
+                let model_path = config::resolve_model_dir(&llm_config.mlx.model)
+                    .to_string_lossy()
+                    .to_string();
+                Box::new(MlxLlmProvider::new(
+                    model_path,
+                    llm_config.temperature,
+                    llm_config.top_p,
+                    llm_config.max_output_tokens,
+                    llm_config.timeout_ms,
+                ))
+            }
+            _ => Box::new(OpenAiCompatibleProvider::new(
+                llm_http_client,
+                llm_config.base_url.clone(),
+                llm_config.api_key.clone(),
+                llm_config.model.clone(),
+                llm_config.temperature,
+                llm_config.top_p,
+                llm_config.max_output_tokens,
+                llm_config.max_token_parameter,
+                llm_config.no_reasoning_control,
+            )),
+        };
+
+        let candidates = prompt::filter_dictionary_candidates(
+            &dictionary,
+            &asr_text,
+            llm_config.dictionary_max_candidates,
+        );
+        let user_prompt =
+            prompt::render_user_prompt(&user_prompt_template, &asr_text, &candidates, &[]);
+
+        let request = CorrectionRequest {
+            asr_text: asr_text.clone(),
+            dictionary_entries: candidates,
+            system_prompt: template_system_prompt,
+            user_prompt,
+        };
+
+        match llm.correct(&request).await {
+            Ok(result) => {
+                log::info!(
+                    "rewrite: template '{}' produced {} chars",
+                    template.name,
+                    result.len()
+                );
+                invoke_rewrite_text_ready(session_token, &result);
+            }
+            Err(e) => {
+                log::error!("rewrite: template '{}' failed: {e}", template.name);
+                invoke_session_warning(
+                    session_token,
+                    &format!("Rewrite failed: {e}"),
+                );
+                // Fall back to original ASR text
+                invoke_rewrite_text_ready(session_token, &asr_text);
+            }
+        }
+    });
+
     0
 }
 
