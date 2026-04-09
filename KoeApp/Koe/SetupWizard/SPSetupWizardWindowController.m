@@ -24,6 +24,7 @@ static NSToolbarItemIdentifier const kToolbarLLM = @"llm";
 static NSToolbarItemIdentifier const kToolbarHotkey = @"hotkey";
 static NSToolbarItemIdentifier const kToolbarDictionary = @"dictionary";
 static NSToolbarItemIdentifier const kToolbarSystemPrompt = @"system_prompt";
+static NSToolbarItemIdentifier const kToolbarAbout = @"about";
 
 // ─── Config helpers (backed by sp_config_get / sp_config_set) ───────
 #import "koe_core.h"
@@ -174,9 +175,11 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 // Hotkey
 @property (nonatomic, strong) NSPopUpButton *hotkeyPopup;
 @property (nonatomic, strong) NSPopUpButton *cancelHotkeyPopup;
-@property (nonatomic, strong) NSButton *startSoundCheckbox;
-@property (nonatomic, strong) NSButton *stopSoundCheckbox;
-@property (nonatomic, strong) NSButton *errorSoundCheckbox;
+// Trigger mode
+@property (nonatomic, strong) NSPopUpButton *triggerModePopup;
+@property (nonatomic, strong) NSSwitch *startSoundCheckbox;
+@property (nonatomic, strong) NSSwitch *stopSoundCheckbox;
+@property (nonatomic, strong) NSSwitch *errorSoundCheckbox;
 
 // Dictionary
 @property (nonatomic, strong) NSTextView *dictionaryTextView;
@@ -228,15 +231,15 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
-    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt];
+    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarAbout];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
-    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt];
+    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarAbout];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarSelectableItemIdentifiers:(NSToolbar *)toolbar {
-    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt];
+    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarAbout];
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier willBeInsertedIntoToolbar:(BOOL)flag {
@@ -259,6 +262,9 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     } else if ([itemIdentifier isEqualToString:kToolbarSystemPrompt]) {
         item.label = @"Prompt";
         item.image = [NSImage imageWithSystemSymbolName:@"text.bubble" accessibilityDescription:@"System Prompt"];
+    } else if ([itemIdentifier isEqualToString:kToolbarAbout]) {
+        item.label = @"About";
+        item.image = [NSImage imageWithSystemSymbolName:@"info.circle" accessibilityDescription:@"About"];
     }
 
     return item;
@@ -289,6 +295,8 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         paneView = [self buildDictionaryPane];
     } else if ([identifier isEqualToString:kToolbarSystemPrompt]) {
         paneView = [self buildSystemPromptPane];
+    } else if ([identifier isEqualToString:kToolbarAbout]) {
+        paneView = [self buildAboutPane];
     }
 
     if (!paneView) return;
@@ -722,25 +730,12 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 
 - (NSView *)buildHotkeyPane {
     CGFloat paneWidth = 600;
-    CGFloat labelW = 130;
-    CGFloat fieldX = labelW + 24;
-    CGFloat rowH = 32;
+    CGFloat cardWidth = paneWidth - 48;
+    CGFloat cardSpacing = 16.0;
+    CGFloat topPad = 24.0;
 
-    CGFloat contentHeight = 360;
-    NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
-
-    CGFloat y = contentHeight - 48;
-
-    // Description
-    NSTextField *desc = [self descriptionLabel:@"Choose a trigger key for voice input and a separate cancel key to abort the current session."];
-    desc.frame = NSMakeRect(24, y - 10, paneWidth - 48, 36);
-    [pane addSubview:desc];
-    y -= 52;
-
-    // Trigger Key
-    [pane addSubview:[self formLabel:@"Trigger Key" frame:NSMakeRect(16, y, labelW, 22)]];
-
-    self.hotkeyPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 220, 26) pullsDown:NO];
+    // ── Trigger Key ──
+    self.hotkeyPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 220, 26) pullsDown:NO];
     [self.hotkeyPopup addItemsWithTitles:@[
         @"Fn (Globe)",
         @"Left Option (\u2325)",
@@ -757,13 +752,18 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     [self.hotkeyPopup itemAtIndex:4].representedObject = @"right_command";
     [self.hotkeyPopup itemAtIndex:5].representedObject = @"left_control";
     [self.hotkeyPopup itemAtIndex:6].representedObject = @"right_control";
-    [pane addSubview:self.hotkeyPopup];
-    y -= rowH + 16;
 
-    // Cancel Key
-    [pane addSubview:[self formLabel:@"Cancel Key" frame:NSMakeRect(16, y, labelW, 22)]];
+    // ── Trigger Mode ──
+    self.triggerModePopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 220, 26) pullsDown:NO];
+    [self.triggerModePopup addItemsWithTitles:@[
+        @"Hold (Press & Hold)",
+        @"Toggle (Tap to Start/Stop)",
+    ]];
+    [self.triggerModePopup itemAtIndex:0].representedObject = @"hold";
+    [self.triggerModePopup itemAtIndex:1].representedObject = @"toggle";
 
-    self.cancelHotkeyPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 220, 26) pullsDown:NO];
+    // ── Cancel Key ──
+    self.cancelHotkeyPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 220, 26) pullsDown:NO];
     [self.cancelHotkeyPopup addItemsWithTitles:@[
         @"Fn (Globe)",
         @"Left Option (\u2325)",
@@ -780,45 +780,50 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     [self.cancelHotkeyPopup itemAtIndex:4].representedObject = @"right_command";
     [self.cancelHotkeyPopup itemAtIndex:5].representedObject = @"left_control";
     [self.cancelHotkeyPopup itemAtIndex:6].representedObject = @"right_control";
-    [pane addSubview:self.cancelHotkeyPopup];
-    y -= rowH + 8;
 
-    NSTextField *hotkeyHint = [self descriptionLabel:@"Trigger Key and Cancel Key must be different."];
-    hotkeyHint.frame = NSMakeRect(fieldX, y + 2, paneWidth - fieldX - 32, 24);
-    [pane addSubview:hotkeyHint];
-    y -= 30;
+    // ── Trigger card ──
+    NSView *triggerCard = [self cardWithTitle:@"Trigger" rows:@[
+        [self cardRowWithLabel:@"Trigger Key" control:self.hotkeyPopup],
+        [self cardRowWithLabel:@"Trigger Mode" control:self.triggerModePopup],
+        [self cardRowWithLabel:@"Cancel Key" control:self.cancelHotkeyPopup],
+    ] width:cardWidth];
 
-    // Feedback sounds
-    [pane addSubview:[self formLabel:@"Feedback Sounds" frame:NSMakeRect(16, y, labelW, 22)]];
+    // ── Feedback Sounds ──
+    self.startSoundCheckbox = [[NSSwitch alloc] initWithFrame:NSMakeRect(0, 0, 38, 22)];
+    self.stopSoundCheckbox = [[NSSwitch alloc] initWithFrame:NSMakeRect(0, 0, 38, 22)];
+    self.errorSoundCheckbox = [[NSSwitch alloc] initWithFrame:NSMakeRect(0, 0, 38, 22)];
 
-    self.startSoundCheckbox = [NSButton checkboxWithTitle:@"Play a sound when recording starts"
-                                                   target:nil
-                                                   action:nil];
-    self.startSoundCheckbox.frame = NSMakeRect(fieldX, y - 4, 300, 22);
-    [pane addSubview:self.startSoundCheckbox];
-    y -= 28;
+    NSView *feedbackCard = [self cardWithTitle:@"Feedback Sounds" rows:@[
+        [self cardRowWithLabel:@"Recording starts" control:self.startSoundCheckbox],
+        [self cardRowWithLabel:@"Recording stops" control:self.stopSoundCheckbox],
+        [self cardRowWithLabel:@"Error occurs" control:self.errorSoundCheckbox],
+    ] width:cardWidth];
 
-    self.stopSoundCheckbox = [NSButton checkboxWithTitle:@"Play a sound when recording stops"
-                                                  target:nil
-                                                  action:nil];
-    self.stopSoundCheckbox.frame = NSMakeRect(fieldX, y - 4, 300, 22);
-    [pane addSubview:self.stopSoundCheckbox];
-    y -= 28;
+    // ── Layout ──
+    CGFloat triggerH = triggerCard.frame.size.height;
+    CGFloat feedbackH = feedbackCard.frame.size.height;
+    CGFloat contentHeight = topPad + triggerH + cardSpacing + feedbackH + 56;
 
-    self.errorSoundCheckbox = [NSButton checkboxWithTitle:@"Play a sound when an error occurs"
-                                                   target:nil
-                                                   action:nil];
-    self.errorSoundCheckbox.frame = NSMakeRect(fieldX, y - 4, 300, 22);
-    [pane addSubview:self.errorSoundCheckbox];
-    y -= 32;
+    NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
+    pane.wantsLayer = YES;
+    pane.layer.backgroundColor = [NSColor colorWithRed:0.961 green:0.961 blue:0.969 alpha:1.0].CGColor;
 
-    NSTextField *feedbackHint = [self descriptionLabel:@"These toggle the built-in cue sounds for start, stop, and error events."];
-    feedbackHint.frame = NSMakeRect(fieldX, y - 2, paneWidth - fieldX - 32, 24);
-    [pane addSubview:feedbackHint];
-    y -= 34;
+    CGFloat y = contentHeight - topPad;
 
-    // Save / Cancel buttons
-    [self addButtonsToPane:pane atY:y width:paneWidth];
+    y -= triggerH;
+    triggerCard.frame = NSMakeRect(24, y, cardWidth, triggerH);
+    [pane addSubview:triggerCard];
+    // Fix control positions — the card's child (index 1) is the white card view
+    NSView *triggerCardBody = triggerCard.subviews.count > 1 ? triggerCard.subviews[1] : triggerCard.subviews[0];
+    [self layoutCardRowControls:triggerCardBody width:cardWidth];
+
+    y -= cardSpacing + feedbackH;
+    feedbackCard.frame = NSMakeRect(24, y, cardWidth, feedbackH);
+    [pane addSubview:feedbackCard];
+    NSView *feedbackCardBody = feedbackCard.subviews.count > 1 ? feedbackCard.subviews[1] : feedbackCard.subviews[0];
+    [self layoutCardRowControls:feedbackCardBody width:cardWidth];
+
+    [self addButtonsToPane:pane atY:16 width:paneWidth];
 
     return pane;
 }
@@ -903,6 +908,72 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     return pane;
 }
 
+- (NSView *)buildAboutPane {
+    CGFloat paneWidth = 600;
+    CGFloat contentHeight = 300;
+    NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
+
+    CGFloat y = contentHeight - 48;
+
+    // App name
+    NSTextField *appName = [NSTextField labelWithString:@"Koe (\u58f0)"];
+    appName.font = [NSFont systemFontOfSize:28 weight:NSFontWeightBold];
+    appName.alignment = NSTextAlignmentCenter;
+    appName.frame = NSMakeRect(24, y - 4, paneWidth - 48, 36);
+    [pane addSubview:appName];
+    y -= 44;
+
+    // Version
+    NSString *version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"dev";
+    NSString *build = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"0";
+    NSTextField *versionLabel = [self descriptionLabel:[NSString stringWithFormat:@"Version %@ (%@)", version, build]];
+    versionLabel.alignment = NSTextAlignmentCenter;
+    versionLabel.frame = NSMakeRect(24, y, paneWidth - 48, 20);
+    [pane addSubview:versionLabel];
+    y -= 32;
+
+    // Description
+    NSTextField *desc = [self descriptionLabel:@"A background-first macOS voice input tool.\nPress a hotkey, speak, and the corrected text is pasted into whatever app you\u2019re using."];
+    desc.alignment = NSTextAlignmentCenter;
+    desc.frame = NSMakeRect(60, y - 10, paneWidth - 120, 40);
+    [pane addSubview:desc];
+    y -= 60;
+
+    // GitHub button
+    NSButton *githubButton = [NSButton buttonWithTitle:@"GitHub Repository" target:self action:@selector(openGitHub:)];
+    githubButton.bezelStyle = NSBezelStyleRounded;
+    githubButton.image = [NSImage imageWithSystemSymbolName:@"arrow.up.right" accessibilityDescription:nil];
+    githubButton.imagePosition = NSImageTrailing;
+    githubButton.frame = NSMakeRect((paneWidth - 180) / 2.0, y, 180, 32);
+    [pane addSubview:githubButton];
+    y -= 40;
+
+    // Documentation link
+    NSButton *docsButton = [NSButton buttonWithTitle:@"Documentation" target:self action:@selector(openDocs:)];
+    docsButton.bezelStyle = NSBezelStyleRounded;
+    docsButton.image = [NSImage imageWithSystemSymbolName:@"arrow.up.right" accessibilityDescription:nil];
+    docsButton.imagePosition = NSImageTrailing;
+    docsButton.frame = NSMakeRect((paneWidth - 180) / 2.0, y, 180, 32);
+    [pane addSubview:docsButton];
+    y -= 48;
+
+    // License
+    NSTextField *license = [self descriptionLabel:@"MIT License \u00b7 Made with Rust + Objective-C"];
+    license.alignment = NSTextAlignmentCenter;
+    license.frame = NSMakeRect(24, y, paneWidth - 48, 20);
+    [pane addSubview:license];
+
+    return pane;
+}
+
+- (void)openGitHub:(id)sender {
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"https://github.com/missuo/koe"]];
+}
+
+- (void)openDocs:(id)sender {
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"https://github.com/missuo/koe/blob/main/README.md"]];
+}
+
 // ─── Shared button bar ──────────────────────────────────────────────
 
 - (void)addButtonsToPane:(NSView *)pane atY:(CGFloat)y width:(CGFloat)paneWidth {
@@ -944,6 +1015,85 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     label.font = [NSFont systemFontOfSize:12];
     label.textColor = [NSColor secondaryLabelColor];
     return label;
+}
+
+// ─── Card Layout Helpers ───────────────────────────────────────────
+
+- (NSView *)cardWithTitle:(NSString *)title rows:(NSArray<NSView *> *)rows width:(CGFloat)width {
+    CGFloat rowHeight = 44.0;
+    CGFloat cardPad = 16.0;
+
+    CGFloat cardHeight = rows.count * rowHeight;
+    CGFloat titleHeight = title.length > 0 ? 28.0 : 0.0;
+    CGFloat totalHeight = titleHeight + cardHeight;
+
+    NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, totalHeight)];
+
+    if (title.length > 0) {
+        NSTextField *titleLabel = [NSTextField labelWithString:title.uppercaseString];
+        titleLabel.font = [NSFont systemFontOfSize:12 weight:NSFontWeightSemibold];
+        titleLabel.textColor = [NSColor colorWithRed:0.525 green:0.525 blue:0.557 alpha:1.0];
+        titleLabel.frame = NSMakeRect(cardPad, cardHeight, width - 2 * cardPad, 20);
+        [container addSubview:titleLabel];
+    }
+
+    NSView *card = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, cardHeight)];
+    card.wantsLayer = YES;
+    card.layer.backgroundColor = [NSColor whiteColor].CGColor;
+    card.layer.cornerRadius = 12.0;
+    [container addSubview:card];
+
+    for (NSUInteger i = 0; i < rows.count; i++) {
+        NSView *row = rows[i];
+        CGFloat rowY = cardHeight - (i + 1) * rowHeight;
+        row.frame = NSMakeRect(0, rowY, width, rowHeight);
+        [card addSubview:row];
+
+        if (i < rows.count - 1) {
+            NSView *sep = [[NSView alloc] initWithFrame:NSMakeRect(cardPad, rowY, width - cardPad, 1)];
+            sep.wantsLayer = YES;
+            sep.layer.backgroundColor = [NSColor colorWithRed:0.898 green:0.898 blue:0.918 alpha:1.0].CGColor;
+            [card addSubview:sep];
+        }
+    }
+
+    return container;
+}
+
+- (NSView *)cardRowWithLabel:(NSString *)label control:(NSView *)control {
+    CGFloat rowHeight = 44.0;
+    CGFloat pad = 16.0;
+    NSView *row = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 100, rowHeight)];
+
+    NSTextField *lbl = [NSTextField labelWithString:label];
+    lbl.font = [NSFont systemFontOfSize:13 weight:NSFontWeightRegular];
+    lbl.textColor = [NSColor colorWithRed:0.114 green:0.114 blue:0.122 alpha:1.0];
+    lbl.frame = NSMakeRect(pad, (rowHeight - 20) / 2.0, 200, 20);
+    [row addSubview:lbl];
+
+    CGFloat controlW = control.frame.size.width;
+    CGFloat controlH = control.frame.size.height;
+    // Will be repositioned when parent sets the row's frame width
+    control.frame = NSMakeRect(0, (rowHeight - controlH) / 2.0, controlW, controlH);
+    control.autoresizingMask = NSViewMinXMargin;
+    [row addSubview:control];
+
+    return row;
+}
+
+- (void)layoutCardRowControls:(NSView *)card width:(CGFloat)width {
+    CGFloat pad = 16.0;
+    for (NSView *row in card.subviews) {
+        for (NSView *sub in row.subviews) {
+            if (sub.autoresizingMask & NSViewMinXMargin) {
+                CGFloat controlW = sub.frame.size.width;
+                CGFloat controlH = sub.frame.size.height;
+                sub.frame = NSMakeRect(width - pad - controlW,
+                                       (row.frame.size.height - controlH) / 2.0,
+                                       controlW, controlH);
+            }
+        }
+    }
 }
 
 - (NSButton *)eyeButtonWithFrame:(NSRect)frame action:(SEL)action {
@@ -1597,6 +1747,14 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
             }
         }
 
+        // Load trigger mode
+        NSString *triggerMode = configGet(@"hotkey.trigger_mode");
+        if ([triggerMode isEqualToString:@"toggle"]) {
+            [self.triggerModePopup selectItemAtIndex:1];
+        } else {
+            [self.triggerModePopup selectItemAtIndex:0];
+        }
+
         NSString *startSound = configGet(@"feedback.start_sound");
         NSString *stopSound = configGet(@"feedback.stop_sound");
         NSString *errorSound = configGet(@"feedback.error_sound");
@@ -1728,6 +1886,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         }
         saveOk &= configSet(@"hotkey.trigger_key", selectedTriggerHotkey);
         saveOk &= configSet(@"hotkey.cancel_key", selectedCancelHotkey);
+
+        // Save trigger mode
+        NSString *triggerModeValue = [self.triggerModePopup selectedItem].representedObject ?: @"hold";
+        configSet(@"hotkey.trigger_mode", triggerModeValue);
     }
     if (self.startSoundCheckbox) {
         NSString *startSound = (self.startSoundCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
