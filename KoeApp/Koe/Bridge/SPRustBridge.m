@@ -87,6 +87,17 @@ static void bridge_on_interim_text(uint64_t token, const char *text) {
     }
 }
 
+static void bridge_on_asr_final_text(uint64_t token, const char *text) {
+    NSString *txt = text ? [NSString stringWithUTF8String:text] : @"";
+    id<SPRustBridgeDelegate> delegate = _bridgeDelegate;
+    if (delegate) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (token != _currentSessionToken) return;
+            [delegate rustBridgeDidReceiveAsrFinalText:txt];
+        });
+    }
+}
+
 // ─── Download callback context ─────────────────────────────────────
 
 @interface _KoeDownloadContext : NSObject
@@ -127,6 +138,7 @@ static void bridge_on_interim_text(uint64_t token, const char *text) {
         .on_log_event = bridge_on_log_event,
         .on_state_changed = bridge_on_state_changed,
         .on_interim_text = bridge_on_interim_text,
+        .on_asr_final_text = bridge_on_asr_final_text,
     };
     sp_core_register_callbacks(callbacks);
 
