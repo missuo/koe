@@ -960,8 +960,6 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     self.templatesTableView.headerView = nil;
     self.templatesTableView.delegate = (id)self;
     self.templatesTableView.dataSource = (id)self;
-    self.templatesTableView.target = self;
-    self.templatesTableView.action = @selector(templateTableClicked:);
     scrollView.documentView = self.templatesTableView;
     [pane addSubview:scrollView];
 
@@ -1042,7 +1040,8 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     return cell;
 }
 
-- (void)templateTableClicked:(id)sender {
+- (void)tableViewSelectionDidChange:(NSNotification *)notification {
+    if (notification.object != self.templatesTableView) return;
     if (self.suppressTemplateSync) return;
 
     NSInteger row = self.templatesTableView.selectedRow;
