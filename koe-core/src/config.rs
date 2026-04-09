@@ -15,6 +15,23 @@ pub struct Config {
     pub dictionary: DictionarySection,
     #[serde(default)]
     pub hotkey: HotkeySection,
+    #[serde(default)]
+    pub prompt_templates: Vec<PromptTemplate>,
+}
+
+/// A named prompt template selectable from the overlay UI.
+#[derive(Debug, Deserialize, Clone)]
+pub struct PromptTemplate {
+    /// Display name shown on the overlay button
+    pub name: String,
+    /// Shortcut key number (1-9)
+    pub shortcut: u8,
+    /// Inline system prompt text (mutually exclusive with system_prompt_path)
+    #[serde(default)]
+    pub system_prompt: Option<String>,
+    /// Path to system prompt file, relative to ~/.koe/ (alternative to inline)
+    #[serde(default)]
+    pub system_prompt_path: Option<String>,
 }
 
 // ─── ASR V2 Configuration ───────────────────────────────────────────
@@ -634,6 +651,27 @@ fn resolve_path(p: &str) -> PathBuf {
         path.to_path_buf()
     } else {
         config_dir().join(path)
+    }
+}
+
+impl PromptTemplate {
+    /// Resolve the system prompt: inline text takes priority, then file path.
+    pub fn resolve_system_prompt(&self) -> Option<String> {
+        if let Some(ref text) = self.system_prompt {
+            if !text.is_empty() {
+                return Some(text.clone());
+            }
+        }
+        if let Some(ref path) = self.system_prompt_path {
+            let resolved = resolve_path(path);
+            if let Ok(content) = std::fs::read_to_string(&resolved) {
+                let trimmed = content.trim().to_string();
+                if !trimmed.is_empty() {
+                    return Some(trimmed);
+                }
+            }
+        }
+        None
     }
 }
 
