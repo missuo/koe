@@ -484,7 +484,8 @@
     uint64_t token = self.rustBridge.currentSessionToken;
 
     if ([self.permissionManager isAccessibilityGranted]) {
-        [self.pasteManager simulatePasteWithCompletion:^{
+        // Undo the previous default paste, then paste the rewrite result
+        [self.pasteManager simulateUndoThenPasteWithCompletion:^{
             [self.clipboardManager scheduleRestoreAfterDelay:1500];
             if (token != self.rustBridge.currentSessionToken) return;
             [self.statusBarManager updateState:@"idle"];
