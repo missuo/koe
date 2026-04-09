@@ -1040,52 +1040,45 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     return cell;
 }
 
+// ─── Template List: selection only loads, NEVER saves back automatically ───
+//
+// Design: templatesData is the source of truth. The editor fields are just
+// a view into one entry. We sync editor→data ONLY on explicit actions:
+// (1) user clicks Save button  (2) user clicks + to add  (3) switching tabs
+//
+// tableViewSelectionDidChange just loads the new row into the editor.
+// It first writes back the editor content for the OLD row, which is safe
+// because selectedTemplateIndex still points to the old row at that moment.
+
 - (void)tableViewSelectionDidChange:(NSNotification *)notification {
     if (notification.object != self.templatesTableView) return;
     if (self.suppressTemplateSync) return;
 
-    NSInteger row = self.templatesTableView.selectedRow;
-    if (row == self.selectedTemplateIndex) return;
+    NSInteger newRow = self.templatesTableView.selectedRow;
+    if (newRow == self.selectedTemplateIndex) return;
 
-    // Save edits from current template before switching
-    [self syncCurrentTemplateToData];
+    // Write editor content back to the OLD row before loading the new one
+    [self flushEditorToIndex:self.selectedTemplateIndex];
 
-    self.selectedTemplateIndex = row;
-    [self loadTemplateAtIndex:row];
+    self.selectedTemplateIndex = newRow;
+    [self loadEditorFromIndex:newRow];
 }
 
-/// Write the name/prompt fields back into templatesData for the current selection.
-- (void)syncCurrentTemplateToData {
-    NSInteger idx = self.selectedTemplateIndex;
-    if (idx < 0 || idx >= (NSInteger)self.templatesData.count) return;
-    if (!self.templateNameField || !self.templatePromptTextView) return;
-    self.templatesData[idx][@"name"] = self.templateNameField.stringValue ?: @"";
-    self.templatesData[idx][@"system_prompt"] = self.templatePromptTextView.string ?: @"";
+/// Write current editor fields into templatesData[index]. Safe to call with -1.
+- (void)flushEditorToIndex:(NSInteger)index {
+    if (index < 0 || index >= (NSInteger)self.templatesData.count) return;
+    if (!self.templateNameField) return;
+    self.templatesData[index][@"name"] = self.templateNameField.stringValue ?: @"";
+    self.templatesData[index][@"system_prompt"] = self.templatePromptTextView.string ?: @"";
 }
 
-/// Reload table without triggering sync callbacks.
-- (void)reloadTemplatesTablePreservingSelection {
-    self.suppressTemplateSync = YES;
-    [self.templatesTableView reloadData];
-    if (self.selectedTemplateIndex >= 0 && self.selectedTemplateIndex < (NSInteger)self.templatesData.count) {
-        [self.templatesTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:self.selectedTemplateIndex]
-                             byExtendingSelection:NO];
-    }
-    self.suppressTemplateSync = NO;
-}
-
-- (void)loadTemplateAtIndex:(NSInteger)index {
+/// Load templatesData[index] into the editor fields. -1 clears everything.
+- (void)loadEditorFromIndex:(NSInteger)index {
     if (index >= 0 && index < (NSInteger)self.templatesData.count) {
         NSDictionary *tmpl = self.templatesData[index];
-        NSLog(@"[Koe] Loading template %ld: name=%@ prompt_len=%lu prompt_class=%@",
-              (long)index,
-              tmpl[@"name"],
-              (unsigned long)[tmpl[@"system_prompt"] length],
-              NSStringFromClass([tmpl[@"system_prompt"] class]));
         self.templateNameField.stringValue = tmpl[@"name"] ?: @"";
-        id promptVal = tmpl[@"system_prompt"];
-        NSString *promptStr = ([promptVal isKindOfClass:[NSString class]]) ? promptVal : @"";
-        self.templatePromptTextView.string = promptStr;
+        id val = tmpl[@"system_prompt"];
+        self.templatePromptTextView.string = ([val isKindOfClass:[NSString class]]) ? val : @"";
         self.templateNameField.enabled = YES;
         self.templatePromptTextView.editable = YES;
     } else {
@@ -1096,39 +1089,46 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     }
 }
 
+/// Flush editor, then reload table (used by Save button & tab switch).
 - (void)saveCurrentTemplateEdits {
-    [self syncCurrentTemplateToData];
-    [self reloadTemplatesTablePreservingSelection];
+    [self flushEditorToIndex:self.selectedTemplateIndex];
 }
 
 - (void)addTemplate:(id)sender {
-    [self syncCurrentTemplateToData];
+    // Flush current editor first
+    [self flushEditorToIndex:self.selectedTemplateIndex];
+
     NSInteger nextShortcut = (NSInteger)self.templatesData.count + 1;
     if (nextShortcut > 9) nextShortcut = 9;
-    NSMutableDictionary *newTemplate = [NSMutableDictionary dictionaryWithDictionary:@{
+    [self.templatesData addObject:[NSMutableDictionary dictionaryWithDictionary:@{
         @"name": @"New Template",
         @"shortcut": @(nextShortcut),
         @"system_prompt": @"",
-    }];
-    [self.templatesData addObject:newTemplate];
+    }]];
+
     NSInteger newRow = (NSInteger)self.templatesData.count - 1;
     self.selectedTemplateIndex = newRow;
+
     self.suppressTemplateSync = YES;
     [self.templatesTableView reloadData];
     [self.templatesTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:newRow] byExtendingSelection:NO];
     self.suppressTemplateSync = NO;
-    [self loadTemplateAtIndex:newRow];
+
+    [self loadEditorFromIndex:newRow];
 }
 
 - (void)removeTemplate:(id)sender {
     NSInteger row = self.templatesTableView.selectedRow;
     if (row < 0 || row >= (NSInteger)self.templatesData.count) return;
     [self.templatesData removeObjectAtIndex:row];
+
     self.selectedTemplateIndex = -1;
+
     self.suppressTemplateSync = YES;
     [self.templatesTableView reloadData];
     self.suppressTemplateSync = NO;
-    [self loadTemplateAtIndex:-1];
+
+    [self loadEditorFromIndex:-1];
 }
 
 - (NSView *)buildAboutPane {
@@ -2005,10 +2005,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
             self.selectedTemplateIndex = 0;
             [self.templatesTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:0] byExtendingSelection:NO];
             self.suppressTemplateSync = NO;
-            [self loadTemplateAtIndex:0];
+            [self loadEditorFromIndex:0];
         } else {
             self.suppressTemplateSync = NO;
-            [self loadTemplateAtIndex:-1];
+            [self loadEditorFromIndex:-1];
         }
     }
 }
