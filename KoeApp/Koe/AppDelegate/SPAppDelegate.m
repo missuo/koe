@@ -22,8 +22,51 @@
 @property (nonatomic, copy) dispatch_block_t pendingSessionEndBlock;
 @property (nonatomic, assign) BOOL showingError;
 @property (nonatomic, copy) NSString *lastAsrText;
-@property (nonatomic, strong) id numberKeyMonitor;
+@property (nonatomic, assign) CFMachPortRef numberKeyTap;
+@property (nonatomic, assign) CFRunLoopSourceRef numberKeyRunLoopSource;
 @end
+
+// ─── CGEventTap callback for number key monitoring ─────────────────
+static CGEventRef numberKeyTapCallback(CGEventTapProxy proxy,
+                                        CGEventType type,
+                                        CGEventRef event,
+                                        void *userInfo) {
+    SPAppDelegate *delegate = (__bridge SPAppDelegate *)userInfo;
+
+    if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
+        if (delegate.numberKeyTap) {
+            CGEventTapEnable(delegate.numberKeyTap, true);
+        }
+        return event;
+    }
+
+    if (type == kCGEventKeyDown) {
+        int64_t keyCode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
+        // keycodes 18-26 = number keys 1-9 on main keyboard
+        if (keyCode >= 18 && keyCode <= 26) {
+            // Map keycode to number: 18=1, 19=2, 20=3, 21=4, 23=5, 22=6, 26=7, 28=8, 25=9
+            // Actually macOS keycodes for 1-9 are: 18,19,20,21,23,22,26,28,25
+            static const int keycodeToNumber[] = {
+                [18] = 1, [19] = 2, [20] = 3, [21] = 4, [23] = 5,
+                [22] = 6, [26] = 7, [28] = 8, [25] = 9,
+            };
+            if (keyCode <= 28) {
+                NSInteger number = keycodeToNumber[keyCode];
+                if (number >= 1 && number <= 9) {
+                    // Disable tap immediately to prevent double-firing
+                    CGEventTapEnable(delegate.numberKeyTap, false);
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [delegate.overlayPanel handleNumberKey:number];
+                        // Full cleanup on main thread
+                        [delegate performSelector:@selector(stopNumberKeyMonitoring)];
+                    });
+                }
+            }
+        }
+    }
+
+    return event;
+}
 
 @implementation SPAppDelegate
 
@@ -603,27 +646,34 @@
 
 - (void)startNumberKeyMonitoring {
     [self stopNumberKeyMonitoring];
-    __weak typeof(self) weakSelf = self;
-    self.numberKeyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
-                                                                 handler:^NSEvent *(NSEvent *event) {
-        NSString *chars = event.charactersIgnoringModifiers;
-        if (chars.length == 1) {
-            unichar ch = [chars characterAtIndex:0];
-            if (ch >= '1' && ch <= '9') {
-                NSInteger number = ch - '0';
-                if ([weakSelf.overlayPanel handleNumberKey:number]) {
-                    return nil; // Consume the event
-                }
-            }
-        }
-        return event;
-    }];
+    CGEventMask mask = CGEventMaskBit(kCGEventKeyDown);
+    self.numberKeyTap = CGEventTapCreate(kCGHIDEventTap,
+                                          kCGHeadInsertEventTap,
+                                          kCGEventTapOptionListenOnly,
+                                          mask,
+                                          numberKeyTapCallback,
+                                          (__bridge void *)self);
+    if (self.numberKeyTap) {
+        self.numberKeyRunLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, self.numberKeyTap, 0);
+        CFRunLoopAddSource(CFRunLoopGetMain(), self.numberKeyRunLoopSource, kCFRunLoopCommonModes);
+        CGEventTapEnable(self.numberKeyTap, true);
+        NSLog(@"[Koe] Number key monitoring started (CGEventTap)");
+    } else {
+        NSLog(@"[Koe] Failed to create number key event tap");
+    }
 }
 
 - (void)stopNumberKeyMonitoring {
-    if (self.numberKeyMonitor) {
-        [NSEvent removeMonitor:self.numberKeyMonitor];
-        self.numberKeyMonitor = nil;
+    if (self.numberKeyRunLoopSource) {
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), self.numberKeyRunLoopSource, kCFRunLoopCommonModes);
+        CFRelease(self.numberKeyRunLoopSource);
+        self.numberKeyRunLoopSource = NULL;
+    }
+    if (self.numberKeyTap) {
+        CGEventTapEnable(self.numberKeyTap, false);
+        CFRelease(self.numberKeyTap);
+        self.numberKeyTap = NULL;
+        NSLog(@"[Koe] Number key monitoring stopped");
     }
 }
 
