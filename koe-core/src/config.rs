@@ -332,6 +332,10 @@ pub struct HotkeySection {
         deserialize_with = "deserialize_string_or_int"
     )]
     pub cancel_key: String,
+
+    /// Trigger mode: "hold" (press-and-hold, default) or "toggle" (tap to start/stop).
+    #[serde(default = "default_trigger_mode")]
+    pub trigger_mode: String,
 }
 
 /// Resolved hotkey parameters for the native side
@@ -552,6 +556,10 @@ fn default_trigger_key() -> String {
 
 fn default_cancel_key() -> String {
     "left_option".into()
+}
+
+fn default_trigger_mode() -> String {
+    "hold".into()
 }
 
 fn default_cancel_key_for_trigger(trigger_key: &str) -> &'static str {
