@@ -24,6 +24,7 @@ static NSToolbarItemIdentifier const kToolbarLLM = @"llm";
 static NSToolbarItemIdentifier const kToolbarHotkey = @"hotkey";
 static NSToolbarItemIdentifier const kToolbarDictionary = @"dictionary";
 static NSToolbarItemIdentifier const kToolbarSystemPrompt = @"system_prompt";
+static NSToolbarItemIdentifier const kToolbarTemplates = @"templates";
 static NSToolbarItemIdentifier const kToolbarAbout = @"about";
 
 // ─── Config helpers (backed by sp_config_get / sp_config_set) ───────
@@ -187,6 +188,12 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 // System Prompt
 @property (nonatomic, strong) NSTextView *systemPromptTextView;
 
+// Templates
+@property (nonatomic, strong) NSMutableArray<NSMutableDictionary *> *templatesData;
+@property (nonatomic, strong) NSTableView *templatesTableView;
+@property (nonatomic, strong) NSTextView *templatePromptTextView;
+@property (nonatomic, assign) NSInteger selectedTemplateIndex;
+
 @end
 
 @implementation SPSetupWizardWindowController {
@@ -231,15 +238,15 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
-    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarAbout];
+    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarTemplates, kToolbarAbout];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
-    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarAbout];
+    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarTemplates, kToolbarAbout];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarSelectableItemIdentifiers:(NSToolbar *)toolbar {
-    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarAbout];
+    return @[kToolbarASR, kToolbarLLM, kToolbarHotkey, kToolbarDictionary, kToolbarSystemPrompt, kToolbarTemplates, kToolbarAbout];
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier willBeInsertedIntoToolbar:(BOOL)flag {
@@ -262,6 +269,9 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     } else if ([itemIdentifier isEqualToString:kToolbarSystemPrompt]) {
         item.label = @"Prompt";
         item.image = [NSImage imageWithSystemSymbolName:@"text.bubble" accessibilityDescription:@"System Prompt"];
+    } else if ([itemIdentifier isEqualToString:kToolbarTemplates]) {
+        item.label = @"Templates";
+        item.image = [NSImage imageWithSystemSymbolName:@"sparkles" accessibilityDescription:@"Templates"];
     } else if ([itemIdentifier isEqualToString:kToolbarAbout]) {
         item.label = @"About";
         item.image = [NSImage imageWithSystemSymbolName:@"info.circle" accessibilityDescription:@"About"];
@@ -295,6 +305,8 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         paneView = [self buildDictionaryPane];
     } else if ([identifier isEqualToString:kToolbarSystemPrompt]) {
         paneView = [self buildSystemPromptPane];
+    } else if ([identifier isEqualToString:kToolbarTemplates]) {
+        paneView = [self buildTemplatesPane];
     } else if ([identifier isEqualToString:kToolbarAbout]) {
         paneView = [self buildAboutPane];
     }
@@ -906,6 +918,194 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     [self addButtonsToPane:pane atY:16 width:paneWidth];
 
     return pane;
+}
+
+// ─── Templates Pane ────────────────────────────────────────────────
+
+- (NSView *)buildTemplatesPane {
+    CGFloat paneWidth = 600;
+    CGFloat contentHeight = 480;
+    NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
+
+    CGFloat y = contentHeight - 48;
+
+    // Description
+    NSTextField *desc = [self descriptionLabel:@"Add prompt templates to rewrite voice input in different styles (translate, tweet, etc.). After default correction, these appear as buttons above the overlay."];
+    desc.frame = NSMakeRect(24, y - 10, paneWidth - 48, 36);
+    [pane addSubview:desc];
+    y -= 52;
+
+    // Template list (left side: table + buttons, right side: prompt editor)
+    CGFloat listW = 200;
+    CGFloat listH = 240;
+
+    // Table view in scroll view
+    NSScrollView *scrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(24, y - listH, listW, listH)];
+    scrollView.hasVerticalScroller = YES;
+    scrollView.borderType = NSBezelBorder;
+
+    self.templatesTableView = [[NSTableView alloc] initWithFrame:scrollView.bounds];
+    NSTableColumn *col = [[NSTableColumn alloc] initWithIdentifier:@"name"];
+    col.title = @"Template";
+    col.width = listW - 20;
+    [self.templatesTableView addTableColumn:col];
+    self.templatesTableView.headerView = nil;
+    self.templatesTableView.delegate = (id)self;
+    self.templatesTableView.dataSource = (id)self;
+    self.templatesTableView.target = self;
+    self.templatesTableView.action = @selector(templateTableClicked:);
+    scrollView.documentView = self.templatesTableView;
+    [pane addSubview:scrollView];
+
+    // Add / Remove buttons
+    CGFloat btnY = y - listH - 30;
+    NSButton *addBtn = [NSButton buttonWithTitle:@"+" target:self action:@selector(addTemplate:)];
+    addBtn.frame = NSMakeRect(24, btnY, 30, 24);
+    addBtn.bezelStyle = NSBezelStyleSmallSquare;
+    [pane addSubview:addBtn];
+
+    NSButton *removeBtn = [NSButton buttonWithTitle:@"−" target:self action:@selector(removeTemplate:)];
+    removeBtn.frame = NSMakeRect(56, btnY, 30, 24);
+    removeBtn.bezelStyle = NSBezelStyleSmallSquare;
+    [pane addSubview:removeBtn];
+
+    // Right side: prompt editor
+    CGFloat editorX = 24 + listW + 16;
+    CGFloat editorW = paneWidth - editorX - 24;
+
+    NSTextField *nameLabel = [self formLabel:@"Name" frame:NSMakeRect(editorX, y - 2, 50, 20)];
+    nameLabel.alignment = NSTextAlignmentLeft;
+    [pane addSubview:nameLabel];
+
+    NSTextField *nameField = [self formTextField:NSMakeRect(editorX + 55, y - 2, editorW - 55, 24) placeholder:@"Template name"];
+    nameField.tag = 1001;
+    [pane addSubview:nameField];
+
+    CGFloat promptY = y - 36;
+    NSTextField *promptLabel = [self formLabel:@"Prompt" frame:NSMakeRect(editorX, promptY, 50, 20)];
+    promptLabel.alignment = NSTextAlignmentLeft;
+    [pane addSubview:promptLabel];
+
+    NSScrollView *promptScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(editorX, promptY - listH + 20, editorW, listH - 20)];
+    promptScroll.hasVerticalScroller = YES;
+    promptScroll.borderType = NSBezelBorder;
+
+    self.templatePromptTextView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, editorW - 16, listH - 24)];
+    self.templatePromptTextView.minSize = NSMakeSize(0, listH - 24);
+    self.templatePromptTextView.maxSize = NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX);
+    self.templatePromptTextView.verticallyResizable = YES;
+    self.templatePromptTextView.horizontallyResizable = NO;
+    self.templatePromptTextView.textContainer.containerSize = NSMakeSize(editorW - 16, CGFLOAT_MAX);
+    self.templatePromptTextView.textContainer.widthTracksTextView = YES;
+    self.templatePromptTextView.font = [NSFont systemFontOfSize:12];
+    self.templatePromptTextView.allowsUndo = YES;
+    promptScroll.documentView = self.templatePromptTextView;
+    [pane addSubview:promptScroll];
+
+    // Save / Cancel buttons
+    [self addButtonsToPane:pane atY:16 width:paneWidth];
+
+    return pane;
+}
+
+#pragma mark - Templates Table Data Source & Delegate
+
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView {
+    if (tableView == self.templatesTableView) {
+        return (NSInteger)self.templatesData.count;
+    }
+    return 0;
+}
+
+- (NSView *)tableView:(NSTableView *)tableView viewForTableColumn:(NSTableColumn *)tableColumn row:(NSInteger)row {
+    if (tableView != self.templatesTableView) return nil;
+
+    NSTextField *cell = [tableView makeViewWithIdentifier:@"TemplateCell" owner:self];
+    if (!cell) {
+        cell = [NSTextField labelWithString:@""];
+        cell.identifier = @"TemplateCell";
+        cell.lineBreakMode = NSLineBreakByTruncatingTail;
+    }
+    if (row < (NSInteger)self.templatesData.count) {
+        NSDictionary *tmpl = self.templatesData[row];
+        NSNumber *shortcut = tmpl[@"shortcut"];
+        NSString *name = tmpl[@"name"] ?: @"Untitled";
+        cell.stringValue = [NSString stringWithFormat:@"%@  %@", shortcut, name];
+    }
+    return cell;
+}
+
+- (void)templateTableClicked:(id)sender {
+    [self saveCurrentTemplateEdits];
+    NSInteger row = self.templatesTableView.selectedRow;
+    self.selectedTemplateIndex = row;
+    [self loadTemplateAtIndex:row];
+}
+
+- (void)loadTemplateAtIndex:(NSInteger)index {
+    NSTextField *nameField = [self.templatesTableView.superview.superview viewWithTag:1001];
+    // Find the name field by walking pane subviews
+    NSView *pane = self.templatesTableView.superview.superview.superview;
+    for (NSView *sub in pane.subviews) {
+        if (sub.tag == 1001 && [sub isKindOfClass:[NSTextField class]]) {
+            nameField = (NSTextField *)sub;
+            break;
+        }
+    }
+
+    if (index >= 0 && index < (NSInteger)self.templatesData.count) {
+        NSDictionary *tmpl = self.templatesData[index];
+        if (nameField) nameField.stringValue = tmpl[@"name"] ?: @"";
+        self.templatePromptTextView.string = tmpl[@"system_prompt"] ?: @"";
+    } else {
+        if (nameField) nameField.stringValue = @"";
+        self.templatePromptTextView.string = @"";
+    }
+}
+
+- (void)saveCurrentTemplateEdits {
+    NSInteger idx = self.selectedTemplateIndex;
+    if (idx < 0 || idx >= (NSInteger)self.templatesData.count) return;
+
+    NSView *pane = self.templatesTableView.superview.superview.superview;
+    NSTextField *nameField = nil;
+    for (NSView *sub in pane.subviews) {
+        if (sub.tag == 1001 && [sub isKindOfClass:[NSTextField class]]) {
+            nameField = (NSTextField *)sub;
+            break;
+        }
+    }
+
+    NSMutableDictionary *tmpl = self.templatesData[idx];
+    if (nameField) tmpl[@"name"] = nameField.stringValue;
+    tmpl[@"system_prompt"] = self.templatePromptTextView.string ?: @"";
+    [self.templatesTableView reloadData];
+}
+
+- (void)addTemplate:(id)sender {
+    [self saveCurrentTemplateEdits];
+    NSInteger nextShortcut = (NSInteger)self.templatesData.count + 1;
+    if (nextShortcut > 9) nextShortcut = 9;
+    NSMutableDictionary *newTemplate = [NSMutableDictionary dictionaryWithDictionary:@{
+        @"name": @"New Template",
+        @"shortcut": @(nextShortcut),
+        @"system_prompt": @"",
+    }];
+    [self.templatesData addObject:newTemplate];
+    [self.templatesTableView reloadData];
+    NSInteger newRow = (NSInteger)self.templatesData.count - 1;
+    [self.templatesTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:newRow] byExtendingSelection:NO];
+    self.selectedTemplateIndex = newRow;
+    [self loadTemplateAtIndex:newRow];
+}
+
+- (void)removeTemplate:(id)sender {
+    NSInteger row = self.templatesTableView.selectedRow;
+    if (row < 0 || row >= (NSInteger)self.templatesData.count) return;
+    [self.templatesData removeObjectAtIndex:row];
+    [self.templatesTableView reloadData];
+    self.selectedTemplateIndex = -1;
+    [self loadTemplateAtIndex:-1];
 }
 
 - (NSView *)buildAboutPane {
@@ -1769,6 +1969,21 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         NSString *promptPath = [dir stringByAppendingPathComponent:kSystemPromptFile];
         NSString *promptContent = [NSString stringWithContentsOfFile:promptPath encoding:NSUTF8StringEncoding error:nil] ?: @"";
         [self.systemPromptTextView setString:promptContent];
+    } else if ([identifier isEqualToString:kToolbarTemplates]) {
+        NSArray *templates = [self.rustBridge promptTemplates];
+        self.templatesData = [NSMutableArray array];
+        for (NSDictionary *t in templates) {
+            [self.templatesData addObject:[t mutableCopy]];
+        }
+        self.selectedTemplateIndex = -1;
+        [self.templatesTableView reloadData];
+        if (self.templatesData.count > 0) {
+            [self.templatesTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:0] byExtendingSelection:NO];
+            self.selectedTemplateIndex = 0;
+            [self loadTemplateAtIndex:0];
+        } else {
+            [self loadTemplateAtIndex:-1];
+        }
     }
 }
 
@@ -1926,6 +2141,12 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
             [self showAlert:@"Failed to save system_prompt.txt" info:error.localizedDescription];
             return;
         }
+    }
+
+    // Save prompt templates
+    if (self.templatesData) {
+        [self saveCurrentTemplateEdits];
+        [self.rustBridge setPromptTemplates:self.templatesData];
     }
 
     NSLog(@"[Koe] Settings saved");

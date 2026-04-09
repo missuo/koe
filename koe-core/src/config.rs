@@ -1,5 +1,5 @@
 use crate::errors::{KoeError, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Root configuration structure matching ~/.koe/config.yaml
@@ -20,7 +20,7 @@ pub struct Config {
 }
 
 /// A named prompt template selectable from the overlay UI.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PromptTemplate {
     /// Display name shown on the overlay button
     pub name: String,
@@ -1000,6 +1000,11 @@ pub fn config_get(key_path: &str) -> Result<String> {
         _ => String::new(),
     };
     Ok(s)
+}
+
+/// Write serialized YAML to config.yaml atomically.
+pub fn atomic_write_config(data: &str) -> Result<()> {
+    atomic_write_file(&config_path(), data)
 }
 
 /// Write data to a file atomically: write to a temp sibling, then rename.

@@ -313,6 +313,13 @@ static void download_status_cb(void *ctx, int32_t status, const char *message) {
     return arr ?: @[];
 }
 
+- (BOOL)setPromptTemplates:(NSArray<NSDictionary *> *)templates {
+    NSData *data = [NSJSONSerialization dataWithJSONObject:templates options:0 error:nil];
+    if (!data) return NO;
+    NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    return sp_core_set_prompt_templates_json(json.UTF8String) == 0;
+}
+
 - (BOOL)rewriteWithTemplateIndex:(NSInteger)index asrText:(NSString *)text {
     return sp_core_rewrite_with_template((int32_t)index, text.UTF8String) == 0;
 }

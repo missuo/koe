@@ -561,6 +561,7 @@ pub extern "C" fn sp_core_get_prompt_templates_json() -> *mut c_char {
                 serde_json::json!({
                     "name": t.name,
                     "shortcut": t.shortcut,
+                    "system_prompt": t.system_prompt.as_deref().unwrap_or(""),
                 })
             })
             .collect();
@@ -569,6 +570,83 @@ pub extern "C" fn sp_core_get_prompt_templates_json() -> *mut c_char {
     } else {
         CString::new("[]").unwrap_or_default().into_raw()
     }
+}
+
+/// Set prompt templates from a JSON array string.
+/// Each entry: {"name":"...", "shortcut":N, "system_prompt":"..."}
+/// Writes to config.yaml and reloads config.
+///
+/// # Safety
+/// `json_str` must be a valid null-terminated C string.
+#[no_mangle]
+pub unsafe extern "C" fn sp_core_set_prompt_templates_json(json_str: *const c_char) -> i32 {
+    let json = match unsafe { cstr_to_str(json_str) } {
+        Some(s) => s,
+        None => return -1,
+    };
+
+    let templates: Vec<config::PromptTemplate> = match serde_json::from_str(json) {
+        Ok(t) => t,
+        Err(e) => {
+            log::error!("sp_core_set_prompt_templates_json: parse error: {e}");
+            return -1;
+        }
+    };
+
+    // Update config file
+    let path = config::config_path();
+    let raw = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut root: serde_yaml::Value = if raw.trim().is_empty() {
+        serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+    } else {
+        match serde_yaml::from_str(&raw) {
+            Ok(v) => v,
+            Err(e) => {
+                log::error!("sp_core_set_prompt_templates_json: yaml parse error: {e}");
+                return -1;
+            }
+        }
+    };
+
+    // Serialize templates to YAML value
+    let yaml_templates = match serde_yaml::to_value(&templates) {
+        Ok(v) => v,
+        Err(e) => {
+            log::error!("sp_core_set_prompt_templates_json: serialize error: {e}");
+            return -1;
+        }
+    };
+
+    if let Some(mapping) = root.as_mapping_mut() {
+        mapping.insert(
+            serde_yaml::Value::String("prompt_templates".into()),
+            yaml_templates,
+        );
+    }
+
+    let serialized = match serde_yaml::to_string(&root) {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("sp_core_set_prompt_templates_json: serialize error: {e}");
+            return -1;
+        }
+    };
+
+    if let Err(e) = config::atomic_write_config(&serialized) {
+        log::error!("sp_core_set_prompt_templates_json: write error: {e}");
+        return -1;
+    }
+
+    // Reload config in core
+    let mut global = CORE.lock().unwrap();
+    if let Some(ref mut core) = *global {
+        match config::load_config() {
+            Ok(cfg) => core.config = cfg,
+            Err(e) => log::error!("sp_core_set_prompt_templates_json: reload error: {e}"),
+        }
+    }
+
+    0
 }
 
 /// Rewrite ASR text using a specific prompt template.
