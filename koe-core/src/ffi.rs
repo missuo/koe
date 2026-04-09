@@ -51,6 +51,9 @@ pub struct SPCallbacks {
     /// Called when ASR finalization completes with the final recognized text,
     /// before LLM correction begins. Used to display ASR result in the overlay.
     pub on_asr_final_text: Option<extern "C" fn(token: u64, text: *const c_char)>,
+    /// Called when a rewrite (using an alternative prompt template) completes.
+    /// text is a UTF-8 C string, caller must NOT free it.
+    pub on_rewrite_text_ready: Option<extern "C" fn(token: u64, text: *const c_char)>,
 }
 
 static CALLBACKS: Mutex<Option<SPCallbacks>> = Mutex::new(None);
@@ -133,6 +136,16 @@ pub fn invoke_asr_final_text(token: u64, text: &str) {
     let cb = CALLBACKS.lock().unwrap();
     if let Some(ref cbs) = *cb {
         if let Some(f) = cbs.on_asr_final_text {
+            let c_text = CString::new(text).unwrap_or_default();
+            f(token, c_text.as_ptr());
+        }
+    }
+}
+
+pub fn invoke_rewrite_text_ready(token: u64, text: &str) {
+    let cb = CALLBACKS.lock().unwrap();
+    if let Some(ref cbs) = *cb {
+        if let Some(f) = cbs.on_rewrite_text_ready {
             let c_text = CString::new(text).unwrap_or_default();
             f(token, c_text.as_ptr());
         }
