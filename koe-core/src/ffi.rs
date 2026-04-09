@@ -48,6 +48,9 @@ pub struct SPCallbacks {
     /// Called when an interim (partial) ASR result arrives during recording
     /// text is a UTF-8 C string, caller must NOT free it
     pub on_interim_text: Option<extern "C" fn(token: u64, text: *const c_char)>,
+    /// Called when ASR finalization completes with the final recognized text,
+    /// before LLM correction begins. Used to display ASR result in the overlay.
+    pub on_asr_final_text: Option<extern "C" fn(token: u64, text: *const c_char)>,
 }
 
 static CALLBACKS: Mutex<Option<SPCallbacks>> = Mutex::new(None);
@@ -126,6 +129,16 @@ pub fn invoke_interim_text(token: u64, text: &str) {
     }
 }
 
+pub fn invoke_asr_final_text(token: u64, text: &str) {
+    let cb = CALLBACKS.lock().unwrap();
+    if let Some(ref cbs) = *cb {
+        if let Some(f) = cbs.on_asr_final_text {
+            let c_text = CString::new(text).unwrap_or_default();
+            f(token, c_text.as_ptr());
+        }
+    }
+}
+
 /// Feedback configuration exposed to the Obj-C layer
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -151,6 +164,8 @@ pub struct SPHotkeyConfig {
     pub cancel_alt_key_code: u16,
     /// Cancel hotkey modifier flag
     pub cancel_modifier_flag: u64,
+    /// Trigger mode: 0 = hold (press-and-hold), 1 = toggle (tap to start/stop)
+    pub trigger_mode: u8,
 }
 
 /// Helper to convert a C string pointer to a Rust &str

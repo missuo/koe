@@ -566,6 +566,7 @@ pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
     let global = CORE.lock().unwrap();
     if let Some(ref core) = *global {
         let params = core.config.hotkey.resolve();
+        let trigger_mode: u8 = if core.config.hotkey.trigger_mode == "toggle" { 1 } else { 0 };
         SPHotkeyConfig {
             trigger_key_code: params.trigger.key_code,
             trigger_alt_key_code: params.trigger.alt_key_code,
@@ -573,6 +574,7 @@ pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
             cancel_key_code: params.cancel.key_code,
             cancel_alt_key_code: params.cancel.alt_key_code,
             cancel_modifier_flag: params.cancel.modifier_flag,
+            trigger_mode,
         }
     } else {
         SPHotkeyConfig {
@@ -582,6 +584,7 @@ pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
             cancel_key_code: 58,
             cancel_alt_key_code: 0,
             cancel_modifier_flag: 0x00000020,
+            trigger_mode: 0,
         }
     }
 }
