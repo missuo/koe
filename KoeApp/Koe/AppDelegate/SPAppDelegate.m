@@ -31,7 +31,8 @@
                    self.hotkeyMonitor.targetModifierFlag != hotkeyConfig.trigger_modifier_flag ||
                    self.hotkeyMonitor.cancelKeyCode != hotkeyConfig.cancel_key_code ||
                    self.hotkeyMonitor.cancelAltKeyCode != hotkeyConfig.cancel_alt_key_code ||
-                   self.hotkeyMonitor.cancelModifierFlag != hotkeyConfig.cancel_modifier_flag;
+                   self.hotkeyMonitor.cancelModifierFlag != hotkeyConfig.cancel_modifier_flag ||
+                   self.hotkeyMonitor.triggerMode != hotkeyConfig.trigger_mode;
 
     if (!changed) return;
 
@@ -45,6 +46,7 @@
     self.hotkeyMonitor.cancelKeyCode = hotkeyConfig.cancel_key_code;
     self.hotkeyMonitor.cancelAltKeyCode = hotkeyConfig.cancel_alt_key_code;
     self.hotkeyMonitor.cancelModifierFlag = hotkeyConfig.cancel_modifier_flag;
+    self.hotkeyMonitor.triggerMode = hotkeyConfig.trigger_mode;
 
     if (restartIfNeeded) {
         [self.hotkeyMonitor start];
@@ -343,6 +345,9 @@
     }
     [[SPHistoryManager sharedManager] recordSessionWithDurationMs:durationMs text:text];
 
+    // Show corrected text in overlay before pasting
+    [self.overlayPanel updateDisplayText:text];
+
     [self.statusBarManager updateState:@"pasting"];
     [self.overlayPanel updateState:@"pasting"];
 
@@ -350,21 +355,20 @@
     [self.clipboardManager backup];
     [self.clipboardManager writeText:text];
 
-    // Capture token so the async completion can detect a stale session
     uint64_t token = self.rustBridge.currentSessionToken;
 
-    // Check if accessibility is available for auto-paste
     if ([self.permissionManager isAccessibilityGranted]) {
         [self.pasteManager simulatePasteWithCompletion:^{
             [self.clipboardManager scheduleRestoreAfterDelay:1500];
             if (token != self.rustBridge.currentSessionToken) return;
             [self.statusBarManager updateState:@"idle"];
-            [self.overlayPanel updateState:@"idle"];
+            // Linger to show the final result before dismissing
+            [self.overlayPanel lingerAndDismiss];
         }];
     } else {
         NSLog(@"[Koe] Accessibility not granted — text copied to clipboard only");
         [self.statusBarManager updateState:@"idle"];
-        [self.overlayPanel updateState:@"idle"];
+        [self.overlayPanel lingerAndDismiss];
     }
 }
 
@@ -438,6 +442,11 @@
 
 - (void)rustBridgeDidReceiveInterimText:(NSString *)text {
     [self.overlayPanel updateInterimText:text];
+}
+
+- (void)rustBridgeDidReceiveAsrFinalText:(NSString *)text {
+    NSLog(@"[Koe] ASR final text: %lu chars", (unsigned long)text.length);
+    [self.overlayPanel updateDisplayText:text];
 }
 
 - (void)rustBridgeDidChangeState:(NSString *)state {
