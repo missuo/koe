@@ -11,9 +11,9 @@ pub mod telemetry;
 
 use crate::config::Config;
 use crate::ffi::{
-    cstr_to_str, invoke_final_text_ready, invoke_interim_text, invoke_session_error,
-    invoke_session_ready, invoke_session_warning, invoke_state_changed, SPCallbacks,
-    SPFeedbackConfig, SPHotkeyConfig, SPSessionContext, SPSessionMode,
+    cstr_to_str, invoke_asr_final_text, invoke_final_text_ready, invoke_interim_text,
+    invoke_session_error, invoke_session_ready, invoke_session_warning, invoke_state_changed,
+    SPCallbacks, SPFeedbackConfig, SPHotkeyConfig, SPSessionContext, SPSessionMode,
 };
 #[cfg(feature = "mlx")]
 use crate::llm::mlx::MlxLlmProvider;
@@ -772,6 +772,10 @@ async fn run_session(
             session.asr_text = Some(asr_text.clone());
         }
     }
+
+    // Notify ObjC of the final ASR text so the overlay can display it
+    // during the LLM correction phase.
+    invoke_asr_final_text(session_token, &asr_text);
 
     // --- LLM Correction ---
     // Check cancellation before the (potentially slow) LLM call so that an
