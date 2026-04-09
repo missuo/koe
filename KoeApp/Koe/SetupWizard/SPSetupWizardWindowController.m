@@ -1042,10 +1042,12 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 }
 
 - (void)templateTableClicked:(id)sender {
-    // Save the currently displayed template back to data before switching
+    NSInteger row = self.templatesTableView.selectedRow;
+    if (row == self.selectedTemplateIndex) return; // same row, nothing to do
+
+    // Save edits from current template before switching
     [self syncCurrentTemplateToData];
 
-    NSInteger row = self.templatesTableView.selectedRow;
     self.selectedTemplateIndex = row;
     [self loadTemplateAtIndex:row];
 }
@@ -1054,9 +1056,9 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 - (void)syncCurrentTemplateToData {
     NSInteger idx = self.selectedTemplateIndex;
     if (idx < 0 || idx >= (NSInteger)self.templatesData.count) return;
-    NSMutableDictionary *tmpl = self.templatesData[idx];
-    tmpl[@"name"] = self.templateNameField.stringValue ?: @"";
-    tmpl[@"system_prompt"] = self.templatePromptTextView.string ?: @"";
+    if (!self.templateNameField || !self.templatePromptTextView) return;
+    self.templatesData[idx][@"name"] = self.templateNameField.stringValue ?: @"";
+    self.templatesData[idx][@"system_prompt"] = self.templatePromptTextView.string ?: @"";
 }
 
 - (void)loadTemplateAtIndex:(NSInteger)index {
