@@ -191,6 +191,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 // Templates
 @property (nonatomic, strong) NSMutableArray<NSMutableDictionary *> *templatesData;
 @property (nonatomic, strong) NSTableView *templatesTableView;
+@property (nonatomic, strong) NSTextField *templateNameField;
 @property (nonatomic, strong) NSTextView *templatePromptTextView;
 @property (nonatomic, assign) NSInteger selectedTemplateIndex;
 
@@ -288,6 +289,12 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 
 - (void)switchToPane:(NSString *)identifier {
     if ([self.currentPaneIdentifier isEqualToString:identifier]) return;
+
+    // Save template edits before switching away
+    if ([self.currentPaneIdentifier isEqualToString:kToolbarTemplates]) {
+        [self saveCurrentTemplateEdits];
+    }
+
     self.currentPaneIdentifier = identifier;
 
     // Remove old pane
@@ -977,9 +984,8 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     nameLabel.alignment = NSTextAlignmentLeft;
     [pane addSubview:nameLabel];
 
-    NSTextField *nameField = [self formTextField:NSMakeRect(editorX + 55, y - 2, editorW - 55, 24) placeholder:@"Template name"];
-    nameField.tag = 1001;
-    [pane addSubview:nameField];
+    self.templateNameField = [self formTextField:NSMakeRect(editorX + 55, y - 2, editorW - 55, 24) placeholder:@"Template name"];
+    [pane addSubview:self.templateNameField];
 
     CGFloat promptY = y - 36;
     NSTextField *promptLabel = [self formLabel:@"Prompt" frame:NSMakeRect(editorX, promptY, 50, 20)];
@@ -1043,23 +1049,17 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 }
 
 - (void)loadTemplateAtIndex:(NSInteger)index {
-    NSTextField *nameField = [self.templatesTableView.superview.superview viewWithTag:1001];
-    // Find the name field by walking pane subviews
-    NSView *pane = self.templatesTableView.superview.superview.superview;
-    for (NSView *sub in pane.subviews) {
-        if (sub.tag == 1001 && [sub isKindOfClass:[NSTextField class]]) {
-            nameField = (NSTextField *)sub;
-            break;
-        }
-    }
-
     if (index >= 0 && index < (NSInteger)self.templatesData.count) {
         NSDictionary *tmpl = self.templatesData[index];
-        if (nameField) nameField.stringValue = tmpl[@"name"] ?: @"";
+        self.templateNameField.stringValue = tmpl[@"name"] ?: @"";
         self.templatePromptTextView.string = tmpl[@"system_prompt"] ?: @"";
+        self.templateNameField.enabled = YES;
+        self.templatePromptTextView.editable = YES;
     } else {
-        if (nameField) nameField.stringValue = @"";
+        self.templateNameField.stringValue = @"";
         self.templatePromptTextView.string = @"";
+        self.templateNameField.enabled = NO;
+        self.templatePromptTextView.editable = NO;
     }
 }
 
@@ -1067,17 +1067,8 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     NSInteger idx = self.selectedTemplateIndex;
     if (idx < 0 || idx >= (NSInteger)self.templatesData.count) return;
 
-    NSView *pane = self.templatesTableView.superview.superview.superview;
-    NSTextField *nameField = nil;
-    for (NSView *sub in pane.subviews) {
-        if (sub.tag == 1001 && [sub isKindOfClass:[NSTextField class]]) {
-            nameField = (NSTextField *)sub;
-            break;
-        }
-    }
-
     NSMutableDictionary *tmpl = self.templatesData[idx];
-    if (nameField) tmpl[@"name"] = nameField.stringValue;
+    tmpl[@"name"] = self.templateNameField.stringValue ?: @"";
     tmpl[@"system_prompt"] = self.templatePromptTextView.string ?: @"";
     [self.templatesTableView reloadData];
 }
