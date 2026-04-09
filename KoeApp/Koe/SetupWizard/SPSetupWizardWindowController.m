@@ -194,6 +194,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 @property (nonatomic, strong) NSTextField *templateNameField;
 @property (nonatomic, strong) NSTextView *templatePromptTextView;
 @property (nonatomic, assign) NSInteger selectedTemplateIndex;
+@property (nonatomic, assign) BOOL suppressTemplateSync;
 
 @end
 
@@ -1042,8 +1043,10 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 }
 
 - (void)templateTableClicked:(id)sender {
+    if (self.suppressTemplateSync) return;
+
     NSInteger row = self.templatesTableView.selectedRow;
-    if (row == self.selectedTemplateIndex) return; // same row, nothing to do
+    if (row == self.selectedTemplateIndex) return;
 
     // Save edits from current template before switching
     [self syncCurrentTemplateToData];
@@ -1059,6 +1062,17 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     if (!self.templateNameField || !self.templatePromptTextView) return;
     self.templatesData[idx][@"name"] = self.templateNameField.stringValue ?: @"";
     self.templatesData[idx][@"system_prompt"] = self.templatePromptTextView.string ?: @"";
+}
+
+/// Reload table without triggering sync callbacks.
+- (void)reloadTemplatesTablePreservingSelection {
+    self.suppressTemplateSync = YES;
+    [self.templatesTableView reloadData];
+    if (self.selectedTemplateIndex >= 0 && self.selectedTemplateIndex < (NSInteger)self.templatesData.count) {
+        [self.templatesTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:self.selectedTemplateIndex]
+                             byExtendingSelection:NO];
+    }
+    self.suppressTemplateSync = NO;
 }
 
 - (void)loadTemplateAtIndex:(NSInteger)index {
@@ -1085,11 +1099,11 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 
 - (void)saveCurrentTemplateEdits {
     [self syncCurrentTemplateToData];
-    [self.templatesTableView reloadData];
+    [self reloadTemplatesTablePreservingSelection];
 }
 
 - (void)addTemplate:(id)sender {
-    [self saveCurrentTemplateEdits];
+    [self syncCurrentTemplateToData];
     NSInteger nextShortcut = (NSInteger)self.templatesData.count + 1;
     if (nextShortcut > 9) nextShortcut = 9;
     NSMutableDictionary *newTemplate = [NSMutableDictionary dictionaryWithDictionary:@{
@@ -1098,10 +1112,12 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
         @"system_prompt": @"",
     }];
     [self.templatesData addObject:newTemplate];
-    [self.templatesTableView reloadData];
     NSInteger newRow = (NSInteger)self.templatesData.count - 1;
-    [self.templatesTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:newRow] byExtendingSelection:NO];
     self.selectedTemplateIndex = newRow;
+    self.suppressTemplateSync = YES;
+    [self.templatesTableView reloadData];
+    [self.templatesTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:newRow] byExtendingSelection:NO];
+    self.suppressTemplateSync = NO;
     [self loadTemplateAtIndex:newRow];
 }
 
@@ -1109,8 +1125,10 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
     NSInteger row = self.templatesTableView.selectedRow;
     if (row < 0 || row >= (NSInteger)self.templatesData.count) return;
     [self.templatesData removeObjectAtIndex:row];
-    [self.templatesTableView reloadData];
     self.selectedTemplateIndex = -1;
+    self.suppressTemplateSync = YES;
+    [self.templatesTableView reloadData];
+    self.suppressTemplateSync = NO;
     [self loadTemplateAtIndex:-1];
 }
 
@@ -1981,13 +1999,16 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         for (NSDictionary *t in templates) {
             [self.templatesData addObject:[t mutableCopy]];
         }
+        self.suppressTemplateSync = YES;
         self.selectedTemplateIndex = -1;
         [self.templatesTableView reloadData];
         if (self.templatesData.count > 0) {
-            [self.templatesTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:0] byExtendingSelection:NO];
             self.selectedTemplateIndex = 0;
+            [self.templatesTableView selectRowIndexes:[NSIndexSet indexSetWithIndex:0] byExtendingSelection:NO];
+            self.suppressTemplateSync = NO;
             [self loadTemplateAtIndex:0];
         } else {
+            self.suppressTemplateSync = NO;
             [self loadTemplateAtIndex:-1];
         }
     }
