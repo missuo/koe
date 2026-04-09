@@ -510,7 +510,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     tintView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [bgView addSubview:tintView];
 
-    // Add buttons (name only, no number)
+    // Add buttons (borderless, plain text style)
     self.templateButtonViews = [NSMutableArray array];
     CGFloat x = barPad;
     for (NSUInteger i = 0; i < templates.count; i++) {
@@ -518,12 +518,17 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         NSString *label = tmpl[@"name"] ?: @"";
         CGFloat w = [widths[i] floatValue];
 
-        NSButton *btn = [NSButton buttonWithTitle:label target:self action:@selector(templateButtonClicked:)];
-        btn.frame = NSMakeRect(x, barPad, w, btnH);
-        btn.bezelStyle = NSBezelStyleInline;
+        NSButton *btn = [[NSButton alloc] initWithFrame:NSMakeRect(x, barPad, w, btnH)];
+        btn.title = label;
+        btn.bordered = NO;
+        btn.wantsLayer = YES;
+        btn.layer.cornerRadius = btnH / 2.0;
+        btn.layer.backgroundColor = [[NSColor colorWithWhite:1.0 alpha:0.1] CGColor];
         btn.font = [NSFont systemFontOfSize:11 weight:NSFontWeightMedium];
         btn.contentTintColor = [NSColor colorWithWhite:1.0 alpha:0.85];
         btn.tag = (NSInteger)i;
+        btn.target = self;
+        btn.action = @selector(templateButtonClicked:);
         [bgView addSubview:btn];
         [self.templateButtonViews addObject:btn];
 
@@ -606,30 +611,25 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     return NO;
 }
 
-/// Briefly highlight a button with a scale+glow animation, then trigger the delegate.
+/// Smoothly highlight a button, then trigger the delegate.
 - (void)highlightButtonAtIndex:(NSInteger)index thenDismiss:(BOOL)dismiss {
     if (index < 0 || index >= (NSInteger)self.templateButtonViews.count) return;
 
     NSButton *btn = self.templateButtonViews[index];
     NSInteger templateIndex = index;
 
-    // Flash highlight animation
-    btn.wantsLayer = YES;
-    btn.layer.backgroundColor = [[NSColor colorWithWhite:1.0 alpha:0.4] CGColor];
+    // Dim all other buttons, brighten selected one
+    for (NSButton *b in self.templateButtonViews) {
+        b.alphaValue = (b == btn) ? 1.0 : 0.3;
+    }
+    btn.layer.backgroundColor = [[NSColor colorWithWhite:1.0 alpha:0.3] CGColor];
 
-    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
-        ctx.duration = 0.15;
-        ctx.allowsImplicitAnimation = YES;
-        btn.layer.backgroundColor = [[NSColor colorWithWhite:1.0 alpha:0.6] CGColor];
-        btn.alphaValue = 1.0;
-    } completionHandler:^{
-        // Brief pause then dismiss
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            [self hideTemplateButtons];
-            [self.delegate overlayPanel:self didSelectTemplateAtIndex:templateIndex];
-        });
-    }];
+    // Brief hold then dismiss
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        [self hideTemplateButtons];
+        [self.delegate overlayPanel:self didSelectTemplateAtIndex:templateIndex];
+    });
 }
 
 #pragma mark - Layout
