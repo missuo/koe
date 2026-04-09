@@ -470,7 +470,20 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     mask.resizingMode = NSImageResizingModeStretch;
     bgView.maskImage = mask;
 
+    // Glow shadow (match main pill)
+    bgView.layer.shadowColor = [[NSColor whiteColor] CGColor];
+    bgView.layer.shadowOpacity = 0.15;
+    bgView.layer.shadowRadius = 6.0;
+    bgView.layer.shadowOffset = CGSizeMake(0, 0);
+
     bar.contentView = bgView;
+
+    // Dark tint overlay (match main pill contrast)
+    NSView *tintView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, totalW, barH)];
+    tintView.wantsLayer = YES;
+    tintView.layer.backgroundColor = [[NSColor colorWithWhite:0.0 alpha:0.35] CGColor];
+    tintView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [bgView addSubview:tintView];
 
     // Add buttons (name only, no number)
     self.templateButtonViews = [NSMutableArray array];
@@ -480,13 +493,12 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         NSString *label = tmpl[@"name"] ?: @"";
         CGFloat w = [widths[i] floatValue];
 
-        NSButton *btn = [[NSButton alloc] initWithFrame:NSMakeRect(x, barPad, w, btnH)];
-        btn.title = label;
+        NSButton *btn = [NSButton buttonWithTitle:label target:self action:@selector(templateButtonClicked:)];
+        btn.frame = NSMakeRect(x, barPad, w, btnH);
         btn.bezelStyle = NSBezelStyleInline;
         btn.font = [NSFont systemFontOfSize:11 weight:NSFontWeightMedium];
+        btn.contentTintColor = [NSColor colorWithWhite:1.0 alpha:0.85];
         btn.tag = (NSInteger)i;
-        btn.target = self;
-        btn.action = @selector(templateButtonClicked:);
         [bgView addSubview:btn];
         [self.templateButtonViews addObject:btn];
 

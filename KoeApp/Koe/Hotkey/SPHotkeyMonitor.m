@@ -63,6 +63,29 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
             });
         }
 
+        // Forward number keys 1-9 if handler is set
+        if (type == kCGEventKeyDown && monitor.numberKeyHandler) {
+            // macOS keycodes: 1=18, 2=19, 3=20, 4=21, 5=23, 6=22, 7=26, 8=28, 9=25
+            NSInteger number = 0;
+            switch (keyCode) {
+                case 18: number = 1; break;
+                case 19: number = 2; break;
+                case 20: number = 3; break;
+                case 21: number = 4; break;
+                case 23: number = 5; break;
+                case 22: number = 6; break;
+                case 26: number = 7; break;
+                case 28: number = 8; break;
+                case 25: number = 9; break;
+            }
+            if (number > 0) {
+                void (^handler)(NSInteger) = monitor.numberKeyHandler;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    handler(number);
+                });
+            }
+        }
+
         if ([monitor isTargetKeyCode:keyCode]) {
             CGEventFlags flags = CGEventGetFlags(event);
             NSLog(@"[Koe] Key event: type=%d keyCode=%ld flags=0x%llx",

@@ -46,4 +46,9 @@
 /// terminates a recording session outside the normal hotkey flow.
 - (void)resetToIdle;
 
+/// Optional block called on the main thread when a number key (1-9) is pressed.
+/// Set to non-nil to enable number key forwarding via the existing CGEventTap.
+/// The block receives the number (1-9). Set to nil to disable.
+@property (nonatomic, copy) void (^numberKeyHandler)(NSInteger number);
+
 @end
