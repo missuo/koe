@@ -521,6 +521,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         NSButton *btn = [[NSButton alloc] initWithFrame:NSMakeRect(x, barPad, w, btnH)];
         btn.title = label;
         btn.bordered = NO;
+        btn.focusRingType = NSFocusRingTypeNone;
         btn.wantsLayer = YES;
         btn.layer.cornerRadius = btnH / 2.0;
         btn.layer.backgroundColor = [[NSColor colorWithWhite:1.0 alpha:0.1] CGColor];
