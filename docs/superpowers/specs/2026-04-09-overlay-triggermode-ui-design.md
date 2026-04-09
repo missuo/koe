@@ -35,12 +35,12 @@ After the user releases the trigger key, the overlay transitions through ASR/LLM
 Dynamic based on character count of the final text:
 
 ```
-linger_seconds = clamp(char_count * 0.05, 1.5, 5.0)
+linger_seconds = clamp(char_count * 0.03, 0.8, 2.5)
 ```
 
-- < 30 chars: 1.5s
-- 30-100 chars: 1.5s-5.0s (linear)
-- > 100 chars: 5.0s cap
+- < 27 chars: 0.8s
+- 27-83 chars: 0.8s-2.5s (linear)
+- > 83 chars: 2.5s cap
 
 #### Implementation Changes
 
