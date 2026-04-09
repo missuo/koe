@@ -40,6 +40,23 @@ static const NSTimeInterval kResizeDuration    = 0.15;
 static const NSTimeInterval kMinLingerDuration = 0.45;
 static const NSTimeInterval kMaxLingerDuration = 1.2;
 static const NSTimeInterval kTemplateLingerDuration = 3.0;
+static const NSTimeInterval kPanelEntranceDuration = 0.22;
+static const NSTimeInterval kPanelExitDuration = 0.18;
+static const CGFloat kPanelEntranceLift = 10.0;
+static const CGFloat kPanelExitDrop = 8.0;
+static const CGFloat kBaseShadowOpacity = 0.11;
+static const CGFloat kBaseShadowRadius = 4.0;
+static const CGFloat kEntranceShadowOpacity = 0.17;
+static const CGFloat kEntranceShadowRadius = 8.0;
+static const NSTimeInterval kRippleDuration = 0.42;
+
+static NSColor *SPOverlaySurfaceTintColor(void) {
+    return [NSColor colorWithSRGBRed:0.07 green:0.065 blue:0.03 alpha:0.34];
+}
+
+static NSColor *SPOverlayShadowColor(void) {
+    return [NSColor colorWithSRGBRed:0.04 green:0.035 blue:0.015 alpha:1.0];
+}
 
 static CGFloat SPOverlayClampTextFontSize(CGFloat fontSize) {
     return fmin(fmax(fontSize, kMinTextFontSize), kMaxTextFontSize);
@@ -248,6 +265,29 @@ static CGFloat SPOverlayMeasureVisibleHeightForLineLimit(NSString *text, NSFont 
 
     CGFloat totalHeight = ceil([layoutManager usedRectForTextContainer:textContainer].size.height);
     return fmin(fmax(SPOverlayLineHeightForFont(font), visibleHeight), totalHeight);
+}
+
+static BOOL SPOverlayShouldReduceMotion(void) {
+    if (@available(macOS 10.15, *)) {
+        return NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+    }
+    return NO;
+}
+
+static NSRect SPOverlayPresentationStartFrame(NSRect finalFrame) {
+    CGFloat insetX = fmin(10.0, floor(finalFrame.size.width * 0.018));
+    CGFloat insetY = fmin(6.0, floor(finalFrame.size.height * 0.08));
+    NSRect startFrame = NSInsetRect(finalFrame, insetX, insetY);
+    startFrame.origin.y -= kPanelEntranceLift;
+    return startFrame;
+}
+
+static NSRect SPOverlayDismissalEndFrame(NSRect currentFrame) {
+    CGFloat insetX = fmin(8.0, floor(currentFrame.size.width * 0.012));
+    CGFloat insetY = fmin(5.0, floor(currentFrame.size.height * 0.06));
+    NSRect endFrame = NSInsetRect(currentFrame, insetX, insetY);
+    endFrame.origin.y -= kPanelExitDrop;
+    return endFrame;
 }
 
 // ── Animation mode ───────────────────────────────────────
@@ -566,21 +606,12 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = self.bounds;
-    CGFloat cornerRadius = self.cornerRadius > 0 ? self.cornerRadius : 18.0;
     CGFloat iconAreaWidth = self.iconAreaWidth > 0 ? self.iconAreaWidth : 28.0;
     CGFloat horizontalPad = SPOverlayHorizontalPadForFont([self contentFont]);
 
     // ── Dark tint (minimum contrast for white text on any background) ──
-    [[NSColor colorWithWhite:0.0 alpha:0.35] setFill];
+    [SPOverlaySurfaceTintColor() setFill];
     [NSBezierPath fillRect:bounds];
-
-    // ── Border (edge definition on dark backgrounds) ──
-    NSBezierPath *border = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(bounds, 0.5, 0.5)
-                                                            xRadius:cornerRadius
-                                                            yRadius:cornerRadius];
-    [[NSColor colorWithWhite:1.0 alpha:0.20] setStroke];
-    border.lineWidth = 0.5;
-    [border stroke];
 
     // ── Left icon area ──
     CGFloat iconCenterX = horizontalPad + iconAreaWidth / 2.0;
@@ -735,6 +766,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, assign) BOOL configuredLimitVisibleLinesEnabled;
 @property (nonatomic, assign) NSInteger configuredMaxVisibleLines;
 @property (nonatomic, assign, getter=isPreviewActive) BOOL previewActive;
+@property (nonatomic, strong) CAShapeLayer *recordingRippleLayer;
 
 @end
 
@@ -788,8 +820,131 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     self.contentView.fontFamily = self.fontFamily;
     self.contentView.cornerRadius = [self overlayCornerRadius];
     self.contentView.iconAreaWidth = [self iconAreaWidth];
+    self.contentView.layer.cornerRadius = [self overlayCornerRadius];
+    self.contentView.layer.masksToBounds = YES;
     [self.contentView updateTextAttributes];
     [self.contentView setNeedsLayout:YES];
+}
+
+- (void)clearRecordingRippleIfNeeded {
+    [self.recordingRippleLayer removeAllAnimations];
+    [self.recordingRippleLayer removeFromSuperlayer];
+    self.recordingRippleLayer = nil;
+}
+
+- (void)resetMotionPresentationState {
+    [self.contentView.layer removeAnimationForKey:@"overlayContentEntrance"];
+    [self.contentView.layer removeAnimationForKey:@"overlayContentExit"];
+    [self.effectView.layer removeAnimationForKey:@"overlayShadowEntrance"];
+    [self.effectView.layer removeAnimationForKey:@"overlayShadowExit"];
+    self.contentView.layer.transform = CATransform3DIdentity;
+    self.contentView.layer.opacity = 1.0;
+    self.effectView.layer.shadowOpacity = kBaseShadowOpacity;
+    self.effectView.layer.shadowRadius = kBaseShadowRadius;
+}
+
+- (void)animateContentLayerFromTransform:(CATransform3D)fromTransform
+                             toTransform:(CATransform3D)toTransform
+                             fromOpacity:(CGFloat)fromOpacity
+                               toOpacity:(CGFloat)toOpacity
+                                duration:(CFTimeInterval)duration
+                               animation:(NSString *)animationKey {
+    if (!self.contentView.layer) return;
+
+    [self.contentView.layer removeAnimationForKey:animationKey];
+    self.contentView.layer.transform = toTransform;
+    self.contentView.layer.opacity = toOpacity;
+
+    CABasicAnimation *transformAnimation = [CABasicAnimation animationWithKeyPath:@"transform"];
+    transformAnimation.fromValue = [NSValue valueWithCATransform3D:fromTransform];
+    transformAnimation.toValue = [NSValue valueWithCATransform3D:toTransform];
+
+    CABasicAnimation *opacityAnimation = [CABasicAnimation animationWithKeyPath:@"opacity"];
+    opacityAnimation.fromValue = @(fromOpacity);
+    opacityAnimation.toValue = @(toOpacity);
+
+    CAAnimationGroup *group = [CAAnimationGroup animation];
+    group.animations = @[transformAnimation, opacityAnimation];
+    group.duration = duration;
+    group.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+    [self.contentView.layer addAnimation:group forKey:animationKey];
+}
+
+- (void)animateShadowFromOpacity:(CGFloat)fromOpacity
+                       toOpacity:(CGFloat)toOpacity
+                      fromRadius:(CGFloat)fromRadius
+                        toRadius:(CGFloat)toRadius
+                        duration:(CFTimeInterval)duration
+                       animation:(NSString *)animationKey {
+    if (!self.effectView.layer) return;
+
+    [self.effectView.layer removeAnimationForKey:animationKey];
+    self.effectView.layer.shadowOpacity = toOpacity;
+    self.effectView.layer.shadowRadius = toRadius;
+
+    CABasicAnimation *opacityAnimation = [CABasicAnimation animationWithKeyPath:@"shadowOpacity"];
+    opacityAnimation.fromValue = @(fromOpacity);
+    opacityAnimation.toValue = @(toOpacity);
+
+    CABasicAnimation *radiusAnimation = [CABasicAnimation animationWithKeyPath:@"shadowRadius"];
+    radiusAnimation.fromValue = @(fromRadius);
+    radiusAnimation.toValue = @(toRadius);
+
+    CAAnimationGroup *group = [CAAnimationGroup animation];
+    group.animations = @[opacityAnimation, radiusAnimation];
+    group.duration = duration;
+    group.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+    [self.effectView.layer addAnimation:group forKey:animationKey];
+}
+
+- (void)playRecordingRippleIfNeeded {
+    if (SPOverlayShouldReduceMotion()) return;
+    if (![self.currentState hasPrefix:@"recording"]) return;
+    if (!self.contentView.layer) return;
+
+    [self clearRecordingRippleIfNeeded];
+
+    CGFloat maxRadius = fmax(22.0, [self basePillHeight] * 0.72);
+    CGFloat baseRadius = maxRadius * 0.34;
+    CGFloat centerX = SPOverlayHorizontalPadForFont([self contentFont]) + [self iconAreaWidth] / 2.0;
+    CGFloat centerY = NSMidY(self.contentView.bounds);
+
+    CAShapeLayer *ringLayer = [CAShapeLayer layer];
+    ringLayer.bounds = CGRectMake(0, 0, maxRadius * 2.0, maxRadius * 2.0);
+    ringLayer.position = CGPointMake(centerX, centerY);
+    CGPathRef ringPath = CGPathCreateWithEllipseInRect(CGRectInset(ringLayer.bounds, 1.0, 1.0), NULL);
+    ringLayer.path = ringPath;
+    CGPathRelease(ringPath);
+    ringLayer.fillColor = NSColor.clearColor.CGColor;
+    ringLayer.strokeColor = [NSColor colorWithWhite:1.0 alpha:0.20].CGColor;
+    ringLayer.lineWidth = 1.3;
+    ringLayer.opacity = 0.0;
+    self.recordingRippleLayer = ringLayer;
+    [self.contentView.layer addSublayer:ringLayer];
+
+    CABasicAnimation *scaleAnimation = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
+    scaleAnimation.fromValue = @(baseRadius / maxRadius);
+    scaleAnimation.toValue = @1.0;
+
+    CAKeyframeAnimation *opacityAnimation = [CAKeyframeAnimation animationWithKeyPath:@"opacity"];
+    opacityAnimation.values = @[@0.0, @0.22, @0.0];
+    opacityAnimation.keyTimes = @[@0.0, @0.3, @1.0];
+
+    CAAnimationGroup *group = [CAAnimationGroup animation];
+    group.animations = @[scaleAnimation, opacityAnimation];
+    group.duration = kRippleDuration;
+    group.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+    group.removedOnCompletion = YES;
+    [ringLayer addAnimation:group forKey:@"recordingRipple"];
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((kRippleDuration + 0.05) * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if (self.recordingRippleLayer == ringLayer) {
+            [self clearRecordingRippleIfNeeded];
+        } else {
+            [ringLayer removeFromSuperlayer];
+        }
+    });
 }
 
 - (NSString *)currentDisplayText {
@@ -904,10 +1059,10 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     };
 
     // Light glow shadow (visible on dark backgrounds)
-    effectView.layer.shadowColor   = [[NSColor whiteColor] CGColor];
-    effectView.layer.shadowOpacity = 0.15;
-    effectView.layer.shadowRadius  = 6.0;
-    effectView.layer.shadowOffset  = CGSizeMake(0, 0);
+    effectView.layer.shadowColor   = SPOverlayShadowColor().CGColor;
+    effectView.layer.shadowOpacity = kBaseShadowOpacity;
+    effectView.layer.shadowRadius  = kBaseShadowRadius;
+    effectView.layer.shadowOffset  = CGSizeMake(0, -1.0);
 
     panel.contentView = effectView;
     self.effectView = effectView;
@@ -1269,17 +1424,17 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     bgView.maskImage = mask;
 
     // Glow shadow (match main pill)
-    bgView.layer.shadowColor = [[NSColor whiteColor] CGColor];
-    bgView.layer.shadowOpacity = 0.15;
-    bgView.layer.shadowRadius = 6.0;
-    bgView.layer.shadowOffset = CGSizeMake(0, 0);
+    bgView.layer.shadowColor = SPOverlayShadowColor().CGColor;
+    bgView.layer.shadowOpacity = kBaseShadowOpacity;
+    bgView.layer.shadowRadius = kBaseShadowRadius;
+    bgView.layer.shadowOffset = CGSizeMake(0, -1.0);
 
     bar.contentView = bgView;
 
     // Dark tint overlay (match main pill contrast)
     NSView *tintView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, totalW, barH)];
     tintView.wantsLayer = YES;
-    tintView.layer.backgroundColor = [[NSColor colorWithWhite:0.0 alpha:0.35] CGColor];
+    tintView.layer.backgroundColor = SPOverlaySurfaceTintColor().CGColor;
     tintView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [bgView addSubview:tintView];
 
@@ -1493,21 +1648,102 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 #pragma mark - Show / Hide
 
 - (void)show {
+    BOOL wasVisible = self.panel.isVisible && self.panel.alphaValue > 0.01;
+    [self resetMotionPresentationState];
     [self.panel orderFrontRegardless];
+
+    if (wasVisible || SPOverlayShouldReduceMotion()) {
+        if (!wasVisible) {
+            self.panel.alphaValue = 0.0;
+        }
+        [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
+            ctx.duration = SPOverlayShouldReduceMotion() ? kFadeInDuration : 0.12;
+            ctx.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+            self.panel.animator.alphaValue = 1.0;
+        }];
+        return;
+    }
+
+    NSRect finalFrame = self.panel.frame;
+    NSRect startFrame = SPOverlayPresentationStartFrame(finalFrame);
+    [self.panel setFrame:startFrame display:YES];
+    self.panel.alphaValue = 0.0;
+
+    CATransform3D startTransform = CATransform3DMakeScale(0.982, 0.982, 1.0);
+    startTransform = CATransform3DTranslate(startTransform, 0.0, -6.0, 0.0);
+    [self animateContentLayerFromTransform:startTransform
+                               toTransform:CATransform3DIdentity
+                               fromOpacity:0.94
+                                 toOpacity:1.0
+                                  duration:kPanelEntranceDuration
+                                 animation:@"overlayContentEntrance"];
+    [self animateShadowFromOpacity:0.05
+                         toOpacity:kEntranceShadowOpacity
+                        fromRadius:2.0
+                          toRadius:kEntranceShadowRadius
+                          duration:kPanelEntranceDuration
+                         animation:@"overlayShadowEntrance"];
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((kPanelEntranceDuration * 0.55) * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if (!self.panel.isVisible || self.panel.alphaValue <= 0.0) return;
+        [self animateShadowFromOpacity:kEntranceShadowOpacity
+                             toOpacity:kBaseShadowOpacity
+                            fromRadius:kEntranceShadowRadius
+                              toRadius:kBaseShadowRadius
+                              duration:0.18
+                             animation:@"overlayShadowEntranceSettle"];
+    });
+
     [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
-        ctx.duration = kFadeInDuration;
+        ctx.duration = kPanelEntranceDuration;
+        ctx.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+        [[self.panel animator] setFrame:finalFrame display:YES];
         self.panel.animator.alphaValue = 1.0;
     }];
+    [self playRecordingRippleIfNeeded];
 }
 
 - (void)hide {
     [self hideTemplateButtons];
     [self stopAnimation];
     [self setMainPanelInteractive:NO];
+
+    if (!self.panel.isVisible || self.panel.alphaValue <= 0.01) {
+        [self.panel orderOut:nil];
+        return;
+    }
+
+    [self clearRecordingRippleIfNeeded];
+
+    NSRect currentFrame = self.panel.frame;
+    BOOL reduceMotion = SPOverlayShouldReduceMotion();
+    NSRect endFrame = reduceMotion ? currentFrame : SPOverlayDismissalEndFrame(currentFrame);
+
+    if (!reduceMotion) {
+        CATransform3D endTransform = CATransform3DMakeScale(0.992, 0.992, 1.0);
+        endTransform = CATransform3DTranslate(endTransform, 0.0, -4.0, 0.0);
+        [self animateContentLayerFromTransform:CATransform3DIdentity
+                                   toTransform:endTransform
+                                   fromOpacity:1.0
+                                     toOpacity:0.96
+                                      duration:kPanelExitDuration
+                                     animation:@"overlayContentExit"];
+        [self animateShadowFromOpacity:kBaseShadowOpacity
+                             toOpacity:0.04
+                            fromRadius:kBaseShadowRadius
+                              toRadius:2.0
+                              duration:kPanelExitDuration
+                             animation:@"overlayShadowExit"];
+    }
+
     [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
-        ctx.duration = kFadeOutDuration;
+        ctx.duration = reduceMotion ? kFadeOutDuration : kPanelExitDuration;
+        ctx.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+        [[self.panel animator] setFrame:endFrame display:YES];
         self.panel.animator.alphaValue = 0.0;
     } completionHandler:^{
+        [self resetMotionPresentationState];
         if ([self.currentState isEqualToString:@"idle"] || [self.currentState isEqualToString:@"completed"]) {
             [self.panel orderOut:nil];
         }

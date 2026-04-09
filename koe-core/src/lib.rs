@@ -1000,10 +1000,11 @@ async fn run_session(
 
     let asr_text = aggregator.best_text().to_string();
     if asr_text.is_empty() {
-        log::warn!("[{session_id}] no ASR text available: no speech recognized");
-        invoke_session_error(session_token, "no speech recognized");
-        invoke_state_changed(session_token, "failed");
+        // A silent recording is a valid no-op, not a user-visible failure.
+        // Exit quietly so the app returns to idle without error sounds or alerts.
+        log::info!("[{session_id}] no ASR text available: treating silent recording as empty result");
         cleanup_session(&session_arc);
+        invoke_state_changed(session_token, "idle");
         return;
     }
 
@@ -1793,10 +1794,10 @@ mod tests {
 
     /// Simulates the post-ASR decision: should the session fail?
     /// Mirrors the logic from run_session after asr.close().
-    fn should_fail_session(asr_error: &Option<String>, asr_text: &str) -> bool {
-        // Fail if there was an error (regardless of accumulated text)
-        // or if there's no text at all
-        asr_error.is_some() || asr_text.is_empty()
+    fn should_fail_session(asr_error: &Option<String>, _asr_text: &str) -> bool {
+        // Only real ASR errors should fail the session.
+        // An empty transcript is treated as a quiet no-op.
+        asr_error.is_some()
     }
 
     #[test]
@@ -1818,7 +1819,7 @@ mod tests {
     }
 
     #[test]
-    fn no_error_no_text_fails() {
-        assert!(should_fail_session(&None, ""));
+    fn no_error_no_text_does_not_fail() {
+        assert!(!should_fail_session(&None, ""));
     }
 }
