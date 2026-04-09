@@ -14,6 +14,9 @@
 /// Threshold in milliseconds to distinguish tap from hold. Default 180ms.
 @property (nonatomic, assign) NSTimeInterval holdThresholdMs;
 
+/// Trigger mode: 0 = hold (short press ignored), 1 = toggle (tap to start/stop).
+@property (nonatomic, assign) uint8_t triggerMode;
+
 /// Primary key code to monitor (default: 63 = Fn/Globe)
 @property (nonatomic, assign) NSInteger targetKeyCode;
 

@@ -316,8 +316,14 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     switch (self.state) {
         case SPHotkeyStatePending:
             [self cancelHoldTimer];
-            self.state = SPHotkeyStateRecordingToggle;
-            [self.delegate hotkeyMonitorDidDetectTapStart];
+            if (self.triggerMode == 1) {
+                // Toggle mode: short press starts recording
+                self.state = SPHotkeyStateRecordingToggle;
+                [self.delegate hotkeyMonitorDidDetectTapStart];
+            } else {
+                // Hold mode: short press is ignored
+                self.state = SPHotkeyStateIdle;
+            }
             break;
 
         case SPHotkeyStateRecordingHold:
