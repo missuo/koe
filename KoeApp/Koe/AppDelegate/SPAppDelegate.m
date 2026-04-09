@@ -365,13 +365,18 @@
 
     uint64_t token = self.rustBridge.currentSessionToken;
 
-    if ([self.permissionManager isAccessibilityGranted]) {
+    BOOL accessOK = [self.permissionManager isAccessibilityGranted];
+    NSLog(@"[Koe] Accessibility granted: %@", accessOK ? @"YES" : @"NO");
+
+    if (accessOK) {
         [self.pasteManager simulatePasteWithCompletion:^{
+            NSLog(@"[Koe] Paste completion callback fired");
             [self.clipboardManager scheduleRestoreAfterDelay:1500];
             if (token != self.rustBridge.currentSessionToken) return;
             [self.statusBarManager updateState:@"idle"];
             // Check if prompt templates are available for rewrite
             NSArray *templates = [self.rustBridge promptTemplates];
+            NSLog(@"[Koe] Prompt templates: %lu", (unsigned long)templates.count);
             if (templates.count > 0 && self.lastAsrText.length > 0) {
                 [self.overlayPanel showTemplateButtons:templates];
                 [self startNumberKeyMonitoring];
@@ -473,29 +478,14 @@
 - (void)rustBridgeDidReceiveRewriteText:(NSString *)text {
     NSLog(@"[Koe] Rewrite text received (%lu chars)", (unsigned long)text.length);
 
-    // Show rewritten text in overlay
-    [self.overlayPanel updateDisplayText:text];
-    [self.overlayPanel updateState:@"pasting"];
-
-    // Write to clipboard and auto-paste
-    [self.clipboardManager backup];
+    // Copy to clipboard (no auto-paste — user decides where to paste)
     [self.clipboardManager writeText:text];
 
-    uint64_t token = self.rustBridge.currentSessionToken;
-
-    if ([self.permissionManager isAccessibilityGranted]) {
-        // Undo the previous default paste, then paste the rewrite result
-        [self.pasteManager simulateUndoThenPasteWithCompletion:^{
-            [self.clipboardManager scheduleRestoreAfterDelay:1500];
-            if (token != self.rustBridge.currentSessionToken) return;
-            [self.statusBarManager updateState:@"idle"];
-            [self.overlayPanel lingerAndDismiss];
-        }];
-    } else {
-        NSLog(@"[Koe] Accessibility not granted — rewrite text copied to clipboard only");
-        [self.statusBarManager updateState:@"idle"];
-        [self.overlayPanel lingerAndDismiss];
-    }
+    // Show result with "Copied" indicator
+    [self.statusBarManager updateState:@"idle"];
+    [self.overlayPanel updateDisplayText:[text stringByAppendingString:@"  ✓ Copied"]];
+    [self.overlayPanel updateState:@"pasting"];
+    [self.overlayPanel lingerAndDismiss];
 }
 
 - (void)rustBridgeDidChangeState:(NSString *)state {
