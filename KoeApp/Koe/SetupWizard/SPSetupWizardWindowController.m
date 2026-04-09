@@ -1042,17 +1042,35 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 }
 
 - (void)templateTableClicked:(id)sender {
-    [self saveCurrentTemplateEdits];
+    // Save the currently displayed template back to data before switching
+    [self syncCurrentTemplateToData];
+
     NSInteger row = self.templatesTableView.selectedRow;
     self.selectedTemplateIndex = row;
     [self loadTemplateAtIndex:row];
 }
 
+/// Write the name/prompt fields back into templatesData for the current selection.
+- (void)syncCurrentTemplateToData {
+    NSInteger idx = self.selectedTemplateIndex;
+    if (idx < 0 || idx >= (NSInteger)self.templatesData.count) return;
+    NSMutableDictionary *tmpl = self.templatesData[idx];
+    tmpl[@"name"] = self.templateNameField.stringValue ?: @"";
+    tmpl[@"system_prompt"] = self.templatePromptTextView.string ?: @"";
+}
+
 - (void)loadTemplateAtIndex:(NSInteger)index {
     if (index >= 0 && index < (NSInteger)self.templatesData.count) {
         NSDictionary *tmpl = self.templatesData[index];
+        NSLog(@"[Koe] Loading template %ld: name=%@ prompt_len=%lu prompt_class=%@",
+              (long)index,
+              tmpl[@"name"],
+              (unsigned long)[tmpl[@"system_prompt"] length],
+              NSStringFromClass([tmpl[@"system_prompt"] class]));
         self.templateNameField.stringValue = tmpl[@"name"] ?: @"";
-        self.templatePromptTextView.string = tmpl[@"system_prompt"] ?: @"";
+        id promptVal = tmpl[@"system_prompt"];
+        NSString *promptStr = ([promptVal isKindOfClass:[NSString class]]) ? promptVal : @"";
+        self.templatePromptTextView.string = promptStr;
         self.templateNameField.enabled = YES;
         self.templatePromptTextView.editable = YES;
     } else {
@@ -1064,12 +1082,7 @@ static NSString *defaultCancelKeyForTrigger(NSString *triggerKey) {
 }
 
 - (void)saveCurrentTemplateEdits {
-    NSInteger idx = self.selectedTemplateIndex;
-    if (idx < 0 || idx >= (NSInteger)self.templatesData.count) return;
-
-    NSMutableDictionary *tmpl = self.templatesData[idx];
-    tmpl[@"name"] = self.templateNameField.stringValue ?: @"";
-    tmpl[@"system_prompt"] = self.templatePromptTextView.string ?: @"";
+    [self syncCurrentTemplateToData];
     [self.templatesTableView reloadData];
 }
 
