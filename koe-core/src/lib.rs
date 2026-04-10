@@ -1345,6 +1345,15 @@ pub extern "C" fn sp_core_supported_local_providers() -> *mut c_char {
     CString::new(json_str).unwrap_or_default().into_raw()
 }
 
+/// Return JSON array of supported LLM provider names (e.g. ["openai","mlx"]).
+/// Caller must free the returned string with sp_core_free_string().
+#[no_mangle]
+pub extern "C" fn sp_core_supported_llm_providers() -> *mut c_char {
+    let providers = llm::supported_providers();
+    let json_str = serde_json::to_string(providers).unwrap_or_else(|_| "[]".to_string());
+    CString::new(json_str).unwrap_or_default().into_raw()
+}
+
 /// Scan all models and return JSON array.
 /// Caller must free the returned string with sp_core_free_string().
 #[no_mangle]

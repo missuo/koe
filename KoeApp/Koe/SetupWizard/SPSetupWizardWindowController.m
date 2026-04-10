@@ -930,12 +930,15 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Provider
     [pane addSubview:[self formLabel:@"Provider" frame:NSMakeRect(16, y, labelW, 22)]];
     self.llmProviderPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, fieldW, 26) pullsDown:NO];
+    NSArray<NSString *> *supportedLlmProviders = [self.rustBridge supportedLlmProviders];
     NSMenuItem *openaiItem = [[NSMenuItem alloc] initWithTitle:@"OpenAI Compatible" action:nil keyEquivalent:@""];
     openaiItem.representedObject = @"openai";
     [self.llmProviderPopup.menu addItem:openaiItem];
-    NSMenuItem *mlxItem = [[NSMenuItem alloc] initWithTitle:@"MLX (Apple Silicon)" action:nil keyEquivalent:@""];
-    mlxItem.representedObject = @"mlx";
-    [self.llmProviderPopup.menu addItem:mlxItem];
+    if ([supportedLlmProviders containsObject:@"mlx"]) {
+        NSMenuItem *mlxItem = [[NSMenuItem alloc] initWithTitle:@"MLX (Apple Silicon)" action:nil keyEquivalent:@""];
+        mlxItem.representedObject = @"mlx";
+        [self.llmProviderPopup.menu addItem:mlxItem];
+    }
     [self.llmProviderPopup setTarget:self];
     [self.llmProviderPopup setAction:@selector(llmProviderChanged:)];
     [pane addSubview:self.llmProviderPopup];

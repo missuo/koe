@@ -51,6 +51,9 @@ typedef NS_ENUM(NSInteger, SPSessionModeObjC) {
 /// Return supported local provider names (e.g. @[@"mlx", @"sherpa-onnx"]).
 - (NSArray<NSString *> *)supportedLocalProviders;
 
+/// Return supported LLM provider names (e.g. @[@"openai", @"mlx"]).
+- (NSArray<NSString *> *)supportedLlmProviders;
+
 /// Scan all models and return array of dictionaries.
 /// Each dict: path, provider, description, repo, total_size, status (0/1/2)
 - (NSArray<NSDictionary *> *)scanModels;

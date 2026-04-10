@@ -216,6 +216,17 @@ static void bridge_on_rewrite_text_ready(uint64_t token, const char *text) {
     return [result isKindOfClass:[NSArray class]] ? result : @[];
 }
 
+- (NSArray<NSString *> *)supportedLlmProviders {
+    char *json = sp_core_supported_llm_providers();
+    if (!json) return @[];
+    NSString *jsonStr = [NSString stringWithUTF8String:json];
+    sp_core_free_string(json);
+    NSData *data = [jsonStr dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data) return @[];
+    NSArray *result = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    return [result isKindOfClass:[NSArray class]] ? result : @[];
+}
+
 - (NSArray<NSDictionary *> *)scanModels {
     char *json = sp_core_scan_models_json();
     if (!json) return @[];

@@ -4,6 +4,15 @@ pub mod openai_compatible;
 
 use crate::errors::Result;
 
+/// LLM correction providers supported by this build.
+pub fn supported_providers() -> &'static [&'static str] {
+    &[
+        "openai",
+        #[cfg(feature = "mlx")]
+        "mlx",
+    ]
+}
+
 /// Request for LLM text correction.
 pub struct CorrectionRequest {
     pub asr_text: String,
