@@ -722,18 +722,23 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [self.asrProviderPopup lastItem].representedObject = @"doubao";
     [self.asrProviderPopup addItemWithTitle:@"Qwen (\u963f\u91cc\u4e91)"];
     [self.asrProviderPopup lastItem].representedObject = @"qwen";
-    // Add Apple Speech (macOS 26+, no model download required)
+    NSArray<NSString *> *supportedLocalProviders = [self.rustBridge supportedLocalProviders];
+    // Add Apple Speech (macOS 26+, no model download required; also requires the
+    // apple-speech feature to be compiled into the Rust core — excluded on x86_64)
     if (@available(macOS 26.0, *)) {
-        [self.asrProviderPopup addItemWithTitle:@"Apple Speech (On-Device)"];
-        [self.asrProviderPopup lastItem].representedObject = @"apple-speech";
+        if ([supportedLocalProviders containsObject:@"apple-speech"]) {
+            [self.asrProviderPopup addItemWithTitle:@"Apple Speech (On-Device)"];
+            [self.asrProviderPopup lastItem].representedObject = @"apple-speech";
+        }
     }
     // Add local providers supported by this build (model-based)
     NSDictionary *localProviderLabels = @{
         @"mlx": @"MLX (Apple Silicon)",
         @"sherpa-onnx": @"Sherpa-ONNX",
     };
-    for (NSString *provider in [self.rustBridge supportedLocalProviders]) {
-        NSString *label = localProviderLabels[provider] ?: provider;
+    for (NSString *provider in supportedLocalProviders) {
+        NSString *label = localProviderLabels[provider];
+        if (!label) continue;  // apple-speech handled above
         [self.asrProviderPopup addItemWithTitle:label];
         [self.asrProviderPopup lastItem].representedObject = provider;
     }

@@ -106,9 +106,11 @@ pub fn models_dir() -> PathBuf {
 
 // ─── Scan ───────────────────────────────────────────────────────────
 
-/// Local ASR providers supported by this build.
+/// Local ASR providers supported by this build (on-device, feature-gated).
 pub fn supported_providers() -> &'static [&'static str] {
     &[
+        #[cfg(feature = "apple-speech")]
+        "apple-speech",
         #[cfg(feature = "mlx")]
         "mlx",
         #[cfg(feature = "sherpa-onnx")]
