@@ -714,6 +714,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions, PR guidelines, an
 
 ## Contributors
 
+[![Contributors](https://contrib.rocks/image?repo=missuo/koe)][contributors]
+
+[contributors]: https://github.com/missuo/koe/graphs/contributors
+
 - Vincent Yang — creator and maintainer
 - luolei — contributor for the 1.0.14 release cycle, including prompt templates, shortcut workflow, and settings/overlay interaction polish
 
