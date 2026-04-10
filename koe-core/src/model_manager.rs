@@ -640,6 +640,7 @@ mod tests {
 
         let manifest = ModelManifest {
             provider: "test".into(),
+            mode: None,
             description: "test model".into(),
             repo: "test/model".into(),
             files: vec![ModelFile {
@@ -714,6 +715,7 @@ mod tests {
 
         let manifest = ModelManifest {
             provider: "test".into(),
+            mode: None,
             description: "test".into(),
             repo: "test/model".into(),
             files: vec![ModelFile {
@@ -757,6 +759,7 @@ mod tests {
         let content = b"some model data";
         let manifest = ModelManifest {
             provider: "test".into(),
+            mode: None,
             description: "test".into(),
             repo: "test/model".into(),
             files: vec![ModelFile {
@@ -824,6 +827,7 @@ mod tests {
 
         let manifest = ModelManifest {
             provider: "test".into(),
+            mode: None,
             description: "test".into(),
             repo: "test/model".into(),
             files: vec![ModelFile {
@@ -870,6 +874,7 @@ mod tests {
 
         let manifest = ModelManifest {
             provider: "test".into(),
+            mode: None,
             description: "test".into(),
             repo: "test/model".into(),
             files: vec![ModelFile {
@@ -938,6 +943,7 @@ mod tests {
         };
         let manifest = ModelManifest {
             provider: "test".into(),
+            mode: None,
             description: "test".into(),
             repo: "test/model".into(),
             files: vec![ModelFile {
@@ -988,6 +994,7 @@ mod tests {
 
         let manifest = ModelManifest {
             provider: "test".into(),
+            mode: None,
             description: "test".into(),
             repo: "test/model".into(),
             files: vec![
@@ -1044,6 +1051,7 @@ mod tests {
         };
         let manifest = ModelManifest {
             provider: "test".into(),
+            mode: None,
             description: "test".into(),
             repo: "test/model".into(),
             files: vec![ModelFile {
@@ -1107,6 +1115,7 @@ mod tests {
         };
         let manifest = ModelManifest {
             provider: "test".into(),
+            mode: None,
             description: "test".into(),
             repo: "test/model".into(),
             files: vec![ModelFile {
