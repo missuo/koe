@@ -165,7 +165,7 @@ static void bridge_on_rewrite_text_ready(uint64_t token, const char *text) {
     sp_core_destroy();
 }
 
-- (BOOL)beginSessionWithMode:(SPSessionModeObjC)mode {
+- (BOOL)beginSessionWithMode:(SPSessionModeObjC)mode llmInverted:(BOOL)llmInverted {
     NSRunningApplication *frontApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
     const char *bundleId = frontApp.bundleIdentifier.UTF8String;
     pid_t pid = frontApp.processIdentifier;
@@ -177,6 +177,7 @@ static void bridge_on_rewrite_text_ready(uint64_t token, const char *text) {
         .frontmost_bundle_id = bundleId,
         .frontmost_pid = (int)pid,
         .session_token = _currentSessionToken,
+        .llm_invert_modifier_active = llmInverted,
     };
 
     int32_t result = sp_core_session_begin(context);

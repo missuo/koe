@@ -275,6 +275,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
     let session = Session::new(context.mode, bundle_id, context.frontmost_pid);
     let session_id = session.id.clone();
     let session_token = context.session_token;
+    let llm_invert_modifier_active = context.llm_invert_modifier_active;
     core.current_session_token = session_token;
     let mode = context.mode;
 
@@ -466,6 +467,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
         &core.runtime,
         &session_id,
         &llm_config,
+        llm_invert_modifier_active,
         llm_http_client.clone(),
         llm_warmup_state.clone(),
     );
@@ -482,6 +484,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
             asr_provider_name,
             asr,
             llm_config,
+            llm_invert_modifier_active,
             llm_http_client,
             llm_warmup_state,
             dictionary,
@@ -847,6 +850,7 @@ pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
             trigger_modifier_flag: params.modifier_flag,
             trigger_match_kind: params.match_kind as u8,
             trigger_mode,
+            llm_invert_modifier_flag: core.config.hotkey.llm_invert_modifier_flag(),
         }
     } else {
         SPHotkeyConfig {
@@ -855,6 +859,7 @@ pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
             trigger_modifier_flag: 0x00800000,
             trigger_match_kind: 0,
             trigger_mode: 0,
+            llm_invert_modifier_flag: 0x0004_0000,
         }
     }
 }
@@ -872,6 +877,7 @@ async fn run_session(
     asr_provider: String,
     mut asr: Box<dyn AsrProvider>,
     llm_config: config::LlmSection,
+    llm_invert_modifier_active: bool,
     llm_http_client: Client,
     llm_warmup_state: Arc<Mutex<LlmWarmupState>>,
     dictionary: Vec<String>,
@@ -1061,7 +1067,7 @@ async fn run_session(
         return;
     }
 
-    let llm_enabled = llm_is_ready(&llm_config);
+    let llm_enabled = llm_enabled_for_session(&llm_config, llm_invert_modifier_active);
 
     let final_text = if llm_enabled {
         {
@@ -1074,7 +1080,7 @@ async fn run_session(
 
         let active_profile = llm_config
             .active_profile_config()
-            .expect("llm_is_ready checked the active LLM profile");
+            .expect("llm_enabled_for_session checked the active LLM profile");
 
         let llm: Box<dyn LlmProvider> = match active_profile.provider.as_str() {
             #[cfg(feature = "mlx")]
@@ -1151,7 +1157,14 @@ async fn run_session(
             }
         }
     } else {
-        if !llm_config.enabled {
+        let effective_llm_enabled = if llm_invert_modifier_active {
+            !llm_config.enabled
+        } else {
+            llm_config.enabled
+        };
+        if !effective_llm_enabled && llm_invert_modifier_active && llm_config.enabled {
+            log::info!("[{session_id}] LLM inverted off for this session, using raw ASR text");
+        } else if !effective_llm_enabled {
             log::info!("[{session_id}] LLM disabled, using raw ASR text");
         } else {
             log::info!("[{session_id}] LLM not configured, using raw ASR text");
@@ -1237,8 +1250,13 @@ fn cleanup_session(session_arc: &Arc<Mutex<Option<Session>>>) {
     *s = None;
 }
 
-fn llm_is_ready(cfg: &config::LlmSection) -> bool {
-    if !cfg.enabled {
+fn llm_enabled_for_session(cfg: &config::LlmSection, llm_invert_modifier_active: bool) -> bool {
+    let enabled = if llm_invert_modifier_active {
+        !cfg.enabled
+    } else {
+        cfg.enabled
+    };
+    if !enabled {
         return false;
     }
     cfg.active_profile_config()
@@ -1250,10 +1268,11 @@ fn start_llm_warmup_if_needed(
     runtime: &Runtime,
     session_id: &str,
     llm_config: &config::LlmSection,
+    llm_invert_modifier_active: bool,
     llm_http_client: Client,
     llm_warmup_state: Arc<Mutex<LlmWarmupState>>,
 ) {
-    if !llm_is_ready(llm_config) {
+    if !llm_enabled_for_session(llm_config, llm_invert_modifier_active) {
         return;
     }
     let active_profile = match llm_config.active_profile_config() {
@@ -2045,6 +2064,41 @@ mod tests {
     #[test]
     fn no_error_no_text_does_not_fail() {
         assert!(!should_fail_session(&None, ""));
+    }
+
+    #[test]
+    fn llm_session_decision_uses_global_enabled_without_inversion() {
+        let mut cfg = Config::default().llm;
+        cfg.enabled = true;
+        assert!(llm_enabled_for_session(&cfg, false));
+    }
+
+    #[test]
+    fn llm_session_decision_skips_llm_when_enabled_and_inverted() {
+        let mut cfg = Config::default().llm;
+        cfg.enabled = true;
+        assert!(!llm_enabled_for_session(&cfg, true));
+    }
+
+    #[test]
+    fn llm_session_decision_enables_llm_when_disabled_and_inverted() {
+        let mut cfg = Config::default().llm;
+        cfg.enabled = false;
+        assert!(llm_enabled_for_session(&cfg, true));
+    }
+
+    #[test]
+    fn llm_session_decision_still_requires_ready_profile() {
+        let mut cfg = Config::default().llm;
+        cfg.enabled = false;
+        cfg.active_profile = "missing".into();
+        assert!(!llm_enabled_for_session(&cfg, true));
+    }
+
+    #[test]
+    fn fallback_hotkey_config_exports_llm_invert_modifier_flag() {
+        let cfg = sp_core_get_hotkey_config();
+        assert_eq!(cfg.llm_invert_modifier_flag, 0x0004_0000);
     }
 
     #[test]

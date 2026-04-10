@@ -21,6 +21,9 @@ pub struct SPSessionContext {
     /// Passed back through all session callbacks so the caller can
     /// discard events from superseded sessions.
     pub session_token: u64,
+    /// Whether the configured per-session LLM inversion modifier was active
+    /// when recording started.
+    pub llm_invert_modifier_active: bool,
 }
 
 /// Callback function types that Obj-C registers with Rust.
@@ -177,6 +180,8 @@ pub struct SPHotkeyConfig {
     pub trigger_match_kind: u8,
     /// Trigger mode: 0 = hold (press-and-hold), 1 = toggle (tap to start/stop)
     pub trigger_mode: u8,
+    /// Modifier flag that inverts LLM correction for the current session.
+    pub llm_invert_modifier_flag: u64,
 }
 
 /// Helper to convert a C string pointer to a Rust &str

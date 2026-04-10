@@ -76,7 +76,8 @@ static BOOL configFlagEnabled(const char *keyPath) {
                    self.hotkeyMonitor.altKeyCode != hotkeyConfig.trigger_alt_key_code ||
                    self.hotkeyMonitor.targetModifierFlag != hotkeyConfig.trigger_modifier_flag ||
                    self.hotkeyMonitor.targetMatchKind != hotkeyConfig.trigger_match_kind ||
-                   self.hotkeyMonitor.triggerMode != hotkeyConfig.trigger_mode;
+                   self.hotkeyMonitor.triggerMode != hotkeyConfig.trigger_mode ||
+                   self.hotkeyMonitor.llmInvertModifierFlag != hotkeyConfig.llm_invert_modifier_flag;
 
     if (!changed) return;
 
@@ -89,6 +90,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     self.hotkeyMonitor.targetModifierFlag = hotkeyConfig.trigger_modifier_flag;
     self.hotkeyMonitor.targetMatchKind = hotkeyConfig.trigger_match_kind;
     self.hotkeyMonitor.triggerMode = hotkeyConfig.trigger_mode;
+    self.hotkeyMonitor.llmInvertModifierFlag = hotkeyConfig.llm_invert_modifier_flag;
 
     if (restartIfNeeded) {
         [self.hotkeyMonitor start];
@@ -255,11 +257,12 @@ static BOOL configFlagEnabled(const char *keyPath) {
     // Read new hotkey config
     struct SPHotkeyConfig newConfig = sp_core_get_hotkey_config();
 
-    NSLog(@"[Koe] Reloaded hotkey config: trigger=%d/%d flag=0x%llx kind=%d",
+    NSLog(@"[Koe] Reloaded hotkey config: trigger=%d/%d flag=0x%llx kind=%d llmInvert=0x%llx",
           newConfig.trigger_key_code,
           newConfig.trigger_alt_key_code,
           (unsigned long long)newConfig.trigger_modifier_flag,
-          newConfig.trigger_match_kind);
+          newConfig.trigger_match_kind,
+          (unsigned long long)newConfig.llm_invert_modifier_flag);
     [self applyHotkeyConfig:newConfig restartMonitorIfNeeded:YES];
     [self.overlayPanel reloadAppearanceFromConfig];
 }
@@ -273,8 +276,8 @@ static BOOL configFlagEnabled(const char *keyPath) {
     }
 }
 
-- (void)hotkeyMonitorDidDetectHoldStart {
-    NSLog(@"[Koe] Hold start detected");
+- (void)hotkeyMonitorDidDetectHoldStartWithLlmInversion:(BOOL)llmInverted {
+    NSLog(@"[Koe] Hold start detected (llmInverted=%@)", llmInverted ? @"YES" : @"NO");
     [self stopNumberKeyMonitoring];
     [self.overlayPanel hideTemplateButtons];
     self.showingError = NO;
@@ -288,7 +291,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     [self.overlayPanel updateState:@"recording"];
 
     // Start Rust session + audio capture
-    if (![self.rustBridge beginSessionWithMode:SPSessionModeHold]) {
+    if (![self.rustBridge beginSessionWithMode:SPSessionModeHold llmInverted:llmInverted]) {
         [self handleAudioCaptureError:@"Failed to start session"];
         return;
     }
@@ -319,8 +322,8 @@ static BOOL configFlagEnabled(const char *keyPath) {
                    dispatch_get_main_queue(), block);
 }
 
-- (void)hotkeyMonitorDidDetectTapStart {
-    NSLog(@"[Koe] Tap start detected");
+- (void)hotkeyMonitorDidDetectTapStartWithLlmInversion:(BOOL)llmInverted {
+    NSLog(@"[Koe] Tap start detected (llmInverted=%@)", llmInverted ? @"YES" : @"NO");
     [self stopNumberKeyMonitoring];
     [self.overlayPanel hideTemplateButtons];
     self.showingError = NO;
@@ -333,7 +336,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     [self.statusBarManager updateState:@"recording"];
     [self.overlayPanel updateState:@"recording"];
 
-    if (![self.rustBridge beginSessionWithMode:SPSessionModeToggle]) {
+    if (![self.rustBridge beginSessionWithMode:SPSessionModeToggle llmInverted:llmInverted]) {
         [self handleAudioCaptureError:@"Failed to start session"];
         return;
     }

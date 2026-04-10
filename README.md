@@ -354,6 +354,7 @@ hotkey:
   # or a normalized key combo such as "command+shift+49".
   trigger_key: "fn"
   trigger_mode: "hold"  # "hold" | "toggle"
+  llm_invert_modifier: "control"  # control | option | command | shift | fn | none
 ```
 
 | Option | Key | Notes |
@@ -368,6 +369,11 @@ hotkey:
 
 Hotkey changes take effect automatically within a few seconds. Koe now uses a
 single trigger shortcut model:
+
+Hold the configured `llm_invert_modifier` while starting a recording to invert
+`llm.enabled` for that session only. For example, with the defaults,
+`Control + Fn` skips LLM correction when LLM is normally enabled, or tries LLM
+correction when LLM is normally disabled.
 
 - `hold`: press-and-hold to record, release to stop
 - `toggle`: tap once to start, tap again to stop
