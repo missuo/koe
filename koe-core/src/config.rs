@@ -1524,17 +1524,8 @@ asr:
 
 llm:
   enabled: true        # set to false to skip LLM correction entirely
-<<<<<<< HEAD
   prompt_templates_enabled: false  # show rewrite template buttons above the overlay after transcription
-  provider: "openai"   # "openai" (default) or "mlx" (local Apple Silicon)
-
-  # OpenAI-compatible endpoint for text correction
-  base_url: "https://api.openai.com/v1"
-  api_key: ""          # or use ${LLM_API_KEY}
-  model: "gpt-5.4-nano"
-=======
   active_profile: "openai"
->>>>>>> codex-apfel-llm-profiles
   temperature: 0
   top_p: 1
   timeout_ms: 8000
