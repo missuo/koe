@@ -1058,7 +1058,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [pane addSubview:self.llmTestResultLabel];
 
     // --- MLX fields (tag 2010-2012 for show/hide, initially hidden) ---
-    CGFloat mlxY = contentHeight - 48 - 52 - rowH - 8 - rowH - rowH;  // same Y as Base URL row
+    CGFloat mlxY = providerDetailStartY;  // same Y as Base URL row
 
     // MLX Model popup + Download button
     NSTextField *llmModelLabel = [self formLabel:@"Model" frame:NSMakeRect(16, mlxY, labelW, 22)];
