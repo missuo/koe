@@ -737,10 +737,20 @@ pub unsafe extern "C" fn sp_core_rewrite_with_template(
             asr_text.len()
         );
 
-        let llm: Box<dyn LlmProvider> = match llm_config.provider.as_str() {
+        let active_profile = match llm_config.active_profile_config() {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("rewrite: failed to resolve active profile: {e}");
+                invoke_session_warning(session_token, &format!("Rewrite failed: {e}"));
+                invoke_rewrite_text_ready(session_token, &asr_text);
+                return;
+            }
+        };
+
+        let llm: Box<dyn LlmProvider> = match active_profile.provider.as_str() {
             #[cfg(feature = "mlx")]
             "mlx" => {
-                let model_path = config::resolve_model_dir(&llm_config.mlx.model)
+                let model_path = config::resolve_model_dir(&active_profile.mlx.model)
                     .to_string_lossy()
                     .to_string();
                 Box::new(MlxLlmProvider::new(
@@ -753,14 +763,14 @@ pub unsafe extern "C" fn sp_core_rewrite_with_template(
             }
             _ => Box::new(OpenAiCompatibleProvider::new(
                 llm_http_client,
-                llm_config.base_url.clone(),
-                llm_config.api_key.clone(),
-                llm_config.model.clone(),
+                active_profile.base_url.clone(),
+                active_profile.api_key.clone(),
+                active_profile.model.clone(),
                 llm_config.temperature,
                 llm_config.top_p,
                 llm_config.max_output_tokens,
-                llm_config.max_token_parameter,
-                llm_config.no_reasoning_control,
+                active_profile.max_token_parameter,
+                active_profile.no_reasoning_control,
             )),
         };
 
@@ -1062,10 +1072,14 @@ async fn run_session(
         }
         invoke_state_changed(session_token, "correcting");
 
-        let llm: Box<dyn LlmProvider> = match llm_config.provider.as_str() {
+        let active_profile = llm_config
+            .active_profile_config()
+            .expect("llm_is_ready checked the active LLM profile");
+
+        let llm: Box<dyn LlmProvider> = match active_profile.provider.as_str() {
             #[cfg(feature = "mlx")]
             "mlx" => {
-                let model_path = config::resolve_model_dir(&llm_config.mlx.model)
+                let model_path = config::resolve_model_dir(&active_profile.mlx.model)
                     .to_string_lossy()
                     .to_string();
                 log::info!("[{session_id}] using MLX LLM provider: {model_path}");
@@ -1079,14 +1093,14 @@ async fn run_session(
             }
             _ => Box::new(OpenAiCompatibleProvider::new(
                 llm_http_client,
-                llm_config.base_url,
-                llm_config.api_key,
-                llm_config.model,
+                active_profile.base_url,
+                active_profile.api_key,
+                active_profile.model,
                 llm_config.temperature,
                 llm_config.top_p,
                 llm_config.max_output_tokens,
-                llm_config.max_token_parameter,
-                llm_config.no_reasoning_control,
+                active_profile.max_token_parameter,
+                active_profile.no_reasoning_control,
             )),
         };
 
@@ -1101,7 +1115,7 @@ async fn run_session(
         log::debug!("[{session_id}] LLM request — asr_text: \"{}\"", asr_text);
         // Skip interim history for local LLM — small models don't benefit from it
         // and it increases prompt length / inference time.
-        let history = if llm_config.provider == "mlx" {
+        let history = if active_profile.provider == "mlx" {
             &[][..]
         } else {
             &interim_history[..]
@@ -1227,11 +1241,9 @@ fn llm_is_ready(cfg: &config::LlmSection) -> bool {
     if !cfg.enabled {
         return false;
     }
-    match cfg.provider.as_str() {
-        #[cfg(feature = "mlx")]
-        "mlx" => !cfg.mlx.model.is_empty(),
-        _ => !cfg.base_url.is_empty() && !cfg.api_key.is_empty() && !cfg.model.is_empty(),
-    }
+    cfg.active_profile_config()
+        .map(|profile| profile.is_ready())
+        .unwrap_or(false)
 }
 
 fn start_llm_warmup_if_needed(
@@ -1244,8 +1256,16 @@ fn start_llm_warmup_if_needed(
     if !llm_is_ready(llm_config) {
         return;
     }
+    let active_profile = match llm_config.active_profile_config() {
+        Ok(profile) => profile,
+        Err(err) => {
+            log::debug!("[{session_id}] skipping LLM warmup; active profile failed: {err}");
+            return;
+        }
+    };
+
     // Local MLX provider doesn't need HTTP warmup
-    if llm_config.provider == "mlx" {
+    if active_profile.provider == "mlx" {
         return;
     }
 
@@ -1269,16 +1289,25 @@ fn start_llm_warmup_if_needed(
     let warmup_cfg = llm_config.clone();
     runtime.spawn(async move {
         log::info!("[{warmup_session_id}] starting LLM warmup");
+        let warmup_profile = match warmup_cfg.active_profile_config() {
+            Ok(profile) => profile,
+            Err(err) => {
+                log::debug!("[{warmup_session_id}] LLM warmup profile failed: {err}");
+                let mut state = llm_warmup_state.lock().unwrap();
+                state.in_flight = false;
+                return;
+            }
+        };
         let llm = OpenAiCompatibleProvider::new(
             llm_http_client,
-            warmup_cfg.base_url,
-            warmup_cfg.api_key,
-            warmup_cfg.model,
+            warmup_profile.base_url,
+            warmup_profile.api_key,
+            warmup_profile.model,
             warmup_cfg.temperature,
             warmup_cfg.top_p,
             warmup_cfg.max_output_tokens,
-            warmup_cfg.max_token_parameter,
-            warmup_cfg.no_reasoning_control,
+            warmup_profile.max_token_parameter,
+            warmup_profile.no_reasoning_control,
         );
 
         let warmup_ok = match llm.warmup().await {
@@ -1476,23 +1505,15 @@ pub unsafe extern "C" fn sp_llm_test(
     // Load config from disk for remaining parameters (same as runtime hot-reload)
     let cfg = config::load_config().unwrap_or_default();
 
-    // Build an LlmSection that merges UI-editable fields with disk config
-    let llm_cfg = config::LlmSection {
-        enabled: true,
-        prompt_templates_enabled: cfg.llm.prompt_templates_enabled,
+    let profile = config::LlmProfileRuntimeConfig {
+        id: "test".into(),
+        name: "Test".into(),
         provider: "openai".into(),
         base_url,
         api_key,
         model,
         max_token_parameter,
-        temperature: cfg.llm.temperature,
-        top_p: cfg.llm.top_p,
-        timeout_ms: cfg.llm.timeout_ms,
-        max_output_tokens: cfg.llm.max_output_tokens,
-        dictionary_max_candidates: cfg.llm.dictionary_max_candidates,
-        no_reasoning_control: cfg.llm.no_reasoning_control,
-        system_prompt_path: cfg.llm.system_prompt_path.clone(),
-        user_prompt_path: cfg.llm.user_prompt_path.clone(),
+        no_reasoning_control: config::LlmNoReasoningControl::ReasoningEffort,
         mlx: Default::default(),
     };
 
@@ -1504,7 +1525,7 @@ pub unsafe extern "C" fn sp_llm_test(
     let dict_path = config::resolve_dictionary_path(&cfg);
     let dictionary = dictionary::load_dictionary(&dict_path).unwrap_or_default();
     let candidates =
-        prompt::filter_dictionary_candidates(&dictionary, "", llm_cfg.dictionary_max_candidates);
+        prompt::filter_dictionary_candidates(&dictionary, "", cfg.llm.dictionary_max_candidates);
 
     // Render user prompt from template with test content
     let test_asr = "so umm i installed this program called koe on my computer and like, \
@@ -1512,7 +1533,7 @@ pub unsafe extern "C" fn sp_llm_test(
     let user_prompt = prompt::render_user_prompt(&user_prompt_template, test_asr, &candidates, &[]);
 
     // Build HTTP client with the configured timeout
-    let client = match build_http_client(llm_cfg.timeout_ms) {
+    let client = match build_http_client(cfg.llm.timeout_ms) {
         Ok(c) => c,
         Err(e) => {
             let json = serde_json::json!({
@@ -1543,7 +1564,10 @@ pub unsafe extern "C" fn sp_llm_test(
 
     let (result, elapsed) = rt.block_on(llm::openai_compatible::test_correction(
         client,
-        &llm_cfg,
+        &profile,
+        cfg.llm.temperature,
+        cfg.llm.top_p,
+        cfg.llm.max_output_tokens,
         &system_prompt,
         &user_prompt,
     ));
@@ -1551,6 +1575,184 @@ pub unsafe extern "C" fn sp_llm_test(
 
     let json = match result {
         Ok(_corrected) => serde_json::json!({
+            "success": true,
+            "elapsed_ms": elapsed_ms,
+            "message": "Connection successful!",
+        }),
+        Err(e) => serde_json::json!({
+            "success": false,
+            "elapsed_ms": elapsed_ms,
+            "message": format!("{e}"),
+        }),
+    };
+
+    CString::new(json.to_string())
+        .unwrap_or_default()
+        .into_raw()
+}
+
+/// Return the active LLM profile id and saved profile map as JSON.
+#[no_mangle]
+pub extern "C" fn sp_llm_profiles_json() -> *mut c_char {
+    let json = match config::llm_profiles_payload() {
+        Ok(payload) => serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into()),
+        Err(e) => serde_json::json!({
+            "active_profile": "openai",
+            "profiles": {},
+            "error": e.to_string(),
+        })
+        .to_string(),
+    };
+    CString::new(json).unwrap_or_default().into_raw()
+}
+
+/// Save the active LLM profile id and profile map from JSON.
+///
+/// # Safety
+/// `profiles_json` must be a valid null-terminated C string.
+#[no_mangle]
+pub unsafe extern "C" fn sp_llm_save_profiles_json(profiles_json: *const c_char) -> i32 {
+    let Some(json) = (unsafe { cstr_to_str(profiles_json) }) else {
+        return -1;
+    };
+    let payload: config::LlmProfilesPayload = match serde_json::from_str(json) {
+        Ok(payload) => payload,
+        Err(e) => {
+            log::error!("sp_llm_save_profiles_json: parse: {e}");
+            return -1;
+        }
+    };
+    match config::save_llm_profiles_payload(&payload) {
+        Ok(()) => 0,
+        Err(e) => {
+            log::error!("sp_llm_save_profiles_json: save: {e}");
+            -1
+        }
+    }
+}
+
+/// Test a single LLM profile using the runtime correction path and global prompt settings.
+///
+/// # Safety
+/// `profile_json` must be a valid null-terminated C string.
+#[no_mangle]
+pub unsafe extern "C" fn sp_llm_test_profile_json(profile_json: *const c_char) -> *mut c_char {
+    let Some(json) = (unsafe { cstr_to_str(profile_json) }) else {
+        return CString::new(
+            serde_json::json!({
+                "success": false,
+                "elapsed_ms": 0,
+                "message": "Missing profile JSON",
+            })
+            .to_string(),
+        )
+        .unwrap_or_default()
+        .into_raw();
+    };
+    let profile: config::LlmProfileRuntimeConfig = match serde_json::from_str(json) {
+        Ok(profile) => profile,
+        Err(e) => {
+            return CString::new(
+                serde_json::json!({
+                    "success": false,
+                    "elapsed_ms": 0,
+                    "message": format!("Invalid profile JSON: {e}"),
+                })
+                .to_string(),
+            )
+            .unwrap_or_default()
+            .into_raw();
+        }
+    };
+
+    let cfg = config::load_config().unwrap_or_default();
+    let system_prompt = prompt::load_system_prompt(&config::resolve_system_prompt_path(&cfg));
+    let user_prompt_template =
+        prompt::load_user_prompt_template(&config::resolve_user_prompt_path(&cfg));
+    let dict_path = config::resolve_dictionary_path(&cfg);
+    let dictionary = dictionary::load_dictionary(&dict_path).unwrap_or_default();
+    let candidates =
+        prompt::filter_dictionary_candidates(&dictionary, "", cfg.llm.dictionary_max_candidates);
+    let test_asr = "so umm i installed this program called koe on my computer and like, \
+                     i wanna know, you know, how much CPU and memory its using basically";
+    let user_prompt = prompt::render_user_prompt(&user_prompt_template, test_asr, &candidates, &[]);
+
+    let rt = match Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            return CString::new(
+                serde_json::json!({
+                    "success": false,
+                    "elapsed_ms": 0,
+                    "message": format!("Failed to create async runtime: {e}"),
+                })
+                .to_string(),
+            )
+            .unwrap_or_default()
+            .into_raw();
+        }
+    };
+
+    let request = CorrectionRequest {
+        asr_text: String::new(),
+        dictionary_entries: candidates,
+        system_prompt,
+        user_prompt,
+    };
+    let start = Instant::now();
+    let result = match profile.provider.as_str() {
+        #[cfg(feature = "mlx")]
+        "mlx" => {
+            let model_path = config::resolve_model_dir(&profile.mlx.model)
+                .to_string_lossy()
+                .to_string();
+            let llm = MlxLlmProvider::new(
+                model_path,
+                cfg.llm.temperature,
+                cfg.llm.top_p,
+                cfg.llm.max_output_tokens,
+                cfg.llm.timeout_ms,
+            );
+            rt.block_on(llm.correct(&request))
+        }
+        #[cfg(not(feature = "mlx"))]
+        "mlx" => Err(errors::KoeError::LlmFailed(
+            "MLX LLM support is not enabled in this build".into(),
+        )),
+        _ => {
+            let client = match build_http_client(cfg.llm.timeout_ms) {
+                Ok(c) => c,
+                Err(e) => {
+                    return CString::new(
+                        serde_json::json!({
+                            "success": false,
+                            "elapsed_ms": 0,
+                            "message": format!("Failed to create HTTP client: {e}"),
+                        })
+                        .to_string(),
+                    )
+                    .unwrap_or_default()
+                    .into_raw();
+                }
+            };
+            let llm = OpenAiCompatibleProvider::new(
+                client,
+                profile.base_url,
+                profile.api_key,
+                profile.model,
+                cfg.llm.temperature,
+                cfg.llm.top_p,
+                cfg.llm.max_output_tokens,
+                profile.max_token_parameter,
+                profile.no_reasoning_control,
+            );
+            rt.block_on(llm.correct(&request))
+        }
+    };
+    let elapsed = start.elapsed();
+    let elapsed_ms = elapsed.as_millis() as u64;
+    let json = match result {
+        Ok(_) => serde_json::json!({
             "success": true,
             "elapsed_ms": elapsed_ms,
             "message": "Connection successful!",

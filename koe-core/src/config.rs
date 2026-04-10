@@ -1,5 +1,6 @@
 use crate::errors::{KoeError, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Root configuration structure matching ~/.koe/config.yaml
@@ -230,15 +231,12 @@ pub struct LlmSection {
     pub enabled: bool,
     #[serde(default = "default_false")]
     pub prompt_templates_enabled: bool,
-    /// LLM provider: "openai" (default) or "mlx"
-    #[serde(default = "default_llm_provider")]
-    pub provider: String,
-    #[serde(default)]
-    pub base_url: String,
-    #[serde(default)]
-    pub api_key: String,
-    #[serde(default)]
-    pub model: String,
+    /// Active LLM profile id.
+    #[serde(default = "default_llm_active_profile")]
+    pub active_profile: String,
+    /// Saved LLM profiles keyed by stable profile id.
+    #[serde(default = "default_llm_profiles")]
+    pub profiles: BTreeMap<String, LlmProfileConfig>,
     #[serde(default)]
     pub temperature: f64,
     #[serde(default = "default_top_p")]
@@ -247,22 +245,101 @@ pub struct LlmSection {
     pub timeout_ms: u64,
     #[serde(default = "default_max_output_tokens")]
     pub max_output_tokens: u32,
-    #[serde(default = "default_llm_max_token_parameter")]
-    pub max_token_parameter: LlmMaxTokenParameter,
     #[serde(default = "default_dictionary_max_candidates")]
     pub dictionary_max_candidates: usize,
-    #[serde(default)]
-    pub no_reasoning_control: LlmNoReasoningControl,
     #[serde(default = "default_system_prompt_path")]
     pub system_prompt_path: String,
     #[serde(default = "default_user_prompt_path")]
     pub user_prompt_path: String,
-    /// MLX local LLM configuration (Apple Silicon only)
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct LlmProfilesPayload {
+    pub active_profile: String,
+    pub profiles: BTreeMap<String, LlmProfileConfig>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct LlmProfileConfig {
+    #[serde(default)]
+    pub name: String,
+    /// LLM provider: "openai" or "mlx".
+    #[serde(default = "default_llm_provider")]
+    pub provider: String,
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default = "default_llm_max_token_parameter")]
+    pub max_token_parameter: LlmMaxTokenParameter,
+    #[serde(default)]
+    pub no_reasoning_control: LlmNoReasoningControl,
+    /// MLX local LLM configuration (Apple Silicon only).
     #[serde(default)]
     pub mlx: MlxLlmConfig,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct LlmProfileRuntimeConfig {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    pub max_token_parameter: LlmMaxTokenParameter,
+    pub no_reasoning_control: LlmNoReasoningControl,
+    pub mlx: MlxLlmConfig,
+}
+
+impl LlmSection {
+    pub fn active_profile_config(&self) -> Result<LlmProfileRuntimeConfig> {
+        let profile = self.profiles.get(&self.active_profile).ok_or_else(|| {
+            KoeError::Config(format!("LLM profile not found: {}", self.active_profile))
+        })?;
+        Ok(profile.to_runtime_config(&self.active_profile))
+    }
+
+    pub fn profiles_payload(&self) -> LlmProfilesPayload {
+        LlmProfilesPayload {
+            active_profile: self.active_profile.clone(),
+            profiles: self.profiles.clone(),
+        }
+    }
+}
+
+impl LlmProfileConfig {
+    pub fn to_runtime_config(&self, id: &str) -> LlmProfileRuntimeConfig {
+        LlmProfileRuntimeConfig {
+            id: id.to_string(),
+            name: if self.name.is_empty() {
+                id.to_string()
+            } else {
+                self.name.clone()
+            },
+            provider: self.provider.clone(),
+            base_url: self.base_url.clone(),
+            api_key: self.api_key.clone(),
+            model: self.model.clone(),
+            max_token_parameter: self.max_token_parameter,
+            no_reasoning_control: self.no_reasoning_control,
+            mlx: self.mlx.clone(),
+        }
+    }
+}
+
+impl LlmProfileRuntimeConfig {
+    pub fn is_ready(&self) -> bool {
+        match self.provider.as_str() {
+            "mlx" => !self.mlx.model.is_empty(),
+            _ => !self.base_url.is_empty() && !self.model.is_empty(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MlxLlmConfig {
     /// Model directory name under ~/.koe/models/
     #[serde(default = "default_mlx_llm_model")]
@@ -277,14 +354,29 @@ impl Default for MlxLlmConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+impl Default for LlmProfileConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            provider: default_llm_provider(),
+            base_url: String::new(),
+            api_key: String::new(),
+            model: String::new(),
+            max_token_parameter: default_llm_max_token_parameter(),
+            no_reasoning_control: LlmNoReasoningControl::default(),
+            mlx: MlxLlmConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum LlmMaxTokenParameter {
     MaxTokens,
     MaxCompletionTokens,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum LlmNoReasoningControl {
     #[default]
@@ -651,6 +743,52 @@ fn default_llm_max_token_parameter() -> LlmMaxTokenParameter {
 }
 fn default_llm_provider() -> String {
     "openai".into()
+}
+fn default_llm_active_profile() -> String {
+    "openai".into()
+}
+fn default_llm_profiles() -> BTreeMap<String, LlmProfileConfig> {
+    let mut profiles = BTreeMap::new();
+    profiles.insert(
+        "apfel".into(),
+        LlmProfileConfig {
+            name: "APFEL".into(),
+            provider: "openai".into(),
+            base_url: "http://127.0.0.1:11434/v1".into(),
+            api_key: String::new(),
+            model: "apple-foundationmodel".into(),
+            max_token_parameter: LlmMaxTokenParameter::MaxTokens,
+            no_reasoning_control: LlmNoReasoningControl::None,
+            mlx: MlxLlmConfig::default(),
+        },
+    );
+    profiles.insert(
+        "mlx".into(),
+        LlmProfileConfig {
+            name: "MLX (Apple Silicon)".into(),
+            provider: "mlx".into(),
+            base_url: String::new(),
+            api_key: String::new(),
+            model: String::new(),
+            max_token_parameter: LlmMaxTokenParameter::MaxTokens,
+            no_reasoning_control: LlmNoReasoningControl::None,
+            mlx: MlxLlmConfig::default(),
+        },
+    );
+    profiles.insert(
+        "openai".into(),
+        LlmProfileConfig {
+            name: "OpenAI Compatible".into(),
+            provider: "openai".into(),
+            base_url: "https://api.openai.com/v1".into(),
+            api_key: String::new(),
+            model: "gpt-5.4-nano".into(),
+            max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
+            no_reasoning_control: LlmNoReasoningControl::ReasoningEffort,
+            mlx: MlxLlmConfig::default(),
+        },
+    );
+    profiles
 }
 fn default_mlx_llm_model() -> String {
     "mlx/Qwen3-0.6B-4bit".into()
@@ -1265,6 +1403,36 @@ pub fn config_set(key_path: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn llm_profiles_payload() -> Result<LlmProfilesPayload> {
+    Ok(load_config()?.llm.profiles_payload())
+}
+
+pub fn save_llm_profiles_payload(payload: &LlmProfilesPayload) -> Result<()> {
+    let path = config_path();
+    let raw = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut root: serde_yaml::Value = if raw.trim().is_empty() {
+        serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+    } else {
+        serde_yaml::from_str(&raw)
+            .map_err(|e| KoeError::Config(format!("parse {}: {e}", path.display())))?
+    };
+
+    let llm_map = navigate_to_parent(&mut root, &["llm"]);
+    llm_map.insert(
+        serde_yaml::Value::String("active_profile".into()),
+        serde_yaml::Value::String(payload.active_profile.clone()),
+    );
+    let profiles_value = serde_yaml::to_value(&payload.profiles)
+        .map_err(|e| KoeError::Config(format!("serialize LLM profiles: {e}")))?;
+    llm_map.insert(serde_yaml::Value::String("profiles".into()), profiles_value);
+
+    let serialized =
+        serde_yaml::to_string(&root).map_err(|e| KoeError::Config(format!("serialize: {e}")))?;
+    atomic_write_file(&path, &serialized)?;
+
+    Ok(())
+}
+
 /// Recursively navigate into nested YAML mappings by path segments, creating
 /// intermediate mappings as needed. Returns a mutable ref to the final mapping.
 fn navigate_to_parent<'a>(
@@ -1356,6 +1524,7 @@ asr:
 
 llm:
   enabled: true        # set to false to skip LLM correction entirely
+<<<<<<< HEAD
   prompt_templates_enabled: false  # show rewrite template buttons above the overlay after transcription
   provider: "openai"   # "openai" (default) or "mlx" (local Apple Silicon)
 
@@ -1363,19 +1532,38 @@ llm:
   base_url: "https://api.openai.com/v1"
   api_key: ""          # or use ${LLM_API_KEY}
   model: "gpt-5.4-nano"
+=======
+  active_profile: "openai"
+>>>>>>> codex-apfel-llm-profiles
   temperature: 0
   top_p: 1
   timeout_ms: 8000
   max_output_tokens: 1024
-  max_token_parameter: "max_completion_tokens"  # use "max_tokens" for older model endpoints
-  no_reasoning_control: "reasoning_effort"       # "reasoning_effort" (OpenAI o-series), "thinking" (GLM etc.), "none" (send nothing)
   dictionary_max_candidates: 0             # 0 = send all entries to LLM
   system_prompt_path: "system_prompt.txt"  # relative to ~/.koe/
   user_prompt_path: "user_prompt.txt"      # relative to ~/.koe/
-
-  # MLX local LLM (Apple Silicon only)
-  mlx:
-    model: "mlx/Qwen3-1.7B-4bit"          # relative to ~/.koe/models/, or absolute path
+  profiles:
+    openai:
+      name: "OpenAI Compatible"
+      provider: "openai"
+      base_url: "https://api.openai.com/v1"
+      api_key: ""          # or use ${LLM_API_KEY}
+      model: "gpt-5.4-nano"
+      max_token_parameter: "max_completion_tokens"
+      no_reasoning_control: "reasoning_effort"
+    apfel:
+      name: "APFEL"
+      provider: "openai"
+      base_url: "http://127.0.0.1:11434/v1"
+      api_key: ""
+      model: "apple-foundationmodel"
+      max_token_parameter: "max_tokens"
+      no_reasoning_control: "none"
+    mlx:
+      name: "MLX (Apple Silicon)"
+      provider: "mlx"
+      mlx:
+        model: "mlx/Qwen3-0.6B-4bit"      # relative to ~/.koe/models/, or absolute path
 
 feedback:
   start_sound: false
@@ -1550,6 +1738,61 @@ mod tests {
         assert_eq!(stored_templates, default_prompt_templates());
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn default_llm_config_includes_openai_apfel_and_mlx_profiles() {
+        let llm = LlmSection::default();
+
+        assert_eq!(llm.active_profile, "openai");
+        assert!(llm.profiles.contains_key("openai"));
+        assert!(llm.profiles.contains_key("apfel"));
+        assert!(llm.profiles.contains_key("mlx"));
+
+        let apfel = llm.profiles.get("apfel").unwrap();
+        assert_eq!(apfel.provider, "openai");
+        assert_eq!(apfel.base_url, "http://127.0.0.1:11434/v1");
+        assert_eq!(apfel.api_key, "");
+        assert_eq!(apfel.model, "apple-foundationmodel");
+        assert!(matches!(
+            apfel.max_token_parameter,
+            LlmMaxTokenParameter::MaxTokens
+        ));
+        assert!(matches!(
+            apfel.no_reasoning_control,
+            LlmNoReasoningControl::None
+        ));
+    }
+
+    #[test]
+    fn active_profile_config_resolves_apfel_profile() {
+        let llm = LlmSection {
+            active_profile: "apfel".into(),
+            ..LlmSection::default()
+        };
+
+        let active = llm.active_profile_config().unwrap();
+
+        assert_eq!(active.id, "apfel");
+        assert_eq!(active.provider, "openai");
+        assert_eq!(active.base_url, "http://127.0.0.1:11434/v1");
+        assert_eq!(active.api_key, "");
+        assert_eq!(active.model, "apple-foundationmodel");
+        assert!(active.is_ready());
+    }
+
+    #[test]
+    fn mlx_profile_requires_model() {
+        let mut llm = LlmSection {
+            active_profile: "mlx".into(),
+            ..LlmSection::default()
+        };
+        let active = llm.active_profile_config().unwrap();
+        assert!(active.is_ready());
+
+        llm.profiles.get_mut("mlx").unwrap().mlx.model.clear();
+        let active = llm.active_profile_config().unwrap();
+        assert!(!active.is_ready());
     }
 
     // config_set tests are combined into one function because they mutate

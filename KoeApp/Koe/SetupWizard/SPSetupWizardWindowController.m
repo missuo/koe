@@ -452,7 +452,11 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property (nonatomic, strong) NSPopUpButton *appleSpeechLocalePopup;
 
 // LLM fields
-@property (nonatomic, strong) NSSwitch *llmEnabledCheckbox;
+@property (nonatomic, strong) NSButton *llmEnabledCheckbox;
+@property (nonatomic, strong) NSPopUpButton *llmProfilePopup;
+@property (nonatomic, strong) NSButton *llmAddProfileButton;
+@property (nonatomic, strong) NSButton *llmAddApfelProfileButton;
+@property (nonatomic, strong) NSButton *llmDeleteProfileButton;
 @property (nonatomic, strong) NSPopUpButton *llmProviderPopup;
 @property (nonatomic, strong) NSTextField *llmBaseUrlField;
 @property (nonatomic, strong) NSTextField *llmApiKeyField;
@@ -472,6 +476,8 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property (nonatomic, strong) NSButton *llmModelDeleteButton;
 @property (nonatomic, strong) NSProgressIndicator *llmModelProgressBar;
 @property (nonatomic, strong) NSTextField *llmModelProgressSizeLabel;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableDictionary *> *llmProfiles;
+@property (nonatomic, copy) NSString *activeLlmProfileId;
 
 // Hotkey
 @property (nonatomic, strong) NSPopUpButton *hotkeyPopup;
@@ -905,7 +911,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat contentX = 24.0;
     CGFloat contentW = paneWidth - 48.0;
 
-    CGFloat contentHeight = 540;
+    CGFloat contentHeight = 580;
     NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
     [self applySettingsPaneBackgroundToView:pane];
 
@@ -931,6 +937,29 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                                                   frame:NSMakeRect(contentX, floor(y - 20.0), contentW, 20.0)];
     [pane addSubview:sectionTitle];
     y = NSMinY(sectionTitle.frame) - 32.0;
+
+    // Profile
+    [pane addSubview:[self formLabel:@"Profile" frame:NSMakeRect(16, y, labelW, 22)]];
+    self.llmProfilePopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 190, 26) pullsDown:NO];
+    [self.llmProfilePopup setTarget:self];
+    [self.llmProfilePopup setAction:@selector(llmProfileChanged:)];
+    [pane addSubview:self.llmProfilePopup];
+
+    self.llmAddProfileButton = [NSButton buttonWithTitle:@"Add" target:self action:@selector(addLlmProfile:)];
+    self.llmAddProfileButton.bezelStyle = NSBezelStyleRounded;
+    self.llmAddProfileButton.frame = NSMakeRect(fieldX + 198, y - 2, 56, 26);
+    [pane addSubview:self.llmAddProfileButton];
+
+    self.llmAddApfelProfileButton = [NSButton buttonWithTitle:@"APFEL" target:self action:@selector(addApfelLlmProfile:)];
+    self.llmAddApfelProfileButton.bezelStyle = NSBezelStyleRounded;
+    self.llmAddApfelProfileButton.frame = NSMakeRect(fieldX + 260, y - 2, 68, 26);
+    [pane addSubview:self.llmAddApfelProfileButton];
+
+    self.llmDeleteProfileButton = [NSButton buttonWithTitle:@"Delete" target:self action:@selector(deleteLlmProfile:)];
+    self.llmDeleteProfileButton.bezelStyle = NSBezelStyleRounded;
+    self.llmDeleteProfileButton.frame = NSMakeRect(fieldX + 334, y - 2, 72, 26);
+    [pane addSubview:self.llmDeleteProfileButton];
+    y -= rowH;
 
     // Provider
     [pane addSubview:[self formLabel:@"Provider" frame:NSMakeRect(16, y, labelW, 22)]];
@@ -1029,7 +1058,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [pane addSubview:self.llmTestResultLabel];
 
     // --- MLX fields (tag 2010-2012 for show/hide, initially hidden) ---
-    CGFloat mlxY = providerDetailStartY;  // same Y as Base URL row
+    CGFloat mlxY = contentHeight - 48 - 52 - rowH - 8 - rowH - rowH;  // same Y as Base URL row
 
     // MLX Model popup + Download button
     NSTextField *llmModelLabel = [self formLabel:@"Model" frame:NSMakeRect(16, mlxY, labelW, 22)];
@@ -3136,6 +3165,217 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     }
 }
 
+- (NSMutableDictionary *)mutableLlmProfileFromDictionary:(NSDictionary *)profile {
+    NSMutableDictionary *copy = [profile mutableCopy] ?: [NSMutableDictionary dictionary];
+    NSDictionary *mlx = copy[@"mlx"];
+    copy[@"mlx"] = [mlx isKindOfClass:[NSDictionary class]] ? [mlx mutableCopy] : [@{@"model": @"mlx/Qwen3-0.6B-4bit"} mutableCopy];
+    return copy;
+}
+
+- (NSMutableDictionary *)defaultOpenAILlmProfileWithName:(NSString *)name {
+    return [@{
+        @"name": name ?: @"OpenAI Compatible",
+        @"provider": @"openai",
+        @"base_url": @"https://api.openai.com/v1",
+        @"api_key": @"",
+        @"model": @"gpt-5.4-nano",
+        @"max_token_parameter": @"max_completion_tokens",
+        @"no_reasoning_control": @"reasoning_effort",
+        @"mlx": @{@"model": @"mlx/Qwen3-0.6B-4bit"},
+    } mutableCopy];
+}
+
+- (NSMutableDictionary *)defaultApfelLlmProfile {
+    return [@{
+        @"name": @"APFEL",
+        @"provider": @"openai",
+        @"base_url": @"http://127.0.0.1:11434/v1",
+        @"api_key": @"",
+        @"model": @"apple-foundationmodel",
+        @"max_token_parameter": @"max_tokens",
+        @"no_reasoning_control": @"none",
+        @"mlx": @{@"model": @"mlx/Qwen3-0.6B-4bit"},
+    } mutableCopy];
+}
+
+- (void)loadLlmProfilesFromCore {
+    char *raw = sp_llm_profiles_json();
+    NSString *jsonStr = raw ? [NSString stringWithUTF8String:raw] : @"";
+    if (raw) sp_core_free_string(raw);
+
+    NSDictionary *payload = nil;
+    if (jsonStr.length > 0) {
+        payload = [NSJSONSerialization JSONObjectWithData:[jsonStr dataUsingEncoding:NSUTF8StringEncoding]
+                                                  options:0
+                                                    error:nil];
+    }
+
+    self.llmProfiles = [NSMutableDictionary dictionary];
+    NSDictionary *profiles = [payload[@"profiles"] isKindOfClass:[NSDictionary class]] ? payload[@"profiles"] : nil;
+    for (NSString *profileId in profiles) {
+        NSDictionary *profile = profiles[profileId];
+        if ([profile isKindOfClass:[NSDictionary class]]) {
+            self.llmProfiles[profileId] = [self mutableLlmProfileFromDictionary:profile];
+        }
+    }
+
+    if (self.llmProfiles.count == 0) {
+        self.llmProfiles[@"openai"] = [self defaultOpenAILlmProfileWithName:@"OpenAI Compatible"];
+        self.llmProfiles[@"apfel"] = [self defaultApfelLlmProfile];
+    }
+
+    NSString *activeProfile = [payload[@"active_profile"] isKindOfClass:[NSString class]] ? payload[@"active_profile"] : @"openai";
+    self.activeLlmProfileId = self.llmProfiles[activeProfile] ? activeProfile : self.llmProfiles.allKeys.firstObject;
+    [self populateLlmProfilePopup];
+    [self applyActiveLlmProfileToFields];
+}
+
+- (void)populateLlmProfilePopup {
+    [self.llmProfilePopup removeAllItems];
+    NSArray<NSString *> *profileIds = [self.llmProfiles.allKeys sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
+    for (NSString *profileId in profileIds) {
+        NSDictionary *profile = self.llmProfiles[profileId];
+        NSString *title = [profile[@"name"] isKindOfClass:[NSString class]] && [profile[@"name"] length] > 0
+            ? profile[@"name"] : profileId;
+        [self.llmProfilePopup addItemWithTitle:title];
+        self.llmProfilePopup.lastItem.representedObject = profileId;
+        if ([profileId isEqualToString:self.activeLlmProfileId]) {
+            [self.llmProfilePopup selectItem:self.llmProfilePopup.lastItem];
+        }
+    }
+}
+
+- (NSMutableDictionary *)activeLlmProfile {
+    if (!self.activeLlmProfileId) return nil;
+    return self.llmProfiles[self.activeLlmProfileId];
+}
+
+- (void)syncActiveLlmProfileFromFields {
+    NSMutableDictionary *profile = [self activeLlmProfile];
+    if (!profile) return;
+
+    NSString *provider = self.llmProviderPopup.selectedItem.representedObject ?: @"openai";
+    profile[@"provider"] = provider;
+    profile[@"base_url"] = self.llmBaseUrlField.stringValue ?: @"";
+    NSString *apiKey = self.llmApiKeyToggle.tag == 1 ? self.llmApiKeyField.stringValue : self.llmApiKeySecureField.stringValue;
+    profile[@"api_key"] = apiKey ?: @"";
+    profile[@"model"] = self.llmModelField.stringValue ?: @"";
+    profile[@"max_token_parameter"] = self.maxTokenParamPopup.selectedItem.representedObject ?: @"max_completion_tokens";
+    if (!profile[@"no_reasoning_control"]) {
+        profile[@"no_reasoning_control"] = [provider isEqualToString:@"mlx"] ? @"none" : @"reasoning_effort";
+    }
+
+    if ([provider isEqualToString:@"mlx"]) {
+        NSMutableDictionary *mlx = [profile[@"mlx"] isKindOfClass:[NSMutableDictionary class]]
+            ? profile[@"mlx"] : [@{} mutableCopy];
+        NSString *modelPath = self.llmLocalModelPopup.selectedItem.representedObject;
+        if (modelPath) mlx[@"model"] = modelPath;
+        profile[@"mlx"] = mlx;
+    }
+}
+
+- (void)applyActiveLlmProfileToFields {
+    NSDictionary *profile = [self activeLlmProfile];
+    if (!profile) return;
+
+    NSString *provider = [profile[@"provider"] isKindOfClass:[NSString class]] ? profile[@"provider"] : @"openai";
+    for (NSInteger i = 0; i < self.llmProviderPopup.numberOfItems; i++) {
+        if ([[self.llmProviderPopup itemAtIndex:i].representedObject isEqualToString:provider]) {
+            [self.llmProviderPopup selectItemAtIndex:i];
+            break;
+        }
+    }
+
+    self.llmBaseUrlField.stringValue = [profile[@"base_url"] isKindOfClass:[NSString class]] ? profile[@"base_url"] : @"";
+    NSString *apiKey = [profile[@"api_key"] isKindOfClass:[NSString class]] ? profile[@"api_key"] : @"";
+    self.llmApiKeySecureField.stringValue = apiKey;
+    self.llmApiKeyField.stringValue = apiKey;
+    self.llmApiKeySecureField.hidden = NO;
+    self.llmApiKeyField.hidden = YES;
+    self.llmApiKeyToggle.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
+    self.llmApiKeyToggle.tag = 0;
+    self.llmModelField.stringValue = [profile[@"model"] isKindOfClass:[NSString class]] ? profile[@"model"] : @"";
+
+    NSString *maxTokenParam = [profile[@"max_token_parameter"] isKindOfClass:[NSString class]]
+        ? profile[@"max_token_parameter"] : @"max_completion_tokens";
+    for (NSInteger i = 0; i < self.maxTokenParamPopup.numberOfItems; i++) {
+        if ([[self.maxTokenParamPopup itemAtIndex:i].representedObject isEqualToString:maxTokenParam]) {
+            [self.maxTokenParamPopup selectItemAtIndex:i];
+            break;
+        }
+    }
+
+    if ([provider isEqualToString:@"mlx"]) {
+        [self populateLlmLocalModelPopup];
+        NSString *mlxModel = [profile[@"mlx"] isKindOfClass:[NSDictionary class]] ? profile[@"mlx"][@"model"] : nil;
+        if (mlxModel.length > 0) {
+            for (NSInteger i = 0; i < self.llmLocalModelPopup.numberOfItems; i++) {
+                if ([[self.llmLocalModelPopup itemAtIndex:i].representedObject isEqualToString:mlxModel]) {
+                    [self.llmLocalModelPopup selectItemAtIndex:i];
+                    break;
+                }
+            }
+        }
+        [self updateLlmModelStatusLabel];
+    }
+
+    [self updateLlmFieldsEnabled];
+}
+
+- (NSString *)newLlmProfileIdWithPrefix:(NSString *)prefix {
+    NSString *base = prefix ?: @"profile";
+    if (!self.llmProfiles[base]) return base;
+    NSInteger index = 2;
+    while (self.llmProfiles[[NSString stringWithFormat:@"%@-%ld", base, (long)index]]) {
+        index++;
+    }
+    return [NSString stringWithFormat:@"%@-%ld", base, (long)index];
+}
+
+- (void)llmProfileChanged:(id)sender {
+    [self syncActiveLlmProfileFromFields];
+    self.activeLlmProfileId = self.llmProfilePopup.selectedItem.representedObject ?: self.activeLlmProfileId;
+    [self applyActiveLlmProfileToFields];
+    self.llmTestResultLabel.stringValue = @"";
+}
+
+- (void)addLlmProfile:(id)sender {
+    [self syncActiveLlmProfileFromFields];
+    NSString *profileId = [self newLlmProfileIdWithPrefix:@"custom"];
+    self.llmProfiles[profileId] = [self defaultOpenAILlmProfileWithName:@"Custom LLM"];
+    self.activeLlmProfileId = profileId;
+    [self populateLlmProfilePopup];
+    [self applyActiveLlmProfileToFields];
+}
+
+- (void)addApfelLlmProfile:(id)sender {
+    [self syncActiveLlmProfileFromFields];
+    NSString *profileId = @"apfel";
+    if (!self.llmProfiles[profileId]) {
+        profileId = [self newLlmProfileIdWithPrefix:@"apfel"];
+        self.llmProfiles[profileId] = [self defaultApfelLlmProfile];
+    }
+    self.activeLlmProfileId = profileId;
+    [self populateLlmProfilePopup];
+    [self applyActiveLlmProfileToFields];
+}
+
+- (void)deleteLlmProfile:(id)sender {
+    if (self.llmProfiles.count <= 1 || !self.activeLlmProfileId) return;
+    [self.llmProfiles removeObjectForKey:self.activeLlmProfileId];
+    self.activeLlmProfileId = [self.llmProfiles.allKeys sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)].firstObject;
+    [self populateLlmProfilePopup];
+    [self applyActiveLlmProfileToFields];
+}
+
+- (NSDictionary *)runtimeLlmProfileForActiveProfile {
+    [self syncActiveLlmProfileFromFields];
+    NSMutableDictionary *profile = [[self activeLlmProfile] mutableCopy];
+    if (!profile) return nil;
+    profile[@"id"] = self.activeLlmProfileId ?: @"";
+    return profile;
+}
+
 // ─── Load / Save ────────────────────────────────────────────────────
 
 - (void)loadCurrentValues {
@@ -3216,53 +3456,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         NSString *enabled = configGet(@"llm.enabled");
         self.llmEnabledCheckbox.state = ([enabled isEqualToString:@"false"]) ? NSControlStateValueOff : NSControlStateValueOn;
 
-        // Restore provider selection
-        NSString *llmProvider = configGet(@"llm.provider");
-        if (llmProvider.length == 0) llmProvider = @"openai";
-        for (NSInteger i = 0; i < self.llmProviderPopup.numberOfItems; i++) {
-            if ([[self.llmProviderPopup itemAtIndex:i].representedObject isEqualToString:llmProvider]) {
-                [self.llmProviderPopup selectItemAtIndex:i];
-                break;
-            }
-        }
-
-        // OpenAI fields
-        NSString *baseUrl = configGet(@"llm.base_url");
-        self.llmBaseUrlField.stringValue = baseUrl.length > 0 ? baseUrl : @"https://api.openai.com/v1";
-        NSString *apiKey = configGet(@"llm.api_key");
-        self.llmApiKeySecureField.stringValue = apiKey;
-        self.llmApiKeyField.stringValue = apiKey;
-        self.llmApiKeySecureField.hidden = NO;
-        self.llmApiKeyField.hidden = YES;
-        self.llmApiKeyToggle.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
-        self.llmApiKeyToggle.tag = 0;
-        NSString *model = configGet(@"llm.model");
-        self.llmModelField.stringValue = model.length > 0 ? model : @"gpt-5.4-nano";
-        // Max token parameter
-        NSString *maxTokenParam = configGet(@"llm.max_token_parameter");
-        if (maxTokenParam.length == 0) maxTokenParam = @"max_completion_tokens";
-        for (NSInteger i = 0; i < self.maxTokenParamPopup.numberOfItems; i++) {
-            if ([[self.maxTokenParamPopup itemAtIndex:i].representedObject isEqualToString:maxTokenParam]) {
-                [self.maxTokenParamPopup selectItemAtIndex:i];
-                break;
-            }
-        }
-
-        // MLX model selection
-        if ([llmProvider isEqualToString:@"mlx"]) {
-            [self populateLlmLocalModelPopup];
-            NSString *mlxModel = configGet(@"llm.mlx.model");
-            if (mlxModel.length > 0) {
-                for (NSInteger i = 0; i < self.llmLocalModelPopup.numberOfItems; i++) {
-                    if ([[self.llmLocalModelPopup itemAtIndex:i].representedObject isEqualToString:mlxModel]) {
-                        [self.llmLocalModelPopup selectItemAtIndex:i];
-                        break;
-                    }
-                }
-            }
-            [self updateLlmModelStatusLabel];
-        }
-
+        [self loadLlmProfilesFromCore];
         self.llmTestResultLabel.stringValue = @"";
         [self updateLlmFieldsEnabled];
     } else if ([identifier isEqualToString:kToolbarOverlay]) {
@@ -3450,19 +3644,16 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     if (self.llmEnabledCheckbox) {
         NSString *enabledStr = (self.llmEnabledCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
         saveOk &= configSet(@"llm.enabled", enabledStr);
-        NSString *llmProvider = self.llmProviderPopup.selectedItem.representedObject ?: @"openai";
-        saveOk &= configSet(@"llm.provider", llmProvider);
-        // OpenAI fields
-        saveOk &= configSet(@"llm.base_url", self.llmBaseUrlField.stringValue);
-        NSString *llmApiKey = self.llmApiKeyToggle.tag == 1 ? self.llmApiKeyField.stringValue : self.llmApiKeySecureField.stringValue;
-        saveOk &= configSet(@"llm.api_key", llmApiKey);
-        saveOk &= configSet(@"llm.model", self.llmModelField.stringValue);
-        NSString *selectedTokenParam = self.maxTokenParamPopup.selectedItem.representedObject ?: @"max_completion_tokens";
-        saveOk &= configSet(@"llm.max_token_parameter", selectedTokenParam);
-        // MLX model
-        if ([llmProvider isEqualToString:@"mlx"]) {
-            NSString *mlxModelPath = self.llmLocalModelPopup.selectedItem.representedObject;
-            if (mlxModelPath) saveOk &= configSet(@"llm.mlx.model", mlxModelPath);
+
+        [self syncActiveLlmProfileFromFields];
+        NSDictionary *payload = @{
+            @"active_profile": self.activeLlmProfileId ?: @"openai",
+            @"profiles": self.llmProfiles ?: @{},
+        };
+        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
+        NSString *json = jsonData ? [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding] : nil;
+        if (!json || sp_llm_save_profiles_json(json.UTF8String) != 0) {
+            saveOk = NO;
         }
     }
 
@@ -3565,6 +3756,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
 - (void)updateLlmFieldsEnabled {
     BOOL enabled = (self.llmEnabledCheckbox.state == NSControlStateValueOn);
+    self.llmProfilePopup.enabled = enabled;
+    self.llmAddProfileButton.enabled = enabled;
+    self.llmAddApfelProfileButton.enabled = enabled;
+    self.llmDeleteProfileButton.enabled = enabled && self.llmProfiles.count > 1;
     self.llmProviderPopup.enabled = enabled;
 
     NSString *provider = self.llmProviderPopup.selectedItem.representedObject ?: @"openai";
@@ -3612,6 +3807,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         [self populateLlmLocalModelPopup];
         [self updateLlmModelStatusLabel];
     }
+    [self syncActiveLlmProfileFromFields];
     self.llmTestResultLabel.stringValue = @"";
 }
 
@@ -3800,13 +3996,27 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 }
 
 - (void)testLlmConnection:(id)sender {
-    NSString *baseUrl = self.llmBaseUrlField.stringValue;
-    NSString *apiKey = self.llmApiKeyToggle.tag == 1 ? self.llmApiKeyField.stringValue : self.llmApiKeySecureField.stringValue;
-    NSString *model = self.llmModelField.stringValue;
-
-    if (baseUrl.length == 0 || apiKey.length == 0 || model.length == 0) {
-        self.llmTestResultLabel.stringValue = @"Please fill in all fields first.";
+    NSDictionary *profile = [self runtimeLlmProfileForActiveProfile];
+    if (!profile) {
+        self.llmTestResultLabel.stringValue = @"Please select an LLM profile first.";
         self.llmTestResultLabel.textColor = [NSColor systemOrangeColor];
+        return;
+    }
+
+    NSString *provider = [profile[@"provider"] isKindOfClass:[NSString class]] ? profile[@"provider"] : @"openai";
+    NSString *baseUrl = [profile[@"base_url"] isKindOfClass:[NSString class]] ? profile[@"base_url"] : @"";
+    NSString *model = [profile[@"model"] isKindOfClass:[NSString class]] ? profile[@"model"] : @"";
+    if ([provider isEqualToString:@"openai"] && (baseUrl.length == 0 || model.length == 0)) {
+        self.llmTestResultLabel.stringValue = @"Please fill in Base URL and Model first.";
+        self.llmTestResultLabel.textColor = [NSColor systemOrangeColor];
+        return;
+    }
+
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:profile options:0 error:nil];
+    NSString *profileJson = jsonData ? [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding] : nil;
+    if (profileJson.length == 0) {
+        self.llmTestResultLabel.stringValue = @"Test failed: invalid profile data";
+        self.llmTestResultLabel.textColor = [NSColor systemRedColor];
         return;
     }
 
@@ -3814,17 +4024,9 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     self.llmTestResultLabel.stringValue = @"Testing...";
     self.llmTestResultLabel.textColor = [NSColor secondaryLabelColor];
 
-    NSString *tokenParam = self.maxTokenParamPopup.selectedItem.representedObject
-        ?: @"max_completion_tokens";
-
-    // Run the Rust-side test on a background thread (sp_llm_test blocks until done)
+    // Run the Rust-side test on a background thread; the profile path matches runtime correction.
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        char *raw = sp_llm_test(
-            baseUrl.UTF8String,
-            apiKey.UTF8String,
-            model.UTF8String,
-            tokenParam.UTF8String
-        );
+        char *raw = sp_llm_test_profile_json(profileJson.UTF8String);
         NSString *jsonStr = raw ? [NSString stringWithUTF8String:raw] : @"";
         if (raw) sp_core_free_string(raw);
 

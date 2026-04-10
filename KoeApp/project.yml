@@ -115,7 +115,8 @@ targets:
           export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
           cd "${SRCROOT}/.."
           RUST_TARGET="x86_64-apple-darwin"
-          cargo build --manifest-path koe-core/Cargo.toml --release --target "$RUST_TARGET" --no-default-features --features "sherpa-onnx"
+          export CMAKE_POLICY_VERSION_MINIMUM=3.5
+          cargo build --manifest-path koe-core/Cargo.toml --release --target "$RUST_TARGET" --no-default-features --features "sherpa-onnx,apple-speech"
           mkdir -p "${SRCROOT}/../target/release"
           ln -sf "${SRCROOT}/../target/${RUST_TARGET}/release/libkoe_core.a" "${SRCROOT}/../target/release/libkoe_core.a"
         basedOnDependencyAnalysis: false

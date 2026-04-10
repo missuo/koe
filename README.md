@@ -145,12 +145,13 @@ can edit them directly, or use the built-in settings window (Setup Wizard) from
 the menu bar. The settings window includes tabs for ASR, LLM, Controls, Dictionary,
 System Prompt, Templates, and About. The System Prompt tab edits `system_prompt.txt`;
 the Templates tab manages prompt-template visibility, ordering, and prompts; advanced
-knobs such as `user_prompt.txt`, ASR custom `headers`, and `llm.no_reasoning_control`
-remain file-based settings. When a local ASR provider is selected, the ASR tab shows
+knobs such as `user_prompt.txt`, ASR custom `headers`, and advanced profile fields such as
+`no_reasoning_control` remain file-based settings. When a local ASR provider is selected, the ASR tab shows
 provider-specific controls: model picker with download/delete for MLX and
 Sherpa-ONNX, or language picker with asset status and download for Apple Speech.
-The LLM tab supports both OpenAI-compatible APIs and local MLX models — selecting
-MLX shows a model picker with download/status controls instead of API fields.
+The LLM tab supports multiple profiles for OpenAI-compatible APIs, APFEL, and
+local MLX models. Selecting MLX shows a model picker with download/status controls
+instead of API fields.
 
 ```
 ~/.koe/
@@ -264,42 +265,31 @@ migrate that flat format into the provider-based v2 layout automatically.
 #### LLM (Text Correction)
 
 After ASR, the transcript is sent to an LLM for correction (capitalization,
-spacing, terminology, filler word removal). Koe supports two LLM providers:
+spacing, terminology, filler word removal). Koe stores multiple LLM profiles and
+uses `llm.active_profile` to choose the endpoint for correction.
 
 - **OpenAI-compatible APIs** — any cloud or self-hosted endpoint that implements the OpenAI chat completions API
+- **APFEL** — an OpenAI-compatible local endpoint preset at `http://127.0.0.1:11434/v1`
 - **MLX** (Apple Silicon only) — fully offline local inference using Qwen3 models, no API key required
 
-The `provider` field selects which backend to use. When set to `"openai"` (default),
-the LLM HTTP client is shared across sessions with HTTP/2 support and connection
-pooling for lower latency. When set to `"mlx"`, inference runs on-device via the
-KoeMLX Swift package — no network access needed.
+OpenAI-compatible profiles, including APFEL, share the LLM HTTP client across
+sessions with HTTP/2 support and connection pooling for lower latency. MLX
+profiles run on-device via the KoeMLX Swift package.
+
+Koe does not install, start, restart, or choose a port for APFEL. Install and
+start APFEL separately with `apfel --serve` or `apfel service install/start`,
+then select the APFEL profile in Koe.
 
 ```yaml
 llm:
   # Set to false to skip LLM correction and paste raw ASR output directly.
   enabled: true
 
-  # LLM provider: "openai" (default) or "mlx" (local Apple Silicon).
-  provider: "openai"
-
-  # OpenAI-compatible API endpoint.
-  # Examples:
-  #   OpenAI:    "https://api.openai.com/v1"
-  #   Anthropic: "https://api.anthropic.com/v1"  (needs compatible proxy)
-  #   Local:     "http://localhost:8080/v1"
-  base_url: "https://api.openai.com/v1"
-
-  # API key. Supports environment variable substitution with ${VAR_NAME} syntax.
-  # Examples:
-  #   Direct:  "sk-xxxxxxxx"
-  #   Env var: "${LLM_API_KEY}"
-  api_key: ""
-
-  # Model name. Use a fast, cheap model — latency matters here.
-  # Recommended: "gpt-5.4-nano" or any similar fast model.
-  model: "gpt-5.4-nano"
+  # Active LLM profile id. Built-in defaults include "openai", "apfel", and "mlx".
+  active_profile: "openai"
 
   # LLM sampling parameters. temperature: 0 = deterministic, best for correction tasks.
+  # These are global correction parameters shared by all profiles.
   temperature: 0
   top_p: 1
 
@@ -308,16 +298,6 @@ llm:
 
   # Max tokens in LLM response. 1024 is plenty for voice input correction.
   max_output_tokens: 1024
-
-  # Token limit field sent to the OpenAI-compatible API.
-  # Use "max_tokens" for older model endpoints.
-  max_token_parameter: "max_completion_tokens"
-
-  # Optional control for providers that expose reasoning/thinking knobs.
-  # "reasoning_effort" sends reasoning_effort: "none" on GPT-5/o-series style APIs.
-  # "thinking" sends thinking: {"type":"disabled"} for providers that use that shape.
-  # "none" sends nothing.
-  no_reasoning_control: "reasoning_effort"
 
   # How many dictionary entries to include in the LLM prompt.
   # 0 = send all entries (recommended for dictionaries under ~500 entries).
@@ -329,10 +309,30 @@ llm:
   system_prompt_path: "system_prompt.txt"
   user_prompt_path: "user_prompt.txt"
 
-  # MLX local LLM (Apple Silicon only).
-  # Model path relative to ~/.koe/models/, or absolute path.
-  mlx:
-    model: "mlx/Qwen3-0.6B-4bit"
+  profiles:
+    openai:
+      name: "OpenAI Compatible"
+      provider: "openai"
+      base_url: "https://api.openai.com/v1"
+      api_key: ""          # supports ${LLM_API_KEY}
+      model: "gpt-5.4-nano"
+      max_token_parameter: "max_completion_tokens"
+      no_reasoning_control: "reasoning_effort"
+
+    apfel:
+      name: "APFEL"
+      provider: "openai"
+      base_url: "http://127.0.0.1:11434/v1"
+      api_key: ""          # APFEL does not require an API key by default
+      model: "apple-foundationmodel"
+      max_token_parameter: "max_tokens"
+      no_reasoning_control: "none"
+
+    mlx:
+      name: "MLX Local"
+      provider: "mlx"
+      mlx:
+        model: "mlx/Qwen3-0.6B-4bit"  # relative to ~/.koe/models/, or absolute path
 ```
 
 #### Feedback (Sound Effects)
@@ -566,6 +566,10 @@ When both ASR and LLM are set to local MLX providers, Koe runs entirely on-devic
 - **Lightest** (ASR 0.6B + LLM 0.6B): ~1.2 GB — runs comfortably on any Apple Silicon Mac
 - **Heaviest** (ASR 1.7B + LLM 1.7B): ~2.9 GB — still fits easily in 8 GB unified memory
 
+APFEL also runs the model outside Koe and exposes it through a local
+OpenAI-compatible HTTP endpoint. Koe only calls that endpoint; it does not manage
+the APFEL service lifecycle.
+
 ### Model Manifest
 
 Each model directory contains a `.koe-manifest.json` describing the model and its files:
@@ -640,7 +644,7 @@ Local ASR providers are controlled by Rust feature flags in `koe-core/Cargo.toml
 Koe is built as a native macOS app with two layers:
 
 - **Objective-C shell** — handles macOS integration: hotkey detection, audio capture, clipboard management, paste simulation, menu bar UI, and usage statistics (SQLite)
-- **Rust core library** — handles ASR (cloud WebSocket streaming + local MLX/sherpa-onnx/Apple Speech), LLM correction (cloud API + local MLX), config management, model management, transcript aggregation, and session orchestration
+- **Rust core library** — handles ASR (cloud WebSocket streaming + local MLX/sherpa-onnx/Apple Speech), LLM correction (OpenAI-compatible profile endpoints + local MLX), config management, model management, transcript aggregation, and session orchestration
 - **Swift KoeMLX package** — bridges MLX inference to Rust via C FFI for on-device ASR (Qwen3-ASR) and LLM text correction (Qwen3) on Apple Silicon
 - **Swift KoeAppleSpeech package** — bridges Apple's SpeechAnalyzer to Rust via C FFI for zero-config on-device ASR (macOS 26+)
 
