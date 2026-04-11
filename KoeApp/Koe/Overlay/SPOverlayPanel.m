@@ -54,6 +54,7 @@ static const NSTimeInterval kTextCrossfadeDuration = 0.25;
 // Diff animation
 static const NSTimeInterval kDiffHighlightDuration = 0.8;  // How long to show diff highlights
 static const NSTimeInterval kDiffFadeSteps = 8;             // Animation steps for fading
+static const NSInteger kDiffMaxCharacters = 500;            // Beyond this, fall back to crossfade
 
 // ── Word Diff Algorithm ─────────────────────────────────────
 
@@ -109,28 +110,31 @@ static NSArray<SPDiffEntry *> *SPComputeCharDiff(NSString *oldText, NSString *ne
         }
     }
 
-    // Backtrack to produce per-character ops
-    NSMutableArray<SPDiffEntry *> *raw = [NSMutableArray array];
+    // Backtrack to produce per-character ops (append in reverse, then reverse once)
+    NSMutableArray<SPDiffEntry *> *raw = [NSMutableArray arrayWithCapacity:m + n];
     NSInteger i = m, j = n;
     while (i > 0 || j > 0) {
         if (i > 0 && j > 0 && [oldText characterAtIndex:i - 1] == [newText characterAtIndex:j - 1]) {
-            [raw insertObject:[SPDiffEntry entryWithOp:SPDiffOpEqual
-                                                 text:[oldText substringWithRange:NSMakeRange(i - 1, 1)]]
-                      atIndex:0];
+            [raw addObject:[SPDiffEntry entryWithOp:SPDiffOpEqual
+                                               text:[oldText substringWithRange:NSMakeRange(i - 1, 1)]]];
             i--; j--;
         } else if (j > 0 && (i == 0 || dp[i * (n + 1) + (j - 1)] >= dp[(i - 1) * (n + 1) + j])) {
-            [raw insertObject:[SPDiffEntry entryWithOp:SPDiffOpInsert
-                                                 text:[newText substringWithRange:NSMakeRange(j - 1, 1)]]
-                      atIndex:0];
+            [raw addObject:[SPDiffEntry entryWithOp:SPDiffOpInsert
+                                               text:[newText substringWithRange:NSMakeRange(j - 1, 1)]]];
             j--;
         } else {
-            [raw insertObject:[SPDiffEntry entryWithOp:SPDiffOpDelete
-                                                 text:[oldText substringWithRange:NSMakeRange(i - 1, 1)]]
-                      atIndex:0];
+            [raw addObject:[SPDiffEntry entryWithOp:SPDiffOpDelete
+                                               text:[oldText substringWithRange:NSMakeRange(i - 1, 1)]]];
             i--;
         }
     }
     free(dp);
+
+    // Reverse to get forward order
+    NSUInteger count = raw.count;
+    for (NSUInteger lo = 0, hi = count - 1; lo < hi; lo++, hi--) {
+        [raw exchangeObjectAtIndex:lo withObjectAtIndex:hi];
+    }
 
     // Merge consecutive entries with the same op
     NSMutableArray<SPDiffEntry *> *merged = [NSMutableArray array];
@@ -1356,7 +1360,6 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     }
 
     self.contentView.interimText = text;
-    [self setMainPanelInteractive:YES];
     [self resizeAndCenterAnimated:YES];
     [self.contentView setNeedsDisplay:YES];
 }
@@ -1389,6 +1392,20 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
 }
 
 - (void)startDiffAnimationFrom:(NSString *)oldText to:(NSString *)newText {
+    // Guard: fall back to crossfade for long texts to avoid O(m*n) stall on main thread
+    if (oldText.length > kDiffMaxCharacters || newText.length > kDiffMaxCharacters) {
+        CATransition *transition = [CATransition animation];
+        transition.type = kCATransitionFade;
+        transition.duration = kTextCrossfadeDuration;
+        transition.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+        [self.contentView.textScrollView.layer addAnimation:transition forKey:@"textCrossfade"];
+        self.contentView.interimText = newText;
+        [self setMainPanelInteractive:NO];
+        [self resizeAndCenterAnimated:YES];
+        [self.contentView setNeedsDisplay:YES];
+        return;
+    }
+
     NSArray<SPDiffEntry *> *rawDiff = SPComputeCharDiff(oldText, newText);
     NSArray<SPDiffEntry *> *diff = SPMergeReplacements(rawDiff);
 
@@ -1399,7 +1416,6 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
     }
     if (!hasDiff) {
         self.contentView.interimText = newText;
-        [self setMainPanelInteractive:YES];
         [self resizeAndCenterAnimated:YES];
         [self.contentView setNeedsDisplay:YES];
         return;
@@ -1419,7 +1435,6 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
     [self.contentView.textView.textStorage setAttributedString:diffStr];
     [self.contentView updateTextLayout];
     self.contentView.interimText = [diffStr string];
-    [self setMainPanelInteractive:YES];
     [self resizeAndCenterAnimated:YES];
     [self.contentView setNeedsDisplay:YES];
 
@@ -1568,16 +1583,16 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
 
 - (void)lingerAndDismiss {
     [self clearLingerTimer];
-    [self setMainPanelInteractive:YES];
+    // Keep the main panel click-through during linger — it should not block
+    // clicks on the app underneath. Template buttons (separate panel) handle
+    // their own mouse events independently.
+    [self setMainPanelInteractive:NO];
 
-    // Keep the confirmation short by default, but allow hover to pin it.
     NSString *displayText = self.contentView.interimText ?: self.contentView.statusText ?: @"";
     NSUInteger charCount = displayText.length;
     NSTimeInterval linger = fmin(fmax(charCount * 0.015, kMinLingerDuration), kMaxLingerDuration);
     self.remainingLingerDuration = linger;
-    if (![self isHoveringOverlay]) {
-        [self scheduleDismissAfter:linger];
-    }
+    [self scheduleDismissAfter:linger];
 }
 
 - (NSArray<NSNumber *> *)resolvedShortcutNumbersForTemplates:(NSArray<NSDictionary *> *)templates {
@@ -1615,7 +1630,6 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
     self.templateShortcutNumbers = [self resolvedShortcutNumbersForTemplates:templates];
     self.showingTemplates = YES;
     self.templateBarHovered = NO;
-    [self setMainPanelInteractive:YES];
 
     // Remove old button bar
     [self.buttonBarPanel orderOut:nil];

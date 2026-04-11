@@ -1914,11 +1914,22 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
         ? templateData[@"system_prompt_path"]
         : nil;
 
-    BOOL preservePromptPath = (inlinePrompt.length == 0
-                               && promptPath.length > 0
-                               && [editedPrompt isEqualToString:(originalPrompt ?: @"")]);
-    if (preservePromptPath) {
+    // If this template references an external file, preserve that relationship.
+    // Write changes back to the file rather than silently converting to inline.
+    if (inlinePrompt.length == 0 && promptPath.length > 0) {
+        if (![editedPrompt isEqualToString:(originalPrompt ?: @"")]) {
+            NSString *resolvedPath = promptPath.isAbsolutePath
+                ? promptPath
+                : [configDirPath() stringByAppendingPathComponent:promptPath];
+            NSError *writeError = nil;
+            [editedPrompt writeToFile:resolvedPath atomically:YES encoding:NSUTF8StringEncoding error:&writeError];
+            if (writeError) {
+                NSLog(@"[Koe] Failed to write template file %@: %@", resolvedPath, writeError.localizedDescription);
+            }
+            templateData[kTemplateOriginalPromptKey] = editedPrompt;
+        }
         [templateData removeObjectForKey:@"system_prompt"];
+        self.templateEditorDirty = NO;
         return;
     }
 
