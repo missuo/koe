@@ -5,6 +5,8 @@
 /// Called when user selects a prompt template (by click or keyboard shortcut).
 /// templateIndex is 0-based index into the prompt_templates array.
 - (void)overlayPanel:(id)panel didSelectTemplateAtIndex:(NSInteger)templateIndex;
+/// Called when the overlay dismisses itself (e.g. linger timer expired).
+- (void)overlayPanelDidDismiss:(id)panel;
 @end
 
 /// Floating status pill displayed at bottom-center of screen, above the Dock.

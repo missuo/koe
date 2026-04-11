@@ -1996,7 +1996,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [self updateTemplateActionButtons];
 }
 
-/// Write current editor fields into templatesData[index]. Safe to call with -1.
+/// Write current editor fields into templatesData[index] (in-memory only).
+/// File-based templates are NOT written to disk here — that happens in
+/// commitFileBasedTemplates, which is called during the save flow after
+/// the config snapshot has been taken so Cancel/rollback still works.
 - (void)flushEditorToIndex:(NSInteger)index {
     if (index < 0 || index >= (NSInteger)self.templatesData.count) return;
     if (!self.templateNameField) return;
@@ -2008,9 +2011,6 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     templateData[@"name"] = self.templateNameField.stringValue ?: @"";
     templateData[kTemplateEditablePromptKey] = editedPrompt;
 
-    NSString *originalPrompt = [templateData[kTemplateOriginalPromptKey] isKindOfClass:[NSString class]]
-        ? templateData[kTemplateOriginalPromptKey]
-        : [self resolvedPromptTextForTemplate:templateData];
     NSString *inlinePrompt = [templateData[@"system_prompt"] isKindOfClass:[NSString class]]
         ? templateData[@"system_prompt"]
         : nil;
@@ -2018,20 +2018,9 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
         ? templateData[@"system_prompt_path"]
         : nil;
 
-    // If this template references an external file, preserve that relationship.
-    // Write changes back to the file rather than silently converting to inline.
+    // If this template references an external file, preserve the relationship
+    // but do NOT write to disk yet — just update in-memory state.
     if (inlinePrompt.length == 0 && promptPath.length > 0) {
-        if (![editedPrompt isEqualToString:(originalPrompt ?: @"")]) {
-            NSString *resolvedPath = promptPath.isAbsolutePath
-                ? promptPath
-                : [configDirPath() stringByAppendingPathComponent:promptPath];
-            NSError *writeError = nil;
-            [editedPrompt writeToFile:resolvedPath atomically:YES encoding:NSUTF8StringEncoding error:&writeError];
-            if (writeError) {
-                NSLog(@"[Koe] Failed to write template file %@: %@", resolvedPath, writeError.localizedDescription);
-            }
-            templateData[kTemplateOriginalPromptKey] = editedPrompt;
-        }
         [templateData removeObjectForKey:@"system_prompt"];
         self.templateEditorDirty = NO;
         return;
@@ -2041,6 +2030,42 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [templateData removeObjectForKey:@"system_prompt_path"];
     templateData[kTemplateOriginalPromptKey] = editedPrompt;
     self.templateEditorDirty = NO;
+}
+
+/// Write file-based template changes to disk. Called during save after
+/// the config snapshot is taken, so that Cancel / rollback is still possible.
+/// Returns YES if all writes succeeded.
+- (BOOL)commitFileBasedTemplates {
+    BOOL allOk = YES;
+    for (NSMutableDictionary *templateData in self.templatesData) {
+        NSString *promptPath = [templateData[@"system_prompt_path"] isKindOfClass:[NSString class]]
+            ? templateData[@"system_prompt_path"]
+            : nil;
+        if (promptPath.length == 0) continue;
+        // Only file-based templates that have no inline system_prompt
+        if ([templateData[@"system_prompt"] isKindOfClass:[NSString class]]) continue;
+
+        NSString *editedPrompt = [templateData[kTemplateEditablePromptKey] isKindOfClass:[NSString class]]
+            ? templateData[kTemplateEditablePromptKey]
+            : @"";
+        NSString *originalPrompt = [templateData[kTemplateOriginalPromptKey] isKindOfClass:[NSString class]]
+            ? templateData[kTemplateOriginalPromptKey]
+            : @"";
+
+        if ([editedPrompt isEqualToString:originalPrompt]) continue;
+
+        NSString *resolvedPath = promptPath.isAbsolutePath
+            ? promptPath
+            : [configDirPath() stringByAppendingPathComponent:promptPath];
+        NSError *writeError = nil;
+        if ([editedPrompt writeToFile:resolvedPath atomically:YES encoding:NSUTF8StringEncoding error:&writeError]) {
+            templateData[kTemplateOriginalPromptKey] = editedPrompt;
+        } else {
+            NSLog(@"[Koe] Failed to write template file %@: %@", resolvedPath, writeError.localizedDescription);
+            allOk = NO;
+        }
+    }
+    return allOk;
 }
 
 /// Load templatesData[index] into the editor fields. -1 clears everything.
@@ -3763,6 +3788,17 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
             rollbackConfigIfNeeded();
             [self showAlert:@"Failed to save prompt templates"
                        info:@"Check your prompt templates and ~/.koe/config.yaml, then try again."];
+            return;
+        }
+    }
+
+    // Write file-based template prompts to disk — AFTER the config snapshot so
+    // that Cancel / close-without-save cannot leave orphaned file changes.
+    if (self.templatesData) {
+        if (![self commitFileBasedTemplates]) {
+            rollbackConfigIfNeeded();
+            [self showAlert:@"Failed to save template file"
+                       info:@"One or more external prompt files could not be written. Check file permissions and try again."];
             return;
         }
     }
