@@ -32,7 +32,7 @@ typedef NS_ENUM(NSInteger, SPSessionModeObjC) {
 - (void)destroyCore;
 
 /// Begin a new voice input session. Returns YES on success.
-- (BOOL)beginSessionWithMode:(SPSessionModeObjC)mode;
+- (BOOL)beginSessionWithMode:(SPSessionModeObjC)mode llmInverted:(BOOL)llmInverted;
 
 /// Push an audio frame to the Rust core.
 - (void)pushAudioFrame:(const void *)buffer length:(uint32_t)length timestamp:(uint64_t)timestamp;
