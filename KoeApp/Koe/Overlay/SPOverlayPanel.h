@@ -26,6 +26,9 @@
 /// Dismiss the overlay after a dynamic linger period based on text length.
 - (void)lingerAndDismiss;
 
+/// Dismiss the overlay immediately (with exit animation, no linger delay).
+- (void)dismissToIdle;
+
 /// Reload overlay typography and bottom position from config.yaml.
 - (void)reloadAppearanceFromConfig;
 

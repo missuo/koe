@@ -106,6 +106,15 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
             return monitor.canConsumeGlobalKeyEvents ? NULL : event;
         }
 
+        // Any keyDown (not handled by number keys above) dismisses the overlay.
+        // The event is NOT consumed — it passes through to the target app.
+        if (type == kCGEventKeyDown && monitor.anyKeyDismissHandler) {
+            void (^handler)(void) = monitor.anyKeyDismissHandler;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                handler();
+            });
+        }
+
         BOOL handlesModifierOnlyTrigger =
             [monitor isModifierOnlyMatchKind:monitor.targetMatchKind] &&
             [monitor isTargetKeyCode:keyCode];

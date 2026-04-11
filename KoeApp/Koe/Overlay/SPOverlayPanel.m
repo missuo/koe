@@ -49,6 +49,7 @@ static const CGFloat kBaseShadowRadius = 4.0;
 static const CGFloat kEntranceShadowOpacity = 0.17;
 static const CGFloat kEntranceShadowRadius = 8.0;
 static const NSTimeInterval kRippleDuration = 0.42;
+static const NSTimeInterval kTextCrossfadeDuration = 0.25;
 
 static NSColor *SPOverlaySurfaceTintColor(void) {
     return [NSColor colorWithSRGBRed:0.07 green:0.065 blue:0.03 alpha:0.34];
@@ -444,6 +445,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, assign) CGFloat        cornerRadius;
 @property (nonatomic, assign) CGFloat        iconAreaWidth;
 @property (nonatomic, assign) CGFloat        textViewportHeight;
+@property (nonatomic, readonly) NSScrollView *textScrollView;
 - (void)updateTextAttributes;
 - (void)refreshDisplayedTextAnimated:(BOOL)animated;
 @end
@@ -1235,6 +1237,17 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 }
 
 - (void)updateDisplayText:(NSString *)text {
+    BOOL hasExistingText = self.contentView.interimText.length > 0 || self.contentView.statusText.length > 0;
+    BOOL textChanged = ![text isEqualToString:self.contentView.interimText];
+
+    if (hasExistingText && textChanged) {
+        CATransition *transition = [CATransition animation];
+        transition.type = kCATransitionFade;
+        transition.duration = kTextCrossfadeDuration;
+        transition.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+        [self.contentView.textScrollView.layer addAnimation:transition forKey:@"textCrossfade"];
+    }
+
     self.contentView.interimText = text;
     [self setMainPanelInteractive:YES];
     [self resizeAndCenterAnimated:YES];
