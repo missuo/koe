@@ -904,11 +904,16 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     qwenKeyLabel.hidden = YES;
     [pane addSubview:qwenKeyLabel];
 
-    // Test result label
+    // Test result label — positioned inline to the right of the Test button
     self.asrTestResultLabel = [NSTextField wrappingLabelWithString:@""];
-    self.asrTestResultLabel.frame = NSMakeRect(fieldX, 55, fieldW, 42);
+    CGFloat testResultX = NSMaxX(self.asrTestButton.frame) + 8;
+    self.asrTestResultLabel.frame = NSMakeRect(testResultX,
+                                               NSMinY(self.asrTestButton.frame) + 4,
+                                               paneWidth - testResultX - 24,
+                                               20);
     self.asrTestResultLabel.font = [NSFont systemFontOfSize:12];
     self.asrTestResultLabel.selectable = YES;
+    self.asrTestResultLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     [pane addSubview:self.asrTestResultLabel];
 
     // Save / Cancel buttons
@@ -3783,8 +3788,6 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     if ([self.delegate respondsToSelector:@selector(setupWizardDidSaveConfig)]) {
         [self.delegate setupWizardDidSaveConfig];
     }
-
-    [self.window close];
 }
 
 - (void)cancelSetup:(id)sender {
