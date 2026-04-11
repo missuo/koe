@@ -42,6 +42,8 @@ static BOOL configFlagEnabled(const char *keyPath) {
 }
 
 - (void)showPromptTemplateButtonsIfNeededOrDismiss {
+    [self startAnyKeyDismissMonitoring];
+
     if (![self shouldShowPromptTemplateButtons]) {
         [self.overlayPanel lingerAndDismiss];
         return;
@@ -276,6 +278,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
 - (void)hotkeyMonitorDidDetectHoldStart {
     NSLog(@"[Koe] Hold start detected");
     [self stopNumberKeyMonitoring];
+    [self stopAnyKeyDismissMonitoring];
     [self.overlayPanel hideTemplateButtons];
     self.showingError = NO;
     [self cancelPendingSessionEnd];
@@ -322,6 +325,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
 - (void)hotkeyMonitorDidDetectTapStart {
     NSLog(@"[Koe] Tap start detected");
     [self stopNumberKeyMonitoring];
+    [self stopAnyKeyDismissMonitoring];
     [self.overlayPanel hideTemplateButtons];
     self.showingError = NO;
     [self cancelPendingSessionEnd];
@@ -604,6 +608,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
     if (![self shouldShowPromptTemplateButtons]) {
         [self stopNumberKeyMonitoring];
+        [self stopAnyKeyDismissMonitoring];
         [self.overlayPanel hideTemplateButtons];
     }
 
@@ -618,6 +623,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
 - (void)overlayPanel:(id)panel didSelectTemplateAtIndex:(NSInteger)templateIndex {
     NSLog(@"[Koe] Template selected: index %ld", (long)templateIndex);
     [self stopNumberKeyMonitoring];
+    [self stopAnyKeyDismissMonitoring];
     [self.clipboardManager cancelPendingRestore];
 
     // Show rewriting state
@@ -650,6 +656,26 @@ static BOOL configFlagEnabled(const char *keyPath) {
 - (void)stopNumberKeyMonitoring {
     self.hotkeyMonitor.numberKeyHandler = nil;
     NSLog(@"[Koe] Template selector hidden");
+}
+
+#pragma mark - Any-Key Dismiss Monitoring
+
+- (void)startAnyKeyDismissMonitoring {
+    __weak typeof(self) weakSelf = self;
+    self.hotkeyMonitor.anyKeyDismissHandler = ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        NSLog(@"[Koe] Key press detected — dismissing overlay immediately");
+        [strongSelf stopNumberKeyMonitoring];
+        [strongSelf stopAnyKeyDismissMonitoring];
+        [strongSelf.overlayPanel dismissToIdle];
+    };
+    NSLog(@"[Koe] Any-key dismiss monitoring active");
+}
+
+- (void)stopAnyKeyDismissMonitoring {
+    self.hotkeyMonitor.anyKeyDismissHandler = nil;
 }
 
 @end
