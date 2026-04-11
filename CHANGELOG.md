@@ -12,6 +12,8 @@ All notable user-facing changes to Koe are documented here.
 - Added overlay rewrite templates with click, hover, and contextual `1-9` shortcuts for fast second-pass rewriting.
 - Added configurable trigger modes so users can choose `hold` or `toggle`.
 - Added custom shortcut recording for trigger shortcuts, including modifier combinations.
+- Added inline character-level diff animation for text correction transitions — deleted chars fade out in soft red, inserted chars highlight in blue-lavender, and adjacent delete+insert pairs merge into clean replacements before settling to the final text.
+- Added automatic overlay dismissal on any key press (except template shortcuts `1-9`) after text is pasted, so users can continue typing without the overlay lingering.
 
 ### Changed
 
@@ -22,6 +24,8 @@ All notable user-facing changes to Koe are documented here.
 - Standardized the settings experience so Controls, LLM, and Templates use more consistent native AppKit switches, segmented controls, spacing, and card surfaces.
 - Reduced the built-in prompt template set to a minimal default starter template for English translation.
 - Changed template rewrites to copy the rewritten result to the clipboard instead of auto-pasting it immediately.
+- Changed ASR test result messages from Chinese to English to match the overall UI language.
+- Changed overlay preview sample text to a more natural conversational example.
 
 ### Fixed
 
@@ -33,6 +37,11 @@ All notable user-facing changes to Koe are documented here.
 - Fixed number shortcut handling so `1-9` template shortcuts no longer leak digits into the focused app.
 - Fixed recorded trigger combinations so modifier shortcuts no longer leak characters like `®` into the focused app.
 - Fixed keyboard and mouse interaction polish for template buttons and overlay selection states.
+- Fixed overlay blocking clicks on the app underneath during linger/dismiss by keeping the main panel click-through at all times.
+- Fixed template editor silently converting file-backed prompts (`system_prompt_path`) to inline prompts — edits are now written back to the referenced file.
+- Fixed diff animation performance for long transcriptions by adding a 500-character threshold (falls back to crossfade) and replacing O(n²) backtracking with O(n) reverse.
+- Fixed ASR test result label being hidden behind configuration fields — now displayed inline next to the Test button.
+- Fixed Save button closing the settings window — Save now only persists changes, users close via the window's close button.
 
 ### Contributors
 
