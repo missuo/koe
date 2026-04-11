@@ -51,6 +51,100 @@ static const CGFloat kEntranceShadowRadius = 8.0;
 static const NSTimeInterval kRippleDuration = 0.42;
 static const NSTimeInterval kTextCrossfadeDuration = 0.25;
 
+// Diff animation
+static const NSTimeInterval kDiffHighlightDuration = 0.8;  // How long to show diff highlights
+static const NSTimeInterval kDiffFadeSteps = 8;             // Animation steps for fading
+
+// ── Word Diff Algorithm ─────────────────────────────────────
+
+typedef NS_ENUM(NSInteger, SPDiffOp) {
+    SPDiffOpEqual,
+    SPDiffOpDelete,
+    SPDiffOpInsert,
+    SPDiffOpReplace,  // Adjacent delete+insert merged: only new text shown
+};
+
+@interface SPDiffEntry : NSObject
+@property (nonatomic, assign) SPDiffOp op;
+@property (nonatomic, copy) NSString *text;
++ (instancetype)entryWithOp:(SPDiffOp)op text:(NSString *)text;
+@end
+
+@implementation SPDiffEntry
++ (instancetype)entryWithOp:(SPDiffOp)op text:(NSString *)text {
+    SPDiffEntry *e = [[SPDiffEntry alloc] init];
+    e.op = op;
+    e.text = text;
+    return e;
+}
+@end
+
+/// Compute character-level diff using LCS, then merge consecutive same-op runs.
+/// Works for CJK text (no whitespace delimiters) and English alike.
+static NSArray<SPDiffEntry *> *SPComputeCharDiff(NSString *oldText, NSString *newText) {
+    NSInteger m = oldText.length;
+    NSInteger n = newText.length;
+
+    // Use a flat C array for the DP table — much faster than nested NSArrays.
+    // dp[(i)*(n+1) + j] = LCS length for oldText[0..i-1] vs newText[0..j-1]
+    int16_t *dp = calloc((m + 1) * (n + 1), sizeof(int16_t));
+    if (!dp) {
+        // Fallback: treat entire text as replaced
+        NSMutableArray *fallback = [NSMutableArray array];
+        if (oldText.length) [fallback addObject:[SPDiffEntry entryWithOp:SPDiffOpDelete text:oldText]];
+        if (newText.length) [fallback addObject:[SPDiffEntry entryWithOp:SPDiffOpInsert text:newText]];
+        return fallback;
+    }
+
+    for (NSInteger i = 1; i <= m; i++) {
+        unichar oc = [oldText characterAtIndex:i - 1];
+        for (NSInteger j = 1; j <= n; j++) {
+            if (oc == [newText characterAtIndex:j - 1]) {
+                dp[i * (n + 1) + j] = dp[(i - 1) * (n + 1) + (j - 1)] + 1;
+            } else {
+                int16_t a = dp[(i - 1) * (n + 1) + j];
+                int16_t b = dp[i * (n + 1) + (j - 1)];
+                dp[i * (n + 1) + j] = (a > b) ? a : b;
+            }
+        }
+    }
+
+    // Backtrack to produce per-character ops
+    NSMutableArray<SPDiffEntry *> *raw = [NSMutableArray array];
+    NSInteger i = m, j = n;
+    while (i > 0 || j > 0) {
+        if (i > 0 && j > 0 && [oldText characterAtIndex:i - 1] == [newText characterAtIndex:j - 1]) {
+            [raw insertObject:[SPDiffEntry entryWithOp:SPDiffOpEqual
+                                                 text:[oldText substringWithRange:NSMakeRange(i - 1, 1)]]
+                      atIndex:0];
+            i--; j--;
+        } else if (j > 0 && (i == 0 || dp[i * (n + 1) + (j - 1)] >= dp[(i - 1) * (n + 1) + j])) {
+            [raw insertObject:[SPDiffEntry entryWithOp:SPDiffOpInsert
+                                                 text:[newText substringWithRange:NSMakeRange(j - 1, 1)]]
+                      atIndex:0];
+            j--;
+        } else {
+            [raw insertObject:[SPDiffEntry entryWithOp:SPDiffOpDelete
+                                                 text:[oldText substringWithRange:NSMakeRange(i - 1, 1)]]
+                      atIndex:0];
+            i--;
+        }
+    }
+    free(dp);
+
+    // Merge consecutive entries with the same op
+    NSMutableArray<SPDiffEntry *> *merged = [NSMutableArray array];
+    for (SPDiffEntry *entry in raw) {
+        SPDiffEntry *last = merged.lastObject;
+        if (last && last.op == entry.op) {
+            last.text = [last.text stringByAppendingString:entry.text];
+        } else {
+            [merged addObject:[SPDiffEntry entryWithOp:entry.op text:entry.text]];
+        }
+    }
+    return merged;
+}
+
 static NSColor *SPOverlaySurfaceTintColor(void) {
     return [NSColor colorWithSRGBRed:0.07 green:0.065 blue:0.03 alpha:0.34];
 }
@@ -446,6 +540,9 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, assign) CGFloat        iconAreaWidth;
 @property (nonatomic, assign) CGFloat        textViewportHeight;
 @property (nonatomic, readonly) NSScrollView *textScrollView;
+/// When YES, refreshDisplayedTextAnimated: will not overwrite textStorage
+/// (the diff animation manages the attributed string directly).
+@property (nonatomic, assign) BOOL diffAnimationActive;
 - (void)updateTextAttributes;
 - (void)refreshDisplayedTextAnimated:(BOOL)animated;
 @end
@@ -581,7 +678,9 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     NSClipView *clipView = self.textScrollView.contentView;
     CGFloat oldOffsetY = clipView.bounds.origin.y;
 
-    [self.textView.textStorage setAttributedString:[[NSAttributedString alloc] initWithString:displayText attributes:attrs]];
+    if (!self.diffAnimationActive) {
+        [self.textView.textStorage setAttributedString:[[NSAttributedString alloc] initWithString:displayText attributes:attrs]];
+    }
     [self updateTextLayout];
 
     [self.textView.layoutManager ensureLayoutForTextContainer:self.textView.textContainer];
@@ -769,6 +868,9 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, assign) NSInteger configuredMaxVisibleLines;
 @property (nonatomic, assign, getter=isPreviewActive) BOOL previewActive;
 @property (nonatomic, strong) CAShapeLayer *recordingRippleLayer;
+@property (nonatomic, strong) NSTimer *diffAnimationTimer;
+@property (nonatomic, assign) NSInteger diffAnimationStep;
+@property (nonatomic, copy) NSString *diffFinalText;
 
 @end
 
@@ -1127,6 +1229,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 }
 
 - (void)dismissToIdle {
+    [self cancelDiffAnimation];
     [self clearLingerTimer];
     self.sessionMaxWidth = 0;
     self.sessionMaxHeight = 0;
@@ -1162,7 +1265,11 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         [self restoreConfiguredAppearanceIfNeeded];
     }
 
-    // Cancel any pending linger dismiss from a previous session
+    // Cancel diff animation only when starting a new recording (not pasting/lingering)
+    if ([state hasPrefix:@"recording"] || [state isEqualToString:@"correcting"] ||
+        [state isEqualToString:@"error"] || [state isEqualToString:@"idle"]) {
+        [self cancelDiffAnimation];
+    }
     [self clearLingerTimer];
     [self setMainPanelInteractive:NO];
     self.mainPanelHovered = NO;
@@ -1237,21 +1344,161 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 }
 
 - (void)updateDisplayText:(NSString *)text {
-    BOOL hasExistingText = self.contentView.interimText.length > 0 || self.contentView.statusText.length > 0;
-    BOOL textChanged = ![text isEqualToString:self.contentView.interimText];
+    [self cancelDiffAnimation];
+
+    NSString *oldText = self.contentView.interimText ?: @"";
+    BOOL hasExistingText = oldText.length > 0;
+    BOOL textChanged = ![text isEqualToString:oldText];
 
     if (hasExistingText && textChanged) {
-        CATransition *transition = [CATransition animation];
-        transition.type = kCATransitionFade;
-        transition.duration = kTextCrossfadeDuration;
-        transition.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
-        [self.contentView.textScrollView.layer addAnimation:transition forKey:@"textCrossfade"];
+        [self startDiffAnimationFrom:oldText to:text];
+        return;
     }
 
     self.contentView.interimText = text;
     [self setMainPanelInteractive:YES];
     [self resizeAndCenterAnimated:YES];
     [self.contentView setNeedsDisplay:YES];
+}
+
+- (void)cancelDiffAnimation {
+    [self.diffAnimationTimer invalidate];
+    self.diffAnimationTimer = nil;
+    self.diffFinalText = nil;
+    self.diffAnimationStep = 0;
+    self.contentView.diffAnimationActive = NO;
+}
+
+/// Merge adjacent Delete+Insert pairs into Replace ops (shows only the new text).
+/// This makes typo corrections cleaner: "了" → "啦" shows "啦" highlighted, not "了̶啦".
+static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff) {
+    NSMutableArray<SPDiffEntry *> *result = [NSMutableArray array];
+    NSUInteger count = diff.count;
+    for (NSUInteger i = 0; i < count; i++) {
+        SPDiffEntry *entry = diff[i];
+        if (entry.op == SPDiffOpDelete && i + 1 < count && diff[i + 1].op == SPDiffOpInsert) {
+            // Merge: skip deleted text, mark inserted text as replacement
+            SPDiffEntry *insertEntry = diff[i + 1];
+            [result addObject:[SPDiffEntry entryWithOp:SPDiffOpReplace text:insertEntry.text]];
+            i++; // skip the Insert entry (already consumed)
+        } else {
+            [result addObject:entry];
+        }
+    }
+    return result;
+}
+
+- (void)startDiffAnimationFrom:(NSString *)oldText to:(NSString *)newText {
+    NSArray<SPDiffEntry *> *rawDiff = SPComputeCharDiff(oldText, newText);
+    NSArray<SPDiffEntry *> *diff = SPMergeReplacements(rawDiff);
+
+    // Check if there's actually a diff (not all equal)
+    BOOL hasDiff = NO;
+    for (SPDiffEntry *entry in diff) {
+        if (entry.op != SPDiffOpEqual) { hasDiff = YES; break; }
+    }
+    if (!hasDiff) {
+        self.contentView.interimText = newText;
+        [self setMainPanelInteractive:YES];
+        [self resizeAndCenterAnimated:YES];
+        [self.contentView setNeedsDisplay:YES];
+        return;
+    }
+
+    self.diffFinalText = newText;
+
+    // Phase 1: Show inline diff with highlights
+    NSFont *font = [self contentFont];
+    NSDictionary *baseAttrs = SPOverlayTextAttributes(font);
+    NSMutableAttributedString *diffStr = [self buildDiffAttributedString:diff
+                                                              baseAttrs:baseAttrs
+                                                               progress:0.0];
+
+    // Show the diff-highlighted text
+    self.contentView.diffAnimationActive = YES;
+    [self.contentView.textView.textStorage setAttributedString:diffStr];
+    [self.contentView updateTextLayout];
+    self.contentView.interimText = [diffStr string];
+    [self setMainPanelInteractive:YES];
+    [self resizeAndCenterAnimated:YES];
+    [self.contentView setNeedsDisplay:YES];
+
+    // Phase 2: Gradually transition to clean final text
+    self.diffAnimationStep = 0;
+    __weak typeof(self) weakSelf = self;
+    self.diffAnimationTimer = [NSTimer scheduledTimerWithTimeInterval:(kDiffHighlightDuration / kDiffFadeSteps)
+                                                              repeats:YES
+                                                                block:^(NSTimer *timer) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) { [timer invalidate]; return; }
+        [strongSelf diffAnimationTick:diff];
+    }];
+}
+
+/// Build an attributed string for the diff at a given animation progress (0.0 → 1.0).
+- (NSMutableAttributedString *)buildDiffAttributedString:(NSArray<SPDiffEntry *> *)diff
+                                               baseAttrs:(NSDictionary *)baseAttrs
+                                                progress:(CGFloat)progress {
+    // Deleted text: muted soft red, fading to transparent
+    NSColor *deleteColor = [NSColor colorWithRed:1.0 green:0.62 blue:0.58 alpha:0.55 * (1.0 - progress)];
+    // Inserted text: soft blue-lavender accent, transitioning to normal white
+    NSColor *insertColor = [NSColor colorWithRed:0.68 + 0.32 * progress
+                                           green:0.78 + 0.22 * progress
+                                            blue:1.0 - 0.08 * progress
+                                           alpha:0.92];
+    // Replaced text (typo/word swap): slightly warmer accent
+    NSColor *replaceColor = [NSColor colorWithRed:0.72 + 0.28 * progress
+                                            green:0.82 + 0.18 * progress
+                                             blue:0.98 - 0.06 * progress
+                                            alpha:0.92];
+
+    NSMutableAttributedString *str = [[NSMutableAttributedString alloc] init];
+    for (SPDiffEntry *entry in diff) {
+        NSMutableDictionary *attrs = [baseAttrs mutableCopy];
+        switch (entry.op) {
+            case SPDiffOpEqual:
+                break;
+            case SPDiffOpDelete:
+                attrs[NSForegroundColorAttributeName] = deleteColor;
+                break;
+            case SPDiffOpInsert:
+                attrs[NSForegroundColorAttributeName] = insertColor;
+                break;
+            case SPDiffOpReplace:
+                attrs[NSForegroundColorAttributeName] = replaceColor;
+                break;
+        }
+        [str appendAttributedString:[[NSAttributedString alloc] initWithString:entry.text attributes:attrs]];
+    }
+    return str;
+}
+
+- (void)diffAnimationTick:(NSArray<SPDiffEntry *> *)diff {
+    self.diffAnimationStep++;
+
+    if (self.diffAnimationStep >= (NSInteger)kDiffFadeSteps) {
+        // Animation complete: show clean final text
+        NSString *finalText = self.diffFinalText ?: self.contentView.interimText;
+        [self cancelDiffAnimation];
+
+        CATransition *transition = [CATransition animation];
+        transition.type = kCATransitionFade;
+        transition.duration = kTextCrossfadeDuration;
+        transition.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+        [self.contentView.textScrollView.layer addAnimation:transition forKey:@"textCrossfade"];
+
+        self.contentView.interimText = finalText;
+        [self resizeAndCenterAnimated:YES];
+        [self.contentView setNeedsDisplay:YES];
+        return;
+    }
+
+    CGFloat progress = (CGFloat)self.diffAnimationStep / (CGFloat)kDiffFadeSteps;
+    NSDictionary *baseAttrs = SPOverlayTextAttributes([self contentFont]);
+    NSMutableAttributedString *str = [self buildDiffAttributedString:diff
+                                                          baseAttrs:baseAttrs
+                                                           progress:progress];
+    [self.contentView.textView.textStorage setAttributedString:str];
 }
 
 - (void)reloadAppearanceFromConfig {
