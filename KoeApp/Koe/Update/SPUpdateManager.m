@@ -1,4 +1,5 @@
 #import "SPUpdateManager.h"
+#import "SPLocalization.h"
 
 static NSString * const kSPUpdateLastCheckDateKey = @"SPUpdateLastCheckDate";
 static NSString * const kSPUpdateSkippedVersionKey = @"SPUpdateSkippedVersion";
@@ -69,9 +70,9 @@ static NSTimeInterval const kSPInitialAutomaticCheckDelay = 8.0;
 - (void)checkForUpdatesUserInitiated:(BOOL)userInitiated {
     if (!self.feedURL) {
         if (userInitiated) {
-            [self showAlertWithTitle:@"Updates Unavailable"
-                     informativeText:@"This build does not have an update feed configured."
-                           buttonOne:@"OK"
+            [self showAlertWithTitle:KoeLocalizedString(@"update.unavailable.title")
+                     informativeText:KoeLocalizedString(@"update.unavailable.message")
+                           buttonOne:KoeLocalizedString(@"update.button.ok")
                            buttonTwo:nil
                          buttonThree:nil
                              handler:nil];
@@ -81,9 +82,9 @@ static NSTimeInterval const kSPInitialAutomaticCheckDelay = 8.0;
 
     if (self.isChecking) {
         if (userInitiated) {
-            [self showAlertWithTitle:@"Already Checking"
-                     informativeText:@"Koe is already checking for updates."
-                           buttonOne:@"OK"
+            [self showAlertWithTitle:KoeLocalizedString(@"update.checking.title")
+                     informativeText:KoeLocalizedString(@"update.checking.message")
+                           buttonOne:KoeLocalizedString(@"update.button.ok")
                            buttonTwo:nil
                          buttonThree:nil
                              handler:nil];
@@ -111,9 +112,9 @@ static NSTimeInterval const kSPInitialAutomaticCheckDelay = 8.0;
     if (error) {
         NSLog(@"[Koe] Update check failed: %@", error.localizedDescription);
         if (userInitiated) {
-            [self showAlertWithTitle:@"Unable to Check for Updates"
-                     informativeText:error.localizedDescription ?: @"The update feed could not be reached."
-                           buttonOne:@"OK"
+            [self showAlertWithTitle:KoeLocalizedString(@"update.failed.title")
+                     informativeText:error.localizedDescription ?: KoeLocalizedString(@"update.failed.title")
+                           buttonOne:KoeLocalizedString(@"update.button.ok")
                            buttonTwo:nil
                          buttonThree:nil
                              handler:nil];
@@ -123,12 +124,12 @@ static NSTimeInterval const kSPInitialAutomaticCheckDelay = 8.0;
 
     NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
     if ([httpResponse isKindOfClass:[NSHTTPURLResponse class]] && httpResponse.statusCode >= 400) {
-        NSString *message = [NSString stringWithFormat:@"The update feed returned HTTP %ld.", (long)httpResponse.statusCode];
+        NSString *message = [NSString stringWithFormat:KoeLocalizedString(@"update.failed.http"), (long)httpResponse.statusCode];
         NSLog(@"[Koe] Update check failed: %@", message);
         if (userInitiated) {
-            [self showAlertWithTitle:@"Unable to Check for Updates"
+            [self showAlertWithTitle:KoeLocalizedString(@"update.failed.title")
                      informativeText:message
-                           buttonOne:@"OK"
+                           buttonOne:KoeLocalizedString(@"update.button.ok")
                            buttonTwo:nil
                          buttonThree:nil
                              handler:nil];
@@ -141,9 +142,9 @@ static NSTimeInterval const kSPInitialAutomaticCheckDelay = 8.0;
     if (!feed) {
         NSLog(@"[Koe] Update feed parse failed: %@", parseError.localizedDescription);
         if (userInitiated) {
-            [self showAlertWithTitle:@"Invalid Update Feed"
-                     informativeText:parseError.localizedDescription ?: @"The update feed JSON is invalid."
-                           buttonOne:@"OK"
+            [self showAlertWithTitle:KoeLocalizedString(@"update.invalidFeed.title")
+                     informativeText:parseError.localizedDescription ?: KoeLocalizedString(@"update.invalidFeed.title")
+                           buttonOne:KoeLocalizedString(@"update.button.ok")
                            buttonTwo:nil
                          buttonThree:nil
                              handler:nil];
@@ -159,10 +160,10 @@ static NSTimeInterval const kSPInitialAutomaticCheckDelay = 8.0;
     if (minimumSystemVersion.length > 0 &&
         [self compareVersionString:[self currentSystemVersionString] toVersionString:minimumSystemVersion] == NSOrderedAscending) {
         if (userInitiated) {
-            NSString *message = [NSString stringWithFormat:@"Version %@ requires macOS %@ or later.", feedVersion, minimumSystemVersion];
-            [self showAlertWithTitle:@"Update Not Compatible"
+            NSString *message = [NSString stringWithFormat:KoeLocalizedString(@"update.notCompatible.message"), feedVersion, minimumSystemVersion];
+            [self showAlertWithTitle:KoeLocalizedString(@"update.notCompatible.title")
                      informativeText:message
-                           buttonOne:@"OK"
+                           buttonOne:KoeLocalizedString(@"update.button.ok")
                            buttonTwo:nil
                          buttonThree:nil
                              handler:nil];
@@ -173,11 +174,11 @@ static NSTimeInterval const kSPInitialAutomaticCheckDelay = 8.0;
     if (![self isFeedVersion:feedVersion build:feedBuild newerThanCurrentVersion:[self currentAppVersionString]
                        build:[self currentAppBuildNumber]]) {
         if (userInitiated) {
-            NSString *message = [NSString stringWithFormat:@"Koe %@ (%ld) is currently the newest version available.",
+            NSString *message = [NSString stringWithFormat:KoeLocalizedString(@"update.upToDate.message"),
                                  [self currentAppVersionString], (long)[self currentAppBuildNumber]];
-            [self showAlertWithTitle:@"You're Up to Date"
+            [self showAlertWithTitle:KoeLocalizedString(@"update.upToDate.title")
                      informativeText:message
-                           buttonOne:@"OK"
+                           buttonOne:KoeLocalizedString(@"update.button.ok")
                            buttonTwo:nil
                          buttonThree:nil
                              handler:nil];
@@ -250,23 +251,22 @@ static NSTimeInterval const kSPInitialAutomaticCheckDelay = 8.0;
     NSInteger feedBuild = [self integerValueFromObject:feed[@"build"]];
     NSString *notesText = [self notesTextFromFeed:feed];
 
-    NSMutableString *message = [NSMutableString stringWithFormat:@"Koe %@",
+    NSMutableString *message = [NSMutableString stringWithFormat:KoeLocalizedString(@"update.available.message"),
                                 feedVersion];
     if (feedBuild > 0) {
-        [message appendFormat:@" (%ld)", (long)feedBuild];
+        [message appendFormat:KoeLocalizedString(@"update.available.buildSuffix"), (long)feedBuild];
     }
-    [message appendString:@" is available.\n\n"];
-    [message appendFormat:@"You have %@ (%ld).",
+    [message appendFormat:KoeLocalizedString(@"update.available.body"),
      [self currentAppVersionString], (long)[self currentAppBuildNumber]];
     if (notesText.length > 0) {
         [message appendFormat:@"\n\n%@", notesText];
     }
 
-    NSString *thirdButton = userInitiated ? nil : @"Skip This Version";
-    [self showAlertWithTitle:@"Update Available"
+    NSString *thirdButton = userInitiated ? nil : KoeLocalizedString(@"update.button.skip");
+    [self showAlertWithTitle:KoeLocalizedString(@"update.available.title")
              informativeText:message
-                   buttonOne:@"Download"
-                   buttonTwo:@"Later"
+                   buttonOne:KoeLocalizedString(@"update.button.download")
+                   buttonTwo:KoeLocalizedString(@"update.button.later")
                  buttonThree:thirdButton
                      handler:^(NSModalResponse response) {
         if (response == NSAlertFirstButtonReturn) {
