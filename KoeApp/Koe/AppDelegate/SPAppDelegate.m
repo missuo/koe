@@ -12,6 +12,7 @@
 #import "SPHistoryManager.h"
 #import "SPSetupWizardWindowController.h"
 #import "SPUpdateManager.h"
+#import "SPLocalization.h"
 #import "koe_core.h"
 #import <os/log.h>
 #import <sys/stat.h>
@@ -199,19 +200,19 @@ static BOOL configFlagEnabled(const char *keyPath) {
         [NSApp setMainMenu:mainMenu];
     }
 
-    NSMenuItem *editMenuItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:nil keyEquivalent:@""];
-    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+    NSMenuItem *editMenuItem = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"menu.edit") action:nil keyEquivalent:@""];
+    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:KoeLocalizedString(@"menu.edit")];
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wundeclared-selector"
-    [editMenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
-    [editMenu addItemWithTitle:@"Redo" action:@selector(redo:) keyEquivalent:@"Z"];
+    [editMenu addItemWithTitle:KoeLocalizedString(@"menu.edit.undo") action:@selector(undo:) keyEquivalent:@"z"];
+    [editMenu addItemWithTitle:KoeLocalizedString(@"menu.edit.redo") action:@selector(redo:) keyEquivalent:@"Z"];
 #pragma clang diagnostic pop
     [editMenu addItem:[NSMenuItem separatorItem]];
-    [editMenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
-    [editMenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
-    [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
-    [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+    [editMenu addItemWithTitle:KoeLocalizedString(@"menu.edit.cut") action:@selector(cut:) keyEquivalent:@"x"];
+    [editMenu addItemWithTitle:KoeLocalizedString(@"menu.edit.copy") action:@selector(copy:) keyEquivalent:@"c"];
+    [editMenu addItemWithTitle:KoeLocalizedString(@"menu.edit.paste") action:@selector(paste:) keyEquivalent:@"v"];
+    [editMenu addItemWithTitle:KoeLocalizedString(@"menu.edit.selectAll") action:@selector(selectAll:) keyEquivalent:@"a"];
 
     editMenuItem.submenu = editMenu;
     [mainMenu addItem:editMenuItem];
@@ -446,7 +447,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 - (void)sendWarningNotification:(NSString *)message {
     UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
-    content.title = @"Koe Warning";
+    content.title = KoeLocalizedString(@"notification.warning.title");
     content.body = message;
     content.sound = nil;
 
@@ -465,7 +466,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 - (void)sendErrorNotification:(NSString *)message {
     UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
-    content.title = @"Koe Error";
+    content.title = KoeLocalizedString(@"notification.error.title");
     content.body = message;
     content.sound = nil; // Already playing error cue
 
