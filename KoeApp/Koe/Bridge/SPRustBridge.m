@@ -1,5 +1,6 @@
 #import "SPRustBridge.h"
 #import <AppKit/AppKit.h>
+#import "SPLocalization.h"
 #import "koe_core.h"
 
 // ─── Static delegate reference for C callbacks ─────────────────────
@@ -233,7 +234,7 @@ static void bridge_on_rewrite_text_ready(uint64_t token, const char *text) {
         return @{
             @"success": @NO,
             @"models": @[],
-            @"message": @"No response from core",
+            @"message": KoeLocalizedString(@"settings.setupWizard.test.llm.invalidResponseFromCore"),
         };
     }
 
@@ -245,7 +246,7 @@ static void bridge_on_rewrite_text_ready(uint64_t token, const char *text) {
         return @{
             @"success": @NO,
             @"models": @[],
-            @"message": @"Invalid model list response encoding",
+            @"message": KoeLocalizedString(@"settings.setupWizard.llm.modelList.error.invalidEncoding"),
         };
     }
 
@@ -254,7 +255,7 @@ static void bridge_on_rewrite_text_ready(uint64_t token, const char *text) {
         return @{
             @"success": @NO,
             @"models": @[],
-            @"message": @"Invalid model list response payload",
+            @"message": KoeLocalizedString(@"settings.setupWizard.llm.modelList.error.invalidPayload"),
         };
     }
     return result;
@@ -329,7 +330,9 @@ static void download_status_cb(void *ctx, int32_t status, const char *message) {
     if (result != 0) {
         // Transfer back so ARC releases
         (void)(__bridge_transfer _KoeDownloadContext *)ctx;
-        NSString *msg = (result == -1) ? @"Already downloading" : @"Failed to start download";
+        NSString *msg = (result == -1)
+            ? KoeLocalizedString(@"settings.setupWizard.model.download.alreadyDownloading")
+            : KoeLocalizedString(@"settings.setupWizard.model.download.startFailed");
         dispatch_async(dispatch_get_main_queue(), ^{
             completionBlock(NO, msg);
         });

@@ -1,4 +1,5 @@
 #import "SPOverlayPanel.h"
+#import "SPLocalization.h"
 #import "koe_core.h"
 #import <QuartzCore/QuartzCore.h>
 
@@ -1301,31 +1302,31 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     if ([state hasPrefix:@"recording"]) {
         self.sessionMaxWidth = 0;
         self.sessionMaxHeight = 0;
-        text   = @"Listening…";
+        text   = KoeLocalizedString(@"statusBar.status.listening");
         accent = [NSColor colorWithRed:1.0 green:0.32 blue:0.32 alpha:1.0];
         mode   = SPOverlayModeWaveform;
     } else if ([state hasPrefix:@"connecting_asr"]) {
-        text   = @"Connecting…";
+        text   = KoeLocalizedString(@"statusBar.status.connecting");
         accent = [NSColor colorWithRed:1.0 green:0.78 blue:0.28 alpha:1.0];
         mode   = SPOverlayModeProcessing;
     } else if ([state hasPrefix:@"finalizing_asr"]) {
-        text   = @"Recognizing…";
+        text   = KoeLocalizedString(@"statusBar.status.recognizing");
         accent = [NSColor colorWithRed:0.35 green:0.78 blue:1.0 alpha:1.0];
         mode   = SPOverlayModeProcessing;
     } else if ([state isEqualToString:@"correcting"]) {
-        text   = @"Thinking…";
+        text   = KoeLocalizedString(@"statusBar.status.thinking");
         accent = [NSColor colorWithRed:0.55 green:0.6 blue:1.0 alpha:1.0];
         mode   = SPOverlayModeProcessing;
     } else if ([state hasPrefix:@"preparing_paste"] || [state isEqualToString:@"pasting"]) {
-        text   = @"Pasting…";
+        text   = KoeLocalizedString(@"statusBar.status.pasting");
         accent = [NSColor colorWithRed:0.3 green:0.85 blue:0.45 alpha:1.0];
         mode   = SPOverlayModeSuccess;
     } else if ([state isEqualToString:@"error"] || [state isEqualToString:@"failed"]) {
-        text   = @"Error";
+        text   = KoeLocalizedString(@"statusBar.status.error");
         accent = [NSColor colorWithRed:1.0 green:0.32 blue:0.32 alpha:1.0];
         mode   = SPOverlayModeError;
     } else {
-        text   = @"Working…";
+        text   = KoeLocalizedString(@"statusBar.status.working");
         accent = [NSColor colorWithRed:0.35 green:0.78 blue:1.0 alpha:1.0];
         mode   = SPOverlayModeProcessing;
     }

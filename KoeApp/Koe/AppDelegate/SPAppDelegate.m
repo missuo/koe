@@ -538,7 +538,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
     // Show result with "Copied" indicator
     [self.statusBarManager updateState:@"idle"];
-    [self.overlayPanel updateDisplayText:[text stringByAppendingString:@"  ✓ Copied"]];
+    [self.overlayPanel updateDisplayText:[NSString stringWithFormat:KoeLocalizedString(@"overlay.runtime.copiedFormat"), text ?: @""]];
     [self.overlayPanel updateState:@"pasting"];
     [self.overlayPanel lingerAndDismiss];
 }

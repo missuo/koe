@@ -56,21 +56,21 @@ static NSString *displayNameForKeycode(int keycode) {
         case 79:  return @"F18";
         case 80:  return @"F19";
         case 90:  return @"F20";
-        case 49:  return @"Space";
-        case 53:  return @"Escape";
-        case 48:  return @"Tab";
-        case 57:  return @"CapsLock";
-        case 36:  return @"Return";
-        case 51:  return @"Delete";
-        case 117: return @"Forward Delete";
-        case 115: return @"Home";
-        case 119: return @"End";
-        case 116: return @"Page Up";
-        case 121: return @"Page Down";
-        case 123: return @"Left Arrow";
-        case 124: return @"Right Arrow";
-        case 125: return @"Down Arrow";
-        case 126: return @"Up Arrow";
+        case 49:  return KoeLocalizedString(@"settings.setupWizard.hotkey.key.space");
+        case 53:  return KoeLocalizedString(@"settings.setupWizard.hotkey.key.escape");
+        case 48:  return KoeLocalizedString(@"settings.setupWizard.hotkey.key.tab");
+        case 57:  return KoeLocalizedString(@"settings.setupWizard.hotkey.key.capsLock");
+        case 36:  return KoeLocalizedString(@"settings.setupWizard.hotkey.key.return");
+        case 51:  return KoeLocalizedString(@"settings.setupWizard.hotkey.key.delete");
+        case 117: return KoeLocalizedString(@"settings.setupWizard.hotkey.key.forwardDelete");
+        case 115: return KoeLocalizedString(@"settings.setupWizard.hotkey.key.home");
+        case 119: return KoeLocalizedString(@"settings.setupWizard.hotkey.key.end");
+        case 116: return KoeLocalizedString(@"settings.setupWizard.hotkey.key.pageUp");
+        case 121: return KoeLocalizedString(@"settings.setupWizard.hotkey.key.pageDown");
+        case 123: return KoeLocalizedString(@"settings.setupWizard.hotkey.key.leftArrow");
+        case 124: return KoeLocalizedString(@"settings.setupWizard.hotkey.key.rightArrow");
+        case 125: return KoeLocalizedString(@"settings.setupWizard.hotkey.key.downArrow");
+        case 126: return KoeLocalizedString(@"settings.setupWizard.hotkey.key.upArrow");
         default: break;
     }
 
@@ -100,14 +100,14 @@ static NSString *displayNameForKeycode(int keycode) {
                     if (result.length > 0) {
                         return result.uppercaseString;
                     }
-                    return [NSString stringWithFormat:@"Key %d", keycode];
+                    return [NSString stringWithFormat:KoeLocalizedString(@"settings.setupWizard.hotkey.key.format"), (long)keycode];
                 }
             }
         }
         CFRelease(inputSource);
     }
 
-    return [NSString stringWithFormat:@"Key %d", keycode];
+    return [NSString stringWithFormat:KoeLocalizedString(@"settings.setupWizard.hotkey.key.format"), (long)keycode];
 }
 
 static BOOL isNumericHotkeyValue(NSString *value) {
@@ -118,18 +118,13 @@ static BOOL isNumericHotkeyValue(NSString *value) {
 }
 
 static NSDictionary<NSString *, NSString *> *comboModifierDisplayNames(void) {
-    static NSDictionary<NSString *, NSString *> *displayNames;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        displayNames = @{
-            @"command": @"Command",
-            @"option": @"Option",
-            @"control": @"Control",
-            @"shift": @"Shift",
-            @"fn": @"Fn",
-        };
-    });
-    return displayNames;
+    return @{
+        @"command": KoeLocalizedString(@"settings.setupWizard.hotkey.modifier.command"),
+        @"option": KoeLocalizedString(@"settings.setupWizard.hotkey.modifier.option"),
+        @"control": KoeLocalizedString(@"settings.setupWizard.hotkey.modifier.control"),
+        @"shift": KoeLocalizedString(@"settings.setupWizard.hotkey.modifier.shift"),
+        @"fn": KoeLocalizedString(@"settings.setupWizard.hotkey.modifier.fn"),
+    };
 }
 
 static NSArray<NSString *> *comboModifierOrder(void) {
@@ -184,25 +179,25 @@ static NSString *normalizedHotkeyComboValue(NSString *value) {
 
 static NSString *displayNameForHotkeyValue(NSString *value) {
     if ([value isEqualToString:@"left_option"]) {
-        return @"Left Option (⌥)";
+        return KoeLocalizedString(@"settings.setupWizard.hotkey.preset.leftOption");
     }
     if ([value isEqualToString:@"right_option"]) {
-        return @"Right Option (⌥)";
+        return KoeLocalizedString(@"settings.setupWizard.hotkey.preset.rightOption");
     }
     if ([value isEqualToString:@"left_command"]) {
-        return @"Left Command (⌘)";
+        return KoeLocalizedString(@"settings.setupWizard.hotkey.preset.leftCommand");
     }
     if ([value isEqualToString:@"right_command"]) {
-        return @"Right Command (⌘)";
+        return KoeLocalizedString(@"settings.setupWizard.hotkey.preset.rightCommand");
     }
     if ([value isEqualToString:@"left_control"]) {
-        return @"Left Control (⌃)";
+        return KoeLocalizedString(@"settings.setupWizard.hotkey.preset.leftControl");
     }
     if ([value isEqualToString:@"right_control"]) {
-        return @"Right Control (⌃)";
+        return KoeLocalizedString(@"settings.setupWizard.hotkey.preset.rightControl");
     }
     if ([value isEqualToString:@"fn"]) {
-        return @"Fn (Globe)";
+        return KoeLocalizedString(@"settings.setupWizard.hotkey.preset.fnGlobe");
     }
     NSString *normalizedCombo = normalizedHotkeyComboValue(value);
     if (normalizedCombo.length > 0) {
@@ -264,9 +259,9 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     self.statusMenuItem.enabled = NO;
     [menu addItem:self.statusMenuItem];
 
-    self.hotkeyDisplayItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:KoeLocalizedString(@"statusBar.shortcut.format"), @"Fn"]
-                                                        action:nil
-                                                 keyEquivalent:@""];
+    self.hotkeyDisplayItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:KoeLocalizedString(@"statusBar.shortcut.format"), KoeLocalizedString(@"settings.setupWizard.hotkey.preset.fnGlobe")]
+                                                         action:nil
+                                                  keyEquivalent:@""];
     self.hotkeyDisplayItem.enabled = NO;
     [menu addItem:self.hotkeyDisplayItem];
 
@@ -277,19 +272,19 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     statsHeader.view = [self headerViewWithTitle:KoeLocalizedString(@"statusBar.section.statistics")];
     [menu addItem:statsHeader];
 
-    self.statsCountItem = [[NSMenuItem alloc] initWithTitle:@"  ..."
+    self.statsCountItem = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"statusBar.stats.totalNone")
                                                     action:nil
                                              keyEquivalent:@""];
     self.statsCountItem.enabled = NO;
     [menu addItem:self.statsCountItem];
 
-    self.statsTimeItem = [[NSMenuItem alloc] initWithTitle:@"  ..."
+    self.statsTimeItem = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"statusBar.stats.timeNone")
                                                    action:nil
                                             keyEquivalent:@""];
     self.statsTimeItem.enabled = NO;
     [menu addItem:self.statsTimeItem];
 
-    self.statsSpeedItem = [[NSMenuItem alloc] initWithTitle:@"  ..."
+    self.statsSpeedItem = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"statusBar.stats.speedNone")
                                                     action:nil
                                              keyEquivalent:@""];
     self.statsSpeedItem.enabled = NO;
