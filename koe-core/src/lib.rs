@@ -767,6 +767,7 @@ pub unsafe extern "C" fn sp_core_rewrite_with_template(
             _ => Box::new(OpenAiCompatibleProvider::new(
                 llm_http_client,
                 active_profile.base_url.clone(),
+                active_profile.chat_completions_path.clone(),
                 active_profile.api_key.clone(),
                 active_profile.model.clone(),
                 llm_config.temperature,
@@ -1100,6 +1101,7 @@ async fn run_session(
             _ => Box::new(OpenAiCompatibleProvider::new(
                 llm_http_client,
                 active_profile.base_url,
+                active_profile.chat_completions_path,
                 active_profile.api_key,
                 active_profile.model,
                 llm_config.temperature,
@@ -1320,6 +1322,7 @@ fn start_llm_warmup_if_needed(
         let llm = OpenAiCompatibleProvider::new(
             llm_http_client,
             warmup_profile.base_url,
+            warmup_profile.chat_completions_path,
             warmup_profile.api_key,
             warmup_profile.model,
             warmup_cfg.temperature,
@@ -1531,6 +1534,7 @@ pub unsafe extern "C" fn sp_llm_test(
         base_url,
         api_key,
         model,
+        chat_completions_path: "/chat/completions".into(),
         max_token_parameter,
         no_reasoning_control: config::LlmNoReasoningControl::ReasoningEffort,
         mlx: Default::default(),
@@ -1757,6 +1761,7 @@ pub unsafe extern "C" fn sp_llm_test_profile_json(profile_json: *const c_char) -
             let llm = OpenAiCompatibleProvider::new(
                 client,
                 profile.base_url,
+                profile.chat_completions_path,
                 profile.api_key,
                 profile.model,
                 cfg.llm.temperature,

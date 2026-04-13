@@ -272,6 +272,8 @@ pub struct LlmProfileConfig {
     pub api_key: String,
     #[serde(default)]
     pub model: String,
+    #[serde(default = "default_llm_chat_completions_path")]
+    pub chat_completions_path: String,
     #[serde(default = "default_llm_max_token_parameter")]
     pub max_token_parameter: LlmMaxTokenParameter,
     #[serde(default)]
@@ -289,6 +291,8 @@ pub struct LlmProfileRuntimeConfig {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
+    #[serde(default = "default_llm_chat_completions_path")]
+    pub chat_completions_path: String,
     pub max_token_parameter: LlmMaxTokenParameter,
     pub no_reasoning_control: LlmNoReasoningControl,
     pub mlx: MlxLlmConfig,
@@ -323,6 +327,7 @@ impl LlmProfileConfig {
             base_url: self.base_url.clone(),
             api_key: self.api_key.clone(),
             model: self.model.clone(),
+            chat_completions_path: self.chat_completions_path.clone(),
             max_token_parameter: self.max_token_parameter,
             no_reasoning_control: self.no_reasoning_control,
             mlx: self.mlx.clone(),
@@ -362,6 +367,7 @@ impl Default for LlmProfileConfig {
             base_url: String::new(),
             api_key: String::new(),
             model: String::new(),
+            chat_completions_path: default_llm_chat_completions_path(),
             max_token_parameter: default_llm_max_token_parameter(),
             no_reasoning_control: LlmNoReasoningControl::default(),
             mlx: MlxLlmConfig::default(),
@@ -773,6 +779,9 @@ fn default_llm_max_token_parameter() -> LlmMaxTokenParameter {
 fn default_llm_provider() -> String {
     "openai".into()
 }
+fn default_llm_chat_completions_path() -> String {
+    "/chat/completions".into()
+}
 fn default_llm_active_profile() -> String {
     "openai".into()
 }
@@ -786,6 +795,7 @@ fn default_llm_profiles() -> BTreeMap<String, LlmProfileConfig> {
             base_url: "http://127.0.0.1:11434/v1".into(),
             api_key: String::new(),
             model: "apple-foundationmodel".into(),
+            chat_completions_path: default_llm_chat_completions_path(),
             max_token_parameter: LlmMaxTokenParameter::MaxTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
             mlx: MlxLlmConfig::default(),
@@ -799,6 +809,7 @@ fn default_llm_profiles() -> BTreeMap<String, LlmProfileConfig> {
             base_url: String::new(),
             api_key: String::new(),
             model: String::new(),
+            chat_completions_path: default_llm_chat_completions_path(),
             max_token_parameter: LlmMaxTokenParameter::MaxTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
             mlx: MlxLlmConfig::default(),
@@ -812,6 +823,7 @@ fn default_llm_profiles() -> BTreeMap<String, LlmProfileConfig> {
             base_url: "https://api.openai.com/v1".into(),
             api_key: String::new(),
             model: "gpt-5.4-nano".into(),
+            chat_completions_path: default_llm_chat_completions_path(),
             max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
             no_reasoning_control: LlmNoReasoningControl::ReasoningEffort,
             mlx: MlxLlmConfig::default(),
@@ -1573,6 +1585,7 @@ llm:
       base_url: "https://api.openai.com/v1"
       api_key: ""          # or use ${LLM_API_KEY}
       model: "gpt-5.4-nano"
+      chat_completions_path: "/chat/completions"  # relative path appended to base_url
       max_token_parameter: "max_completion_tokens"
       no_reasoning_control: "reasoning_effort"
     apfel:
@@ -1581,6 +1594,7 @@ llm:
       base_url: "http://127.0.0.1:11434/v1"
       api_key: ""
       model: "apple-foundationmodel"
+      chat_completions_path: "/chat/completions"  # customize for non-standard OpenAI-compatible endpoints
       max_token_parameter: "max_tokens"
       no_reasoning_control: "none"
     mlx:
@@ -1815,6 +1829,7 @@ mod tests {
         assert_eq!(apfel.base_url, "http://127.0.0.1:11434/v1");
         assert_eq!(apfel.api_key, "");
         assert_eq!(apfel.model, "apple-foundationmodel");
+        assert_eq!(apfel.chat_completions_path, "/chat/completions");
         assert!(matches!(
             apfel.max_token_parameter,
             LlmMaxTokenParameter::MaxTokens
@@ -1839,7 +1854,26 @@ mod tests {
         assert_eq!(active.base_url, "http://127.0.0.1:11434/v1");
         assert_eq!(active.api_key, "");
         assert_eq!(active.model, "apple-foundationmodel");
+        assert_eq!(active.chat_completions_path, "/chat/completions");
         assert!(active.is_ready());
+    }
+
+    #[test]
+    fn llm_profile_runtime_config_missing_chat_path_defaults_to_chat_completions() {
+        let profile: LlmProfileRuntimeConfig = serde_json::from_value(serde_json::json!({
+            "id": "openai",
+            "name": "OpenAI",
+            "provider": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "",
+            "model": "gpt-5.4-nano",
+            "max_token_parameter": "max_completion_tokens",
+            "no_reasoning_control": "reasoning_effort",
+            "mlx": {"model": "mlx/Qwen3-0.6B-4bit"}
+        }))
+        .unwrap();
+
+        assert_eq!(profile.chat_completions_path, "/chat/completions");
     }
 
     #[test]

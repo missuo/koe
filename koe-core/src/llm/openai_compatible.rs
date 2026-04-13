@@ -12,6 +12,7 @@ pub const LLM_HTTP_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 pub struct OpenAiCompatibleProvider {
     client: Client,
     base_url: String,
+    chat_completions_path: String,
     api_key: String,
     model: String,
     temperature: f64,
@@ -26,6 +27,7 @@ impl OpenAiCompatibleProvider {
     pub fn new(
         client: Client,
         base_url: String,
+        chat_completions_path: String,
         api_key: String,
         model: String,
         temperature: f64,
@@ -37,6 +39,7 @@ impl OpenAiCompatibleProvider {
         Self {
             client,
             base_url,
+            chat_completions_path,
             api_key,
             model,
             temperature,
@@ -80,6 +83,18 @@ impl OpenAiCompatibleProvider {
     }
 }
 
+fn build_chat_completions_url(base_url: &str, chat_completions_path: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    let normalized_path = chat_completions_path.trim();
+    let effective_path = if normalized_path.is_empty() {
+        "/chat/completions"
+    } else {
+        normalized_path
+    };
+    let path = effective_path.trim_start_matches('/');
+    format!("{base}/{path}")
+}
+
 pub fn build_http_client(timeout_ms: u64) -> std::result::Result<Client, reqwest::Error> {
     Client::builder()
         .timeout(Duration::from_millis(timeout_ms))
@@ -106,6 +121,7 @@ pub async fn test_correction(
     let llm = OpenAiCompatibleProvider::new(
         client,
         profile.base_url.clone(),
+        profile.chat_completions_path.clone(),
         profile.api_key.clone(),
         profile.model.clone(),
         temperature,
@@ -174,7 +190,7 @@ pub fn build_chat_completion_body(
 #[async_trait::async_trait]
 impl LlmProvider for OpenAiCompatibleProvider {
     async fn correct(&self, request: &CorrectionRequest) -> Result<String> {
-        let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
+        let url = build_chat_completions_url(&self.base_url, &self.chat_completions_path);
 
         let profile = LlmProfileRuntimeConfig {
             id: String::new(),
@@ -183,6 +199,7 @@ impl LlmProvider for OpenAiCompatibleProvider {
             base_url: self.base_url.clone(),
             api_key: self.api_key.clone(),
             model: self.model.clone(),
+            chat_completions_path: self.chat_completions_path.clone(),
             max_token_parameter: self.max_token_parameter,
             no_reasoning_control: self.no_reasoning_control,
             mlx: Default::default(),
@@ -270,6 +287,7 @@ mod tests {
             base_url: "http://127.0.0.1:11434/v1".into(),
             api_key: "".into(),
             model: "apple-foundationmodel".into(),
+            chat_completions_path: "/chat/completions".into(),
             max_token_parameter: LlmMaxTokenParameter::MaxTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
             mlx: Default::default(),
@@ -293,6 +311,7 @@ mod tests {
             base_url: "https://api.openai.com/v1".into(),
             api_key: "sk-test".into(),
             model: "gpt-5.4-nano".into(),
+            chat_completions_path: "/chat/completions".into(),
             max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
             no_reasoning_control: LlmNoReasoningControl::ReasoningEffort,
             mlx: Default::default(),
@@ -304,5 +323,17 @@ mod tests {
         assert_eq!(body["max_completion_tokens"], 1024);
         assert_eq!(body["reasoning_effort"], "none");
         assert!(body.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn chat_completion_url_avoids_double_slashes() {
+        let url = build_chat_completions_url("https://api.openai.com/v1/", "/chat/completions");
+        assert_eq!(url, "https://api.openai.com/v1/chat/completions");
+    }
+
+    #[test]
+    fn chat_completion_url_accepts_path_without_leading_slash() {
+        let url = build_chat_completions_url("https://api.openai.com/v1", "chat/completions");
+        assert_eq!(url, "https://api.openai.com/v1/chat/completions");
     }
 }
