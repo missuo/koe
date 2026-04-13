@@ -95,6 +95,62 @@ fn build_chat_completions_url(base_url: &str, chat_completions_path: &str) -> St
     format!("{base}/{path}")
 }
 
+fn build_models_url(base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    format!("{base}/models")
+}
+
+fn parse_model_ids(response: &Value) -> Result<Vec<String>> {
+    let data = response
+        .get("data")
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| KoeError::LlmFailed("missing data array in /models response".into()))?;
+
+    let mut ids = Vec::new();
+    for item in data {
+        let Some(id) = item.get("id").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        let trimmed = id.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !ids.iter().any(|existing| existing == trimmed) {
+            ids.push(trimmed.to_string());
+        }
+    }
+    Ok(ids)
+}
+
+pub async fn list_models(client: Client, base_url: &str, api_key: &str) -> Result<Vec<String>> {
+    let url = build_models_url(base_url);
+    log::debug!("LLM models request to {url}");
+
+    let mut builder = client.get(&url);
+    if !api_key.is_empty() {
+        builder = builder.header("Authorization", format!("Bearer {}", api_key));
+    }
+    let response = builder.send().await.map_err(|e| {
+        if e.is_timeout() {
+            KoeError::LlmTimeout
+        } else {
+            KoeError::LlmFailed(e.to_string())
+        }
+    })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(KoeError::LlmFailed(format!("HTTP {status}: {text}")));
+    }
+
+    let json: Value = response
+        .json()
+        .await
+        .map_err(|e| KoeError::LlmFailed(format!("parse /models response: {e}")))?;
+    parse_model_ids(&json)
+}
+
 pub fn build_http_client(timeout_ms: u64) -> std::result::Result<Client, reqwest::Error> {
     Client::builder()
         .timeout(Duration::from_millis(timeout_ms))
@@ -335,5 +391,37 @@ mod tests {
     fn chat_completion_url_accepts_path_without_leading_slash() {
         let url = build_chat_completions_url("https://api.openai.com/v1", "chat/completions");
         assert_eq!(url, "https://api.openai.com/v1/chat/completions");
+    }
+
+    #[test]
+    fn parse_model_ids_accepts_standard_openai_response() {
+        let json = serde_json::json!({
+            "data": [
+                {"id": "gpt-5.4-mini"},
+                {"id": "gpt-5.4-nano"}
+            ]
+        });
+        let ids = parse_model_ids(&json).unwrap();
+        assert_eq!(ids, vec!["gpt-5.4-mini", "gpt-5.4-nano"]);
+    }
+
+    #[test]
+    fn parse_model_ids_allows_empty_data() {
+        let json = serde_json::json!({
+            "data": []
+        });
+        let ids = parse_model_ids(&json).unwrap();
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn parse_model_ids_rejects_missing_data() {
+        let json = serde_json::json!({
+            "object": "list"
+        });
+        let err = parse_model_ids(&json).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("missing data array in /models response"));
     }
 }

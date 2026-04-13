@@ -54,6 +54,10 @@ typedef NS_ENUM(NSInteger, SPSessionModeObjC) {
 /// Return supported LLM provider names (e.g. @[@"openai", @"mlx"]).
 - (NSArray<NSString *> *)supportedLlmProviders;
 
+/// Fetch remote model IDs from an OpenAI-compatible `{base_url}/models` endpoint.
+/// Returns dictionary: { success: BOOL, models: NSArray<NSString *>, message: NSString }
+- (NSDictionary *)llmRemoteModelsForBaseURL:(NSString *)baseURL apiKey:(NSString *)apiKey;
+
 /// Scan all models and return array of dictionaries.
 /// Each dict: path, provider, description, repo, total_size, status (0/1/2)
 - (NSArray<NSDictionary *> *)scanModels;
