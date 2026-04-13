@@ -725,7 +725,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions, PR guidelines, an
 [contributors]: https://github.com/missuo/koe/graphs/contributors
 
 - Vincent Yang — creator and maintainer
-- luolei — contributor for the 1.0.14 release cycle, including prompt templates, shortcut workflow, and settings/overlay interaction polish
+- Zhang Erning ([@erning](https://github.com/erning)) — local ASR stack (MLX + sherpa-onnx), Apple Speech provider, local MLX LLM, Koe-lite build variant, and a large body of core/runtime fixes
+- luolei ([@foru17](https://github.com/foru17)) — 1.0.14 release cycle: prompt templates, shortcut workflow, overlay diff animation, and settings/overlay interaction polish
+- Davy ([@thedavidweng](https://github.com/thedavidweng)) — multi-profile LLM system, configurable LLM invert modifier, NSAlert-based permission prompts, and audio/logging fixes
+- hyspace ([@hyspace](https://github.com/hyspace)) — LLM HTTP client reuse and HTTP/2, connection warm-up, and GPT-5 reasoning effort handling
+- Macyou ([@nmvr2600](https://github.com/nmvr2600)) — Qwen ASR provider
+- Simon Mau ([@simonxmau](https://github.com/simonxmau)) — auto-wrapping interim transcription display and jitter fixes
 
 ## License
 
