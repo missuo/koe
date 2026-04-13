@@ -89,6 +89,163 @@
 "settings.language.restartMessage" = "The interface language has been changed. Some elements may require restarting Koe to update.";
 "settings.language.restartButton" = "OK";
 
+/* ─── Overlay Settings ─── */
+"settings.overlay.preview.sampleText" = "I just tried this voice input feature and it feels really smooth. It automatically tidied up my words after I finished speaking and even added punctuation for me. Way faster than typing, haha.";
+
+/* ─── Setup Wizard ─── */
+"settings.setupWizard.window.title" = "Koe Settings";
+"settings.setupWizard.toolbar.asr" = "ASR";
+"settings.setupWizard.toolbar.llm" = "LLM";
+"settings.setupWizard.toolbar.overlay" = "Overlay";
+"settings.setupWizard.toolbar.controls" = "Controls";
+"settings.setupWizard.toolbar.dictionary" = "Dictionary";
+"settings.setupWizard.toolbar.prompt" = "Prompt";
+"settings.setupWizard.toolbar.templates" = "Templates";
+"settings.setupWizard.toolbar.about" = "About";
+
+"settings.setupWizard.common.section.connection" = "Connection";
+"settings.setupWizard.common.label.provider" = "Provider";
+"settings.setupWizard.common.label.model" = "Model";
+"settings.setupWizard.common.label.apiKey" = "API Key";
+"settings.setupWizard.common.button.save" = "Save";
+"settings.setupWizard.common.button.cancel" = "Cancel";
+"settings.setupWizard.common.button.add" = "Add";
+"settings.setupWizard.common.button.delete" = "Delete";
+"settings.setupWizard.common.button.test" = "Test";
+"settings.setupWizard.common.button.choose" = "Choose";
+"settings.setupWizard.common.button.hide" = "Hide";
+"settings.setupWizard.common.button.refresh" = "Refresh";
+"settings.setupWizard.common.button.reset" = "Reset";
+"settings.setupWizard.common.button.resetToDefault" = "Reset to Default";
+"settings.setupWizard.common.a11y.download" = "Download";
+"settings.setupWizard.common.a11y.delete" = "Delete";
+"settings.setupWizard.common.a11y.show" = "Show";
+"settings.setupWizard.common.a11y.hide" = "Hide";
+"settings.setupWizard.common.a11y.stop" = "Stop";
+
+"settings.setupWizard.asr.description" = "Choose the ASR provider used for transcription.";
+"settings.setupWizard.asr.provider.doubaoime" = "DoubaoIME (Built-in, Free)";
+"settings.setupWizard.asr.provider.doubao" = "Doubao (ByteDance)";
+"settings.setupWizard.asr.provider.qwen" = "Qwen (Alibaba Cloud)";
+"settings.setupWizard.asr.provider.appleSpeech" = "Apple Speech (On-Device)";
+"settings.setupWizard.asr.provider.mlx" = "MLX (Apple Silicon)";
+"settings.setupWizard.asr.provider.sherpaOnnx" = "Sherpa-ONNX";
+"settings.setupWizard.asr.placeholder.volcengineAppId" = "Volcengine App ID";
+"settings.setupWizard.asr.label.appKey" = "App Key";
+"settings.setupWizard.asr.label.language" = "Language";
+"settings.setupWizard.asr.label.accessKey" = "Access Key";
+"settings.setupWizard.asr.placeholder.volcengineAccessToken" = "Volcengine Access Token";
+"settings.setupWizard.asr.placeholder.qwenApiKey" = "DashScope API Key (sk-xxx)";
+
+"settings.setupWizard.llm.description" = "Configure LLM for post-correction. When disabled, raw ASR output is used directly.";
+"settings.setupWizard.llm.correctionToggle" = "LLM Correction";
+"settings.setupWizard.llm.label.profile" = "Profile";
+"settings.setupWizard.llm.label.profileName" = "Profile Name";
+"settings.setupWizard.llm.label.timeoutMs" = "Timeout (ms)";
+"settings.setupWizard.llm.label.baseUrl" = "Base URL";
+"settings.setupWizard.llm.label.modelList" = "Model List";
+"settings.setupWizard.llm.label.chatPath" = "Chat Path";
+"settings.setupWizard.llm.label.tokenParameter" = "Token Parameter";
+"settings.setupWizard.llm.placeholder.profileName" = "OpenAI Compatible";
+"settings.setupWizard.llm.placeholder.baseUrl" = "https://api.openai.com/v1";
+"settings.setupWizard.llm.placeholder.apiKey" = "sk-...";
+"settings.setupWizard.llm.placeholder.model" = "gpt-5.4-nano";
+"settings.setupWizard.llm.provider.openaiCompatible" = "OpenAI Compatible";
+"settings.setupWizard.llm.provider.mlx" = "MLX (Apple Silicon)";
+"settings.setupWizard.llm.modelList.noModelsLoaded" = "No models loaded";
+"settings.setupWizard.llm.tokenHint" = "GPT-4o and older models use max_tokens. GPT-5 and reasoning models (o1/o3) use max_completion_tokens.";
+"settings.setupWizard.llm.button.testConnection" = "Test Connection";
+
+"settings.setupWizard.overlay.description" = "Adjust the bottom live transcript overlay. Choose a system font, tune text size, set the bottom distance, and decide whether long live text stays capped to a few lines or expands fully. Every change is previewed directly in the real desktop overlay position.";
+"settings.setupWizard.overlay.card.title" = "Overlay";
+"settings.setupWizard.overlay.row.font" = "Font";
+"settings.setupWizard.overlay.row.textSize" = "Text Size";
+"settings.setupWizard.overlay.row.distanceFromBottom" = "Distance from Bottom";
+"settings.setupWizard.overlay.row.limitVisibleLines" = "Limit Visible Lines";
+"settings.setupWizard.overlay.row.maxVisibleLines" = "Max Visible Lines";
+"settings.setupWizard.overlay.row.defaults" = "Defaults";
+"settings.setupWizard.overlay.section.styleControls" = "Style Controls";
+"settings.setupWizard.overlay.font.systemDefault" = "System Default";
+"settings.setupWizard.overlay.maxVisibleLines.optionFormat" = "%ld lines";
+"settings.setupWizard.overlay.value.pointsFormat" = "%ld pt";
+
+"settings.setupWizard.hotkey.card.trigger" = "Trigger";
+"settings.setupWizard.hotkey.card.feedbackSounds" = "Feedback Sounds";
+"settings.setupWizard.hotkey.row.triggerShortcut" = "Trigger Shortcut";
+"settings.setupWizard.hotkey.row.triggerMode" = "Trigger Mode";
+"settings.setupWizard.hotkey.row.llmModifier" = "LLM Modifier";
+"settings.setupWizard.hotkey.row.recordingStarts" = "Recording starts";
+"settings.setupWizard.hotkey.row.recordingStops" = "Recording stops";
+"settings.setupWizard.hotkey.row.errorOccurs" = "Error occurs";
+"settings.setupWizard.hotkey.button.record" = "Record";
+"settings.setupWizard.hotkey.button.press" = "Press...";
+"settings.setupWizard.hotkey.mode.hold" = "Hold (Press & Hold)";
+"settings.setupWizard.hotkey.mode.toggle" = "Toggle (Tap to Start/Stop)";
+"settings.setupWizard.hotkey.modifier.command" = "Command";
+"settings.setupWizard.hotkey.modifier.option" = "Option";
+"settings.setupWizard.hotkey.modifier.control" = "Control";
+"settings.setupWizard.hotkey.modifier.shift" = "Shift";
+"settings.setupWizard.hotkey.modifier.fn" = "Fn";
+"settings.setupWizard.hotkey.modifier.none" = "None";
+"settings.setupWizard.hotkey.preset.fnGlobe" = "Fn (Globe)";
+"settings.setupWizard.hotkey.preset.leftOption" = "Left Option (⌥)";
+"settings.setupWizard.hotkey.preset.rightOption" = "Right Option (⌥)";
+"settings.setupWizard.hotkey.preset.leftCommand" = "Left Command (⌘)";
+"settings.setupWizard.hotkey.preset.rightCommand" = "Right Command (⌘)";
+"settings.setupWizard.hotkey.preset.leftControl" = "Left Control (⌃)";
+"settings.setupWizard.hotkey.preset.rightControl" = "Right Control (⌃)";
+"settings.setupWizard.hotkey.key.space" = "Space";
+"settings.setupWizard.hotkey.key.escape" = "Escape";
+"settings.setupWizard.hotkey.key.tab" = "Tab";
+"settings.setupWizard.hotkey.key.capsLock" = "Caps Lock";
+"settings.setupWizard.hotkey.key.return" = "Return";
+"settings.setupWizard.hotkey.key.delete" = "Delete";
+"settings.setupWizard.hotkey.key.forwardDelete" = "Forward Delete";
+"settings.setupWizard.hotkey.key.home" = "Home";
+"settings.setupWizard.hotkey.key.end" = "End";
+"settings.setupWizard.hotkey.key.pageUp" = "Page Up";
+"settings.setupWizard.hotkey.key.pageDown" = "Page Down";
+"settings.setupWizard.hotkey.key.leftArrow" = "Left Arrow";
+"settings.setupWizard.hotkey.key.rightArrow" = "Right Arrow";
+"settings.setupWizard.hotkey.key.downArrow" = "Down Arrow";
+"settings.setupWizard.hotkey.key.upArrow" = "Up Arrow";
+"settings.setupWizard.hotkey.key.format" = "Key %ld";
+
+"settings.setupWizard.dictionary.description" = "User dictionary — one term per line. These terms are prioritized during LLM correction. Lines starting with # are comments.";
+"settings.setupWizard.dictionary.section.title" = "Dictionary";
+
+"settings.setupWizard.systemPrompt.description" = "System prompt sent to the LLM for text correction. Edit to customize behavior.";
+"settings.setupWizard.systemPrompt.section.title" = "System Prompt";
+
+"settings.setupWizard.templates.description" = "Manage overlay templates. Reorder them, control visibility, and edit each prompt here.";
+"settings.setupWizard.templates.toggle.showButtonsInOverlay" = "Show template buttons in overlay";
+"settings.setupWizard.templates.section.library" = "Template Library";
+"settings.setupWizard.templates.section.editor" = "Template Editor";
+"settings.setupWizard.templates.caption.templates" = "Templates";
+"settings.setupWizard.templates.column.template" = "Template";
+"settings.setupWizard.templates.editor.name" = "Name";
+"settings.setupWizard.templates.editor.prompt" = "Prompt";
+"settings.setupWizard.templates.editor.visibleInOverlay" = "Visible in overlay";
+"settings.setupWizard.templates.placeholder.templateName" = "Template name";
+"settings.setupWizard.templates.tooltip.addTemplate" = "Add template";
+"settings.setupWizard.templates.tooltip.removeSelectedTemplate" = "Remove selected template";
+"settings.setupWizard.templates.tooltip.moveSelectedTemplateUp" = "Move selected template up";
+"settings.setupWizard.templates.tooltip.moveSelectedTemplateDown" = "Move selected template down";
+"settings.setupWizard.templates.item.untitled" = "Untitled";
+"settings.setupWizard.templates.item.newTemplate" = "New Template";
+
+"settings.setupWizard.about.appName" = "Koe (声)";
+"settings.setupWizard.about.versionFormat" = "Version %@ (%@)";
+"settings.setupWizard.about.description" = "A background-first macOS voice input tool.\nPress a hotkey, speak, and the corrected text is pasted into whatever app you’re using.";
+"settings.setupWizard.about.language.english" = "English";
+"settings.setupWizard.about.language.zhHans" = "简体中文";
+"settings.setupWizard.about.button.github" = "GitHub Repository";
+"settings.setupWizard.about.button.documentation" = "Documentation";
+"settings.setupWizard.about.license" = "MIT License · Made with Rust + Objective-C";
+
+/* ─── Overlay Runtime ─── */
+"overlay.runtime.copiedFormat" = "%@  ✓ Copied";
+
 /* ─── Edit Menu ─── */
 "menu.edit" = "Edit";
 "menu.edit.undo" = "Undo";

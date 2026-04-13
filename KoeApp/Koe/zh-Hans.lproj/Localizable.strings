@@ -89,6 +89,163 @@
 "settings.language.restartMessage" = "界面语言已更改。部分元素可能需要重启 Koe 才能更新。";
 "settings.language.restartButton" = "好";
 
+/* ─── 叠加层设置 ─── */
+"settings.overlay.preview.sampleText" = "刚试了一下这个语音输入，感觉还挺好用的，说完话自动就把文字整理好了，标点符号也帮你加上了，比打字快多了哈哈。";
+
+/* ─── 设置向导 ─── */
+"settings.setupWizard.window.title" = "Koe 设置";
+"settings.setupWizard.toolbar.asr" = "ASR";
+"settings.setupWizard.toolbar.llm" = "LLM";
+"settings.setupWizard.toolbar.overlay" = "叠加层";
+"settings.setupWizard.toolbar.controls" = "控制";
+"settings.setupWizard.toolbar.dictionary" = "词典";
+"settings.setupWizard.toolbar.prompt" = "提示词";
+"settings.setupWizard.toolbar.templates" = "模板";
+"settings.setupWizard.toolbar.about" = "关于";
+
+"settings.setupWizard.common.section.connection" = "连接";
+"settings.setupWizard.common.label.provider" = "提供方";
+"settings.setupWizard.common.label.model" = "模型";
+"settings.setupWizard.common.label.apiKey" = "API Key";
+"settings.setupWizard.common.button.save" = "保存";
+"settings.setupWizard.common.button.cancel" = "取消";
+"settings.setupWizard.common.button.add" = "添加";
+"settings.setupWizard.common.button.delete" = "删除";
+"settings.setupWizard.common.button.test" = "测试";
+"settings.setupWizard.common.button.choose" = "选择";
+"settings.setupWizard.common.button.hide" = "隐藏";
+"settings.setupWizard.common.button.refresh" = "刷新";
+"settings.setupWizard.common.button.reset" = "重置";
+"settings.setupWizard.common.button.resetToDefault" = "恢复默认";
+"settings.setupWizard.common.a11y.download" = "下载";
+"settings.setupWizard.common.a11y.delete" = "删除";
+"settings.setupWizard.common.a11y.show" = "显示";
+"settings.setupWizard.common.a11y.hide" = "隐藏";
+"settings.setupWizard.common.a11y.stop" = "停止";
+
+"settings.setupWizard.asr.description" = "选择用于转写的 ASR 提供方。";
+"settings.setupWizard.asr.provider.doubaoime" = "DoubaoIME（内置，免费）";
+"settings.setupWizard.asr.provider.doubao" = "豆包（ByteDance）";
+"settings.setupWizard.asr.provider.qwen" = "通义千问（阿里云）";
+"settings.setupWizard.asr.provider.appleSpeech" = "Apple Speech（设备端）";
+"settings.setupWizard.asr.provider.mlx" = "MLX（Apple Silicon）";
+"settings.setupWizard.asr.provider.sherpaOnnx" = "Sherpa-ONNX";
+"settings.setupWizard.asr.placeholder.volcengineAppId" = "火山引擎 App ID";
+"settings.setupWizard.asr.label.appKey" = "App Key";
+"settings.setupWizard.asr.label.language" = "语言";
+"settings.setupWizard.asr.label.accessKey" = "Access Key";
+"settings.setupWizard.asr.placeholder.volcengineAccessToken" = "火山引擎 Access Token";
+"settings.setupWizard.asr.placeholder.qwenApiKey" = "DashScope API Key（sk-xxx）";
+
+"settings.setupWizard.llm.description" = "配置用于后处理纠错的 LLM。关闭后将直接使用原始 ASR 输出。";
+"settings.setupWizard.llm.correctionToggle" = "LLM 纠错";
+"settings.setupWizard.llm.label.profile" = "配置";
+"settings.setupWizard.llm.label.profileName" = "配置名称";
+"settings.setupWizard.llm.label.timeoutMs" = "超时（毫秒）";
+"settings.setupWizard.llm.label.baseUrl" = "Base URL";
+"settings.setupWizard.llm.label.modelList" = "模型列表";
+"settings.setupWizard.llm.label.chatPath" = "Chat 路径";
+"settings.setupWizard.llm.label.tokenParameter" = "Token 参数";
+"settings.setupWizard.llm.placeholder.profileName" = "OpenAI Compatible";
+"settings.setupWizard.llm.placeholder.baseUrl" = "https://api.openai.com/v1";
+"settings.setupWizard.llm.placeholder.apiKey" = "sk-...";
+"settings.setupWizard.llm.placeholder.model" = "gpt-5.4-nano";
+"settings.setupWizard.llm.provider.openaiCompatible" = "OpenAI Compatible";
+"settings.setupWizard.llm.provider.mlx" = "MLX（Apple Silicon）";
+"settings.setupWizard.llm.modelList.noModelsLoaded" = "尚未加载模型";
+"settings.setupWizard.llm.tokenHint" = "GPT-4o 及更早模型使用 max_tokens。GPT-5 和推理模型（o1/o3）使用 max_completion_tokens。";
+"settings.setupWizard.llm.button.testConnection" = "测试连接";
+
+"settings.setupWizard.overlay.description" = "调整底部实时转写叠加层。可选择系统字体、调节文字大小与距底部距离，并控制长文本是限制行数还是完整展开。每次修改都会直接在桌面真实位置预览。";
+"settings.setupWizard.overlay.card.title" = "叠加层";
+"settings.setupWizard.overlay.row.font" = "字体";
+"settings.setupWizard.overlay.row.textSize" = "字号";
+"settings.setupWizard.overlay.row.distanceFromBottom" = "距底部距离";
+"settings.setupWizard.overlay.row.limitVisibleLines" = "限制可见行数";
+"settings.setupWizard.overlay.row.maxVisibleLines" = "最大可见行数";
+"settings.setupWizard.overlay.row.defaults" = "默认值";
+"settings.setupWizard.overlay.section.styleControls" = "样式控制";
+"settings.setupWizard.overlay.font.systemDefault" = "系统默认";
+"settings.setupWizard.overlay.maxVisibleLines.optionFormat" = "%ld 行";
+"settings.setupWizard.overlay.value.pointsFormat" = "%ld pt";
+
+"settings.setupWizard.hotkey.card.trigger" = "触发";
+"settings.setupWizard.hotkey.card.feedbackSounds" = "反馈音效";
+"settings.setupWizard.hotkey.row.triggerShortcut" = "触发快捷键";
+"settings.setupWizard.hotkey.row.triggerMode" = "触发模式";
+"settings.setupWizard.hotkey.row.llmModifier" = "LLM 修饰键";
+"settings.setupWizard.hotkey.row.recordingStarts" = "开始录音";
+"settings.setupWizard.hotkey.row.recordingStops" = "结束录音";
+"settings.setupWizard.hotkey.row.errorOccurs" = "发生错误";
+"settings.setupWizard.hotkey.button.record" = "录制";
+"settings.setupWizard.hotkey.button.press" = "请按键...";
+"settings.setupWizard.hotkey.mode.hold" = "按住（按住说话）";
+"settings.setupWizard.hotkey.mode.toggle" = "切换（点按开始/停止）";
+"settings.setupWizard.hotkey.modifier.command" = "Command";
+"settings.setupWizard.hotkey.modifier.option" = "Option";
+"settings.setupWizard.hotkey.modifier.control" = "Control";
+"settings.setupWizard.hotkey.modifier.shift" = "Shift";
+"settings.setupWizard.hotkey.modifier.fn" = "Fn";
+"settings.setupWizard.hotkey.modifier.none" = "无";
+"settings.setupWizard.hotkey.preset.fnGlobe" = "Fn（地球）";
+"settings.setupWizard.hotkey.preset.leftOption" = "左 Option (⌥)";
+"settings.setupWizard.hotkey.preset.rightOption" = "右 Option (⌥)";
+"settings.setupWizard.hotkey.preset.leftCommand" = "左 Command (⌘)";
+"settings.setupWizard.hotkey.preset.rightCommand" = "右 Command (⌘)";
+"settings.setupWizard.hotkey.preset.leftControl" = "左 Control (⌃)";
+"settings.setupWizard.hotkey.preset.rightControl" = "右 Control (⌃)";
+"settings.setupWizard.hotkey.key.space" = "空格";
+"settings.setupWizard.hotkey.key.escape" = "Escape";
+"settings.setupWizard.hotkey.key.tab" = "Tab";
+"settings.setupWizard.hotkey.key.capsLock" = "Caps Lock";
+"settings.setupWizard.hotkey.key.return" = "回车";
+"settings.setupWizard.hotkey.key.delete" = "删除";
+"settings.setupWizard.hotkey.key.forwardDelete" = "向前删除";
+"settings.setupWizard.hotkey.key.home" = "Home";
+"settings.setupWizard.hotkey.key.end" = "End";
+"settings.setupWizard.hotkey.key.pageUp" = "Page Up";
+"settings.setupWizard.hotkey.key.pageDown" = "Page Down";
+"settings.setupWizard.hotkey.key.leftArrow" = "左方向键";
+"settings.setupWizard.hotkey.key.rightArrow" = "右方向键";
+"settings.setupWizard.hotkey.key.downArrow" = "下方向键";
+"settings.setupWizard.hotkey.key.upArrow" = "上方向键";
+"settings.setupWizard.hotkey.key.format" = "按键 %ld";
+
+"settings.setupWizard.dictionary.description" = "用户词典——每行一个词条。LLM 纠错时会优先考虑这些词条。以 # 开头的行会被视为注释。";
+"settings.setupWizard.dictionary.section.title" = "词典";
+
+"settings.setupWizard.systemPrompt.description" = "发送给 LLM 用于文本纠错的系统提示词。可按需编辑以定制行为。";
+"settings.setupWizard.systemPrompt.section.title" = "系统提示词";
+
+"settings.setupWizard.templates.description" = "管理叠加层模板。可在这里调整顺序、控制可见性并编辑每个提示词。";
+"settings.setupWizard.templates.toggle.showButtonsInOverlay" = "在叠加层显示模板按钮";
+"settings.setupWizard.templates.section.library" = "模板库";
+"settings.setupWizard.templates.section.editor" = "模板编辑器";
+"settings.setupWizard.templates.caption.templates" = "模板";
+"settings.setupWizard.templates.column.template" = "模板";
+"settings.setupWizard.templates.editor.name" = "名称";
+"settings.setupWizard.templates.editor.prompt" = "提示词";
+"settings.setupWizard.templates.editor.visibleInOverlay" = "在叠加层中可见";
+"settings.setupWizard.templates.placeholder.templateName" = "模板名称";
+"settings.setupWizard.templates.tooltip.addTemplate" = "添加模板";
+"settings.setupWizard.templates.tooltip.removeSelectedTemplate" = "删除所选模板";
+"settings.setupWizard.templates.tooltip.moveSelectedTemplateUp" = "上移所选模板";
+"settings.setupWizard.templates.tooltip.moveSelectedTemplateDown" = "下移所选模板";
+"settings.setupWizard.templates.item.untitled" = "未命名";
+"settings.setupWizard.templates.item.newTemplate" = "新模板";
+
+"settings.setupWizard.about.appName" = "Koe（声）";
+"settings.setupWizard.about.versionFormat" = "版本 %@（%@）";
+"settings.setupWizard.about.description" = "一款后台优先的 macOS 语音输入工具。\n按下快捷键说话后，纠错文本会自动粘贴到你正在使用的应用。";
+"settings.setupWizard.about.language.english" = "English";
+"settings.setupWizard.about.language.zhHans" = "简体中文";
+"settings.setupWizard.about.button.github" = "GitHub 仓库";
+"settings.setupWizard.about.button.documentation" = "文档";
+"settings.setupWizard.about.license" = "MIT License · 使用 Rust + Objective-C 构建";
+
+/* ─── Overlay 运行态 ─── */
+"overlay.runtime.copiedFormat" = "%@  ✓ 已复制";
+
 /* ─── 编辑菜单 ─── */
 "menu.edit" = "编辑";
 "menu.edit.undo" = "撤销";
