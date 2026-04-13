@@ -42,14 +42,33 @@ impl TranscriptAggregator {
 
     /// Update with a final result.
     ///
-    /// Providers in this project emit `Final` as the best full transcript seen
-    /// so far, not as a delta chunk. Replace the previous final text instead of
-    /// appending, otherwise repeated final events can duplicate the whole utterance.
+    /// Providers like DoubaoIME have ambiguous `Final` semantics: within a
+    /// single utterance `Final` is the best full transcript so far, but after
+    /// a speech pause the server starts a new segment and may either send only
+    /// the new content or replay earlier content. Neither pure replace nor
+    /// pure append is correct — we merge by prefix / suffix-overlap instead.
     pub fn update_final(&mut self, text: &str) {
         self.has_final = true;
-        if !text.is_empty() {
-            self.final_text = text.to_string();
+        if text.is_empty() {
+            return;
         }
+        if self.final_text.is_empty() {
+            self.final_text = text.to_string();
+            return;
+        }
+        if text.starts_with(&self.final_text) {
+            // New final is a refreshed full transcript of the same utterance.
+            self.final_text = text.to_string();
+            return;
+        }
+        if self.final_text.starts_with(text) {
+            // Stale replay of earlier content — ignore.
+            return;
+        }
+        // New segment: strip the longest overlap between the existing tail and
+        // the incoming head so we don't duplicate the boundary characters.
+        let overlap = longest_overlap(&self.final_text, text);
+        self.final_text.push_str(&text[overlap..]);
     }
 
     /// Get the best available text.
@@ -90,4 +109,17 @@ impl Default for TranscriptAggregator {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Longest k such that `tail.ends_with(&head[..k])`, aligned to char boundaries.
+fn longest_overlap(tail: &str, head: &str) -> usize {
+    let max = tail.len().min(head.len());
+    let mut k = max;
+    while k > 0 {
+        if head.is_char_boundary(k) && tail.is_char_boundary(tail.len() - k) && tail.as_bytes()[tail.len() - k..] == head.as_bytes()[..k] {
+            return k;
+        }
+        k -= 1;
+    }
+    0
 }
