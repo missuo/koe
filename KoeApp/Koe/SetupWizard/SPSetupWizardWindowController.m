@@ -21,6 +21,7 @@ static NSString *const kDictionaryFile = @"dictionary.txt";
 static NSString *const kSystemPromptFile = @"system_prompt.txt";
 static NSString *const kTemplateEditablePromptKey = @"__editable_prompt";
 static NSString *const kTemplateOriginalPromptKey = @"__original_prompt";
+static NSString *const kDefaultLlmChatCompletionsPath = @"/chat/completions";
 static NSString *const kOverlayFontFamilyDefault = @"system";
 static NSString *const kOverlayFontFamilySystemLabel = @"System Default";
 static const NSInteger kOverlayFontSizeDefault = 13;
@@ -477,6 +478,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property (nonatomic, strong) NSSecureTextField *llmApiKeySecureField;
 @property (nonatomic, strong) NSButton *llmApiKeyToggle;
 @property (nonatomic, strong) NSTextField *llmModelField;
+@property (nonatomic, strong) NSTextField *llmChatCompletionsPathField;
 @property (nonatomic, strong) NSButton *llmTestButton;
 @property (nonatomic, strong) NSTextField *llmTestResultLabel;
 
@@ -999,7 +1001,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     y -= rowH;
     CGFloat providerDetailStartY = y;
 
-    // --- OpenAI fields (tag 2001-2006 for show/hide) ---
+    // --- OpenAI fields (tag 2001-2007 for show/hide) ---
 
     // Base URL
     NSTextField *baseUrlLabel = [self formLabel:@"Base URL" frame:NSMakeRect(16, y, labelW, 22)];
@@ -1039,12 +1041,22 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [pane addSubview:self.llmModelField];
     y -= rowH + 4;
 
+    // Chat Completions Path
+    NSTextField *chatPathLabel = [self formLabel:@"Chat Path" frame:NSMakeRect(16, y, labelW, 22)];
+    chatPathLabel.tag = 2004;
+    [pane addSubview:chatPathLabel];
+    self.llmChatCompletionsPathField = [self formTextField:NSMakeRect(fieldX, y, fieldW, 22)
+                                                placeholder:kDefaultLlmChatCompletionsPath];
+    self.llmChatCompletionsPathField.tag = 2004;
+    [pane addSubview:self.llmChatCompletionsPathField];
+    y -= rowH;
+
     // Max Token Parameter
     NSTextField *tokenParamLabel = [self formLabel:@"Token Parameter" frame:NSMakeRect(16, y, labelW, 22)];
-    tokenParamLabel.tag = 2004;
+    tokenParamLabel.tag = 2005;
     [pane addSubview:tokenParamLabel];
     self.maxTokenParamPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 240, 26) pullsDown:NO];
-    self.maxTokenParamPopup.tag = 2004;
+    self.maxTokenParamPopup.tag = 2005;
     [self.maxTokenParamPopup addItemsWithTitles:@[
         @"max_completion_tokens",
         @"max_tokens",
@@ -1057,7 +1069,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Hint text
     NSTextField *tokenHint = [self descriptionLabel:@"GPT-4o and older models use max_tokens. GPT-5 and reasoning models (o1/o3) use max_completion_tokens."];
     tokenHint.frame = NSMakeRect(fieldX, y - 2, fieldW, 32);
-    tokenHint.tag = 2005;
+    tokenHint.tag = 2006;
     [pane addSubview:tokenHint];
     y -= 44;
 
@@ -1065,7 +1077,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     self.llmTestButton = [NSButton buttonWithTitle:@"Test Connection" target:self action:@selector(testLlmConnection:)];
     self.llmTestButton.bezelStyle = NSBezelStyleRounded;
     self.llmTestButton.frame = NSMakeRect(fieldX, y, 130, 28);
-    self.llmTestButton.tag = 2006;
+    self.llmTestButton.tag = 2007;
     [pane addSubview:self.llmTestButton];
     y -= 32;
 
@@ -1074,7 +1086,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     self.llmTestResultLabel.frame = NSMakeRect(fieldX, y - 36, fieldW, 42);
     self.llmTestResultLabel.font = [NSFont systemFontOfSize:12];
     self.llmTestResultLabel.selectable = YES;
-    self.llmTestResultLabel.tag = 2006;
+    self.llmTestResultLabel.tag = 2007;
     [pane addSubview:self.llmTestResultLabel];
 
     // --- MLX fields (tag 2010-2012 for show/hide, initially hidden) ---
@@ -3225,6 +3237,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     NSMutableDictionary *copy = [profile mutableCopy] ?: [NSMutableDictionary dictionary];
     NSDictionary *mlx = copy[@"mlx"];
     copy[@"mlx"] = [mlx isKindOfClass:[NSDictionary class]] ? [mlx mutableCopy] : [@{@"model": @"mlx/Qwen3-0.6B-4bit"} mutableCopy];
+    NSString *chatPath = [copy[@"chat_completions_path"] isKindOfClass:[NSString class]] ? copy[@"chat_completions_path"] : @"";
+    if (chatPath.length == 0) {
+        copy[@"chat_completions_path"] = kDefaultLlmChatCompletionsPath;
+    }
     return copy;
 }
 
@@ -3235,6 +3251,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         @"base_url": @"https://api.openai.com/v1",
         @"api_key": @"",
         @"model": @"gpt-5.4-nano",
+        @"chat_completions_path": kDefaultLlmChatCompletionsPath,
         @"max_token_parameter": @"max_completion_tokens",
         @"no_reasoning_control": @"reasoning_effort",
         @"mlx": @{@"model": @"mlx/Qwen3-0.6B-4bit"},
@@ -3248,6 +3265,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         @"base_url": @"http://127.0.0.1:11434/v1",
         @"api_key": @"",
         @"model": @"apple-foundationmodel",
+        @"chat_completions_path": kDefaultLlmChatCompletionsPath,
         @"max_token_parameter": @"max_tokens",
         @"no_reasoning_control": @"none",
         @"mlx": @{@"model": @"mlx/Qwen3-0.6B-4bit"},
@@ -3316,6 +3334,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     NSString *apiKey = self.llmApiKeyToggle.tag == 1 ? self.llmApiKeyField.stringValue : self.llmApiKeySecureField.stringValue;
     profile[@"api_key"] = apiKey ?: @"";
     profile[@"model"] = self.llmModelField.stringValue ?: @"";
+    NSString *chatPath = [[self.llmChatCompletionsPathField.stringValue ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    profile[@"chat_completions_path"] = (chatPath.length > 0) ? chatPath : kDefaultLlmChatCompletionsPath;
     profile[@"max_token_parameter"] = self.maxTokenParamPopup.selectedItem.representedObject ?: @"max_completion_tokens";
     if (!profile[@"no_reasoning_control"]) {
         profile[@"no_reasoning_control"] = [provider isEqualToString:@"mlx"] ? @"none" : @"reasoning_effort";
@@ -3351,6 +3371,9 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     self.llmApiKeyToggle.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
     self.llmApiKeyToggle.tag = 0;
     self.llmModelField.stringValue = [profile[@"model"] isKindOfClass:[NSString class]] ? profile[@"model"] : @"";
+    NSString *chatPath = [profile[@"chat_completions_path"] isKindOfClass:[NSString class]]
+        ? profile[@"chat_completions_path"] : kDefaultLlmChatCompletionsPath;
+    self.llmChatCompletionsPathField.stringValue = chatPath.length > 0 ? chatPath : kDefaultLlmChatCompletionsPath;
 
     NSString *maxTokenParam = [profile[@"max_token_parameter"] isKindOfClass:[NSString class]]
         ? profile[@"max_token_parameter"] : @"max_completion_tokens";
@@ -3823,9 +3846,9 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     BOOL isOpenAI = [provider isEqualToString:@"openai"];
     BOOL isMlx = [provider isEqualToString:@"mlx"];
 
-    // Toggle OpenAI fields (tag 2001-2006)
+    // Toggle OpenAI fields (tag 2001-2007)
     [self setHidden:!isOpenAI
- forViewsWithTagInRange:NSMakeRange(2001, 6)
+ forViewsWithTagInRange:NSMakeRange(2001, 7)
              inView:self.currentPaneView];
     // Eye toggle doesn't use tag for show/hide (tag is used for 0/1 state)
     self.llmApiKeyToggle.hidden = !isOpenAI;
@@ -3840,6 +3863,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     self.llmApiKeyField.enabled = enabled;
     self.llmApiKeySecureField.enabled = enabled;
     self.llmModelField.enabled = enabled;
+    self.llmChatCompletionsPathField.enabled = enabled;
     self.maxTokenParamPopup.enabled = enabled;
     self.llmTestButton.enabled = enabled;
 
