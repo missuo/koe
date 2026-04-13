@@ -228,6 +228,39 @@ static void bridge_on_rewrite_text_ready(uint64_t token, const char *text) {
     return [result isKindOfClass:[NSArray class]] ? result : @[];
 }
 
+- (NSDictionary *)llmRemoteModelsForBaseURL:(NSString *)baseURL apiKey:(NSString *)apiKey {
+    char *json = sp_llm_list_models_json((baseURL ?: @"").UTF8String, (apiKey ?: @"").UTF8String);
+    if (!json) {
+        return @{
+            @"success": @NO,
+            @"models": @[],
+            @"message": @"No response from core",
+        };
+    }
+
+    NSString *jsonStr = [NSString stringWithUTF8String:json] ?: @"";
+    sp_core_free_string(json);
+
+    NSData *data = [jsonStr dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data) {
+        return @{
+            @"success": @NO,
+            @"models": @[],
+            @"message": @"Invalid model list response encoding",
+        };
+    }
+
+    NSDictionary *result = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if (![result isKindOfClass:[NSDictionary class]]) {
+        return @{
+            @"success": @NO,
+            @"models": @[],
+            @"message": @"Invalid model list response payload",
+        };
+    }
+    return result;
+}
+
 - (NSArray<NSDictionary *> *)scanModels {
     char *json = sp_core_scan_models_json();
     if (!json) return @[];

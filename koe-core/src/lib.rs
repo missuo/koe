@@ -19,7 +19,8 @@ use crate::ffi::{
 #[cfg(feature = "mlx")]
 use crate::llm::mlx::MlxLlmProvider;
 use crate::llm::openai_compatible::{
-    build_http_client, OpenAiCompatibleProvider, LLM_HTTP_POOL_IDLE_TIMEOUT,
+    build_http_client, list_models as llm_list_models, OpenAiCompatibleProvider,
+    LLM_HTTP_POOL_IDLE_TIMEOUT,
 };
 use crate::llm::{CorrectionRequest, LlmProvider};
 use crate::session::{Session, SessionState};
@@ -1605,6 +1606,92 @@ pub unsafe extern "C" fn sp_llm_test(
         Err(e) => serde_json::json!({
             "success": false,
             "elapsed_ms": elapsed_ms,
+            "message": format!("{e}"),
+        }),
+    };
+
+    CString::new(json.to_string())
+        .unwrap_or_default()
+        .into_raw()
+}
+
+/// List remote models from OpenAI-compatible `{base_url}/models`.
+///
+/// Returns a heap-allocated JSON string:
+///   `{"success": true,  "models": ["gpt-5.4-mini"], "message": "..."}`
+///   `{"success": false, "models": [],               "message": "..."}`
+///
+/// # Safety
+/// Pointer parameters must be valid null-terminated C strings (or null).
+/// Caller must free the returned pointer with `sp_core_free_string()`.
+#[no_mangle]
+pub unsafe extern "C" fn sp_llm_list_models_json(
+    base_url: *const c_char,
+    api_key: *const c_char,
+) -> *mut c_char {
+    let base_url = unsafe { cstr_to_str(base_url) }
+        .unwrap_or_default()
+        .to_string();
+    let api_key = unsafe { cstr_to_str(api_key) }
+        .unwrap_or_default()
+        .to_string();
+
+    if base_url.trim().is_empty() {
+        return CString::new(
+            serde_json::json!({
+                "success": false,
+                "models": [],
+                "message": "Base URL is required",
+            })
+            .to_string(),
+        )
+        .unwrap_or_default()
+        .into_raw();
+    }
+
+    let cfg = config::load_config().unwrap_or_default();
+    let client = match build_http_client(cfg.llm.timeout_ms) {
+        Ok(c) => c,
+        Err(e) => {
+            return CString::new(
+                serde_json::json!({
+                    "success": false,
+                    "models": [],
+                    "message": format!("Failed to create HTTP client: {e}"),
+                })
+                .to_string(),
+            )
+            .unwrap_or_default()
+            .into_raw();
+        }
+    };
+
+    let rt = match Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            return CString::new(
+                serde_json::json!({
+                    "success": false,
+                    "models": [],
+                    "message": format!("Failed to create async runtime: {e}"),
+                })
+                .to_string(),
+            )
+            .unwrap_or_default()
+            .into_raw();
+        }
+    };
+
+    let result = rt.block_on(llm_list_models(client, &base_url, &api_key));
+    let json = match result {
+        Ok(models) => serde_json::json!({
+            "success": true,
+            "models": models,
+            "message": "Models fetched",
+        }),
+        Err(e) => serde_json::json!({
+            "success": false,
+            "models": [],
             "message": format!("{e}"),
         }),
     };

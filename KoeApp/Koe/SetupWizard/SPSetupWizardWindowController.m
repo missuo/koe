@@ -23,6 +23,7 @@ static NSString *const kSystemPromptFile = @"system_prompt.txt";
 static NSString *const kTemplateEditablePromptKey = @"__editable_prompt";
 static NSString *const kTemplateOriginalPromptKey = @"__original_prompt";
 static NSString *const kDefaultLlmChatCompletionsPath = @"/chat/completions";
+static NSString *const kDefaultLlmTimeoutMs = @"8000";
 static NSString *const kOverlayFontFamilyDefault = @"system";
 static NSString *const kOverlayFontFamilySystemLabel = @"System Default";
 static const NSInteger kOverlayFontSizeDefault = 13;
@@ -129,6 +130,20 @@ static NSString *normalizedOverlayFontFamilyValue(NSString *value) {
 
 static BOOL overlayUsesSystemFontFamily(NSString *value) {
     return [normalizedOverlayFontFamilyValue(value) caseInsensitiveCompare:kOverlayFontFamilyDefault] == NSOrderedSame;
+}
+
+static NSString *normalizedLlmTimeoutValue(NSString *value) {
+    NSString *trimmed = [[value ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    if (trimmed.length == 0) return kDefaultLlmTimeoutMs;
+
+    NSCharacterSet *nonDigits = [[NSCharacterSet decimalDigitCharacterSet] invertedSet];
+    if ([trimmed rangeOfCharacterFromSet:nonDigits].location != NSNotFound) {
+        return nil;
+    }
+
+    unsigned long long parsed = trimmed.longLongValue;
+    if (parsed == 0) return nil;
+    return [NSString stringWithFormat:@"%llu", parsed];
 }
 
 static NSFont *overlayFontForFamily(NSString *fontFamily, CGFloat fontSize) {
@@ -473,12 +488,17 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property (nonatomic, strong) NSButton *llmAddProfileButton;
 @property (nonatomic, strong) NSButton *llmAddApfelProfileButton;
 @property (nonatomic, strong) NSButton *llmDeleteProfileButton;
+@property (nonatomic, strong) NSTextField *llmProfileNameField;
 @property (nonatomic, strong) NSPopUpButton *llmProviderPopup;
 @property (nonatomic, strong) NSTextField *llmBaseUrlField;
+@property (nonatomic, strong) NSTextField *llmTimeoutField;
 @property (nonatomic, strong) NSTextField *llmApiKeyField;
 @property (nonatomic, strong) NSSecureTextField *llmApiKeySecureField;
 @property (nonatomic, strong) NSButton *llmApiKeyToggle;
 @property (nonatomic, strong) NSTextField *llmModelField;
+@property (nonatomic, strong) NSButton *llmToggleModelPickerButton;
+@property (nonatomic, strong) NSPopUpButton *llmRemoteModelPopup;
+@property (nonatomic, strong) NSButton *llmRefreshModelsButton;
 @property (nonatomic, strong) NSTextField *llmChatCompletionsPathField;
 @property (nonatomic, strong) NSButton *llmTestButton;
 @property (nonatomic, strong) NSTextField *llmTestResultLabel;
@@ -495,6 +515,8 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property (nonatomic, strong) NSTextField *llmModelProgressSizeLabel;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSMutableDictionary *> *llmProfiles;
 @property (nonatomic, copy) NSString *activeLlmProfileId;
+@property (nonatomic, assign) BOOL llmRemoteModelPickerExpanded;
+@property (nonatomic, assign) BOOL llmRemoteModelPickerRowVisible;
 
 // Hotkey
 @property (nonatomic, strong) NSPopUpButton *hotkeyPopup;
@@ -934,7 +956,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat contentX = 24.0;
     CGFloat contentW = paneWidth - 48.0;
 
-    CGFloat contentHeight = 580;
+    CGFloat contentHeight = 660;
     NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
     [self applySettingsPaneBackgroundToView:pane];
 
@@ -984,6 +1006,20 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [pane addSubview:self.llmDeleteProfileButton];
     y -= rowH;
 
+    // Profile name
+    [pane addSubview:[self formLabel:@"Profile Name" frame:NSMakeRect(16, y, labelW, 22)]];
+    self.llmProfileNameField = [self formTextField:NSMakeRect(fieldX, y, fieldW, 22) placeholder:@"OpenAI Compatible"];
+    self.llmProfileNameField.delegate = self;
+    [pane addSubview:self.llmProfileNameField];
+    y -= rowH;
+
+    // Timeout (global)
+    [pane addSubview:[self formLabel:@"Timeout (ms)" frame:NSMakeRect(16, y, labelW, 22)]];
+    self.llmTimeoutField = [self formTextField:NSMakeRect(fieldX, y, 120, 22) placeholder:kDefaultLlmTimeoutMs];
+    self.llmTimeoutField.delegate = self;
+    [pane addSubview:self.llmTimeoutField];
+    y -= rowH;
+
     // Provider
     [pane addSubview:[self formLabel:@"Provider" frame:NSMakeRect(16, y, labelW, 22)]];
     self.llmProviderPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, fieldW, 26) pullsDown:NO];
@@ -1002,7 +1038,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     y -= rowH;
     CGFloat providerDetailStartY = y;
 
-    // --- OpenAI fields (tag 2001-2007 for show/hide) ---
+    // --- OpenAI fields (tag 2001-2008 for show/hide) ---
 
     // Base URL
     NSTextField *baseUrlLabel = [self formLabel:@"Base URL" frame:NSMakeRect(16, y, labelW, 22)];
@@ -1034,30 +1070,60 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     y -= rowH;
 
     // Model (text field for OpenAI)
+    CGFloat modelPickerButtonW = 74;
+    CGFloat modelFieldW = fieldW - modelPickerButtonW - 6;
     NSTextField *modelLabel = [self formLabel:@"Model" frame:NSMakeRect(16, y, labelW, 22)];
     modelLabel.tag = 2003;
     [pane addSubview:modelLabel];
-    self.llmModelField = [self formTextField:NSMakeRect(fieldX, y, fieldW, 22) placeholder:@"gpt-5.4-nano"];
+    self.llmModelField = [self formTextField:NSMakeRect(fieldX, y, modelFieldW, 22) placeholder:@"gpt-5.4-nano"];
     self.llmModelField.tag = 2003;
     [pane addSubview:self.llmModelField];
+    self.llmToggleModelPickerButton = [NSButton buttonWithTitle:@"Choose"
+                                                          target:self
+                                                          action:@selector(toggleLlmRemoteModelPicker:)];
+    self.llmToggleModelPickerButton.frame = NSMakeRect(fieldX + modelFieldW + 6, y - 2, modelPickerButtonW, 26);
+    self.llmToggleModelPickerButton.bezelStyle = NSBezelStyleRounded;
+    self.llmToggleModelPickerButton.tag = 2003;
+    [pane addSubview:self.llmToggleModelPickerButton];
+    y -= rowH;
+
+    // Model List (OpenAI /models)
+    NSTextField *modelListLabel = [self formLabel:@"Model List" frame:NSMakeRect(16, y, labelW, 22)];
+    modelListLabel.tag = 2004;
+    [pane addSubview:modelListLabel];
+    self.llmRemoteModelPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, fieldW - 74, 26) pullsDown:NO];
+    self.llmRemoteModelPopup.tag = 2004;
+    [self.llmRemoteModelPopup addItemWithTitle:@"No models loaded"];
+    self.llmRemoteModelPopup.enabled = NO;
+    [self.llmRemoteModelPopup setTarget:self];
+    [self.llmRemoteModelPopup setAction:@selector(llmRemoteModelChanged:)];
+    [pane addSubview:self.llmRemoteModelPopup];
+    self.llmRefreshModelsButton = [NSButton buttonWithTitle:@"Refresh" target:self action:@selector(refreshLlmRemoteModels:)];
+    self.llmRefreshModelsButton.frame = NSMakeRect(fieldX + fieldW - 66, y - 2, 66, 26);
+    self.llmRefreshModelsButton.bezelStyle = NSBezelStyleRounded;
+    self.llmRefreshModelsButton.tag = 2004;
+    [pane addSubview:self.llmRefreshModelsButton];
+    self.llmRemoteModelPickerExpanded = NO;
+    self.llmRemoteModelPickerRowVisible = YES;
+    [self setHidden:YES forViewsWithTagInRange:NSMakeRange(2004, 1) inView:pane];
     y -= rowH + 4;
 
     // Chat Completions Path
     NSTextField *chatPathLabel = [self formLabel:@"Chat Path" frame:NSMakeRect(16, y, labelW, 22)];
-    chatPathLabel.tag = 2004;
+    chatPathLabel.tag = 2005;
     [pane addSubview:chatPathLabel];
     self.llmChatCompletionsPathField = [self formTextField:NSMakeRect(fieldX, y, fieldW, 22)
                                                 placeholder:kDefaultLlmChatCompletionsPath];
-    self.llmChatCompletionsPathField.tag = 2004;
+    self.llmChatCompletionsPathField.tag = 2005;
     [pane addSubview:self.llmChatCompletionsPathField];
     y -= rowH;
 
     // Max Token Parameter
     NSTextField *tokenParamLabel = [self formLabel:@"Token Parameter" frame:NSMakeRect(16, y, labelW, 22)];
-    tokenParamLabel.tag = 2005;
+    tokenParamLabel.tag = 2006;
     [pane addSubview:tokenParamLabel];
     self.maxTokenParamPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 240, 26) pullsDown:NO];
-    self.maxTokenParamPopup.tag = 2005;
+    self.maxTokenParamPopup.tag = 2006;
     [self.maxTokenParamPopup addItemsWithTitles:@[
         @"max_completion_tokens",
         @"max_tokens",
@@ -1070,7 +1136,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Hint text
     NSTextField *tokenHint = [self descriptionLabel:@"GPT-4o and older models use max_tokens. GPT-5 and reasoning models (o1/o3) use max_completion_tokens."];
     tokenHint.frame = NSMakeRect(fieldX, y - 2, fieldW, 32);
-    tokenHint.tag = 2006;
+    tokenHint.tag = 2007;
     [pane addSubview:tokenHint];
     y -= 44;
 
@@ -1078,7 +1144,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     self.llmTestButton = [NSButton buttonWithTitle:@"Test Connection" target:self action:@selector(testLlmConnection:)];
     self.llmTestButton.bezelStyle = NSBezelStyleRounded;
     self.llmTestButton.frame = NSMakeRect(fieldX, y, 130, 28);
-    self.llmTestButton.tag = 2007;
+    self.llmTestButton.tag = 2008;
     [pane addSubview:self.llmTestButton];
     y -= 32;
 
@@ -1087,7 +1153,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     self.llmTestResultLabel.frame = NSMakeRect(fieldX, y - 36, fieldW, 42);
     self.llmTestResultLabel.font = [NSFont systemFontOfSize:12];
     self.llmTestResultLabel.selectable = YES;
-    self.llmTestResultLabel.tag = 2007;
+    self.llmTestResultLabel.tag = 2008;
     [pane addSubview:self.llmTestResultLabel];
 
     // --- MLX fields (tag 2010-2012 for show/hide, initially hidden) ---
@@ -2083,6 +2149,16 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 }
 
 - (void)controlTextDidChange:(NSNotification *)notification {
+    if (notification.object == self.llmProfileNameField) {
+        NSMutableDictionary *profile = [self activeLlmProfile];
+        if (!profile) return;
+        NSString *profileName = [[self.llmProfileNameField.stringValue ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+        profile[@"name"] = profileName ?: @"";
+        [self populateLlmProfilePopup];
+        self.llmTestResultLabel.stringValue = @"";
+        return;
+    }
+
     if (self.suppressTemplateSync) return;
     if (notification.object != self.templateNameField) return;
     if (self.selectedTemplateIndex < 0 || self.selectedTemplateIndex >= (NSInteger)self.templatesData.count) return;
@@ -2093,6 +2169,20 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     NSIndexSet *rows = [NSIndexSet indexSetWithIndex:(NSUInteger)self.selectedTemplateIndex];
     NSIndexSet *columns = [NSIndexSet indexSetWithIndex:0];
     [self.templatesTableView reloadDataForRowIndexes:rows columnIndexes:columns];
+}
+
+- (BOOL)control:(NSControl *)control
+        textView:(NSTextView *)textView
+shouldChangeTextInRange:(NSRange)affectedCharRange
+ replacementString:(NSString *)replacementString {
+    if (control != self.llmTimeoutField) {
+        return YES;
+    }
+    if (replacementString == nil || replacementString.length == 0) {
+        return YES;
+    }
+    NSCharacterSet *nonDigits = [[NSCharacterSet decimalDigitCharacterSet] invertedSet];
+    return [replacementString rangeOfCharacterFromSet:nonDigits].location == NSNotFound;
 }
 
 - (void)textDidChange:(NSNotification *)notification {
@@ -3384,6 +3474,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     if (!profile) return;
 
     NSString *provider = self.llmProviderPopup.selectedItem.representedObject ?: @"openai";
+    NSString *profileName = [[self.llmProfileNameField.stringValue ?: @"" stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] copy];
+    profile[@"name"] = profileName ?: @"";
     profile[@"provider"] = provider;
     profile[@"base_url"] = self.llmBaseUrlField.stringValue ?: @"";
     NSString *apiKey = self.llmApiKeyToggle.tag == 1 ? self.llmApiKeyField.stringValue : self.llmApiKeySecureField.stringValue;
@@ -3425,6 +3517,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     self.llmApiKeyField.hidden = YES;
     self.llmApiKeyToggle.image = [NSImage imageWithSystemSymbolName:@"eye.slash" accessibilityDescription:@"Show"];
     self.llmApiKeyToggle.tag = 0;
+    NSString *profileName = [profile[@"name"] isKindOfClass:[NSString class]] ? profile[@"name"] : @"";
+    self.llmProfileNameField.stringValue = profileName.length > 0 ? profileName : (self.activeLlmProfileId ?: @"");
     self.llmModelField.stringValue = [profile[@"model"] isKindOfClass:[NSString class]] ? profile[@"model"] : @"";
     NSString *chatPath = [profile[@"chat_completions_path"] isKindOfClass:[NSString class]]
         ? profile[@"chat_completions_path"] : kDefaultLlmChatCompletionsPath;
@@ -3451,6 +3545,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
             }
         }
         [self updateLlmModelStatusLabel];
+    } else if (self.llmRemoteModelPickerExpanded) {
+        [self refreshLlmRemoteModels:nil];
     }
 
     [self updateLlmFieldsEnabled];
@@ -3589,6 +3685,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     } else if ([identifier isEqualToString:kToolbarLLM]) {
         NSString *enabled = configGet(@"llm.enabled");
         self.llmEnabledCheckbox.state = ([enabled isEqualToString:@"false"]) ? NSControlStateValueOff : NSControlStateValueOn;
+        NSString *timeoutMs = normalizedLlmTimeoutValue(configGet(@"llm.timeout_ms"));
+        self.llmTimeoutField.stringValue = timeoutMs ?: kDefaultLlmTimeoutMs;
 
         [self loadLlmProfilesFromCore];
         self.llmTestResultLabel.stringValue = @"";
@@ -3779,6 +3877,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     if (self.llmEnabledCheckbox) {
         NSString *enabledStr = (self.llmEnabledCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
         saveOk &= configSet(@"llm.enabled", enabledStr);
+        NSString *timeoutMs = normalizedLlmTimeoutValue(self.llmTimeoutField.stringValue);
+        if (!timeoutMs) {
+            [self showAlert:@"Invalid LLM timeout"
+                       info:@"Timeout (ms) must be a positive integer."];
+            return;
+        }
+        saveOk &= configSet(@"llm.timeout_ms", timeoutMs);
 
         [self syncActiveLlmProfileFromFields];
         NSDictionary *payload = @{
@@ -3889,21 +3994,52 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     [self updateLlmFieldsEnabled];
 }
 
+- (void)toggleLlmRemoteModelPicker:(id)sender {
+    self.llmRemoteModelPickerExpanded = !self.llmRemoteModelPickerExpanded;
+    if (self.llmRemoteModelPickerExpanded) {
+        [self updateLlmFieldsEnabled];
+        [self refreshLlmRemoteModels:nil];
+    } else {
+        [self updateLlmFieldsEnabled];
+    }
+}
+
+- (void)setLlmRemoteModelPickerRowVisible:(BOOL)visible {
+    if (_llmRemoteModelPickerRowVisible == visible) {
+        return;
+    }
+    _llmRemoteModelPickerRowVisible = visible;
+
+    // Keep the model picker row height in sync with layout built in buildLlmPane.
+    CGFloat pickerRowHeight = 36.0; // rowH (32) + extra gap (4)
+    CGFloat deltaY = visible ? -pickerRowHeight : pickerRowHeight;
+
+    // Move all OpenAI controls below model picker row.
+    for (NSView *view in self.currentPaneView.subviews) {
+        if (view.tag >= 2005 && view.tag <= 2008) {
+            NSRect frame = view.frame;
+            frame.origin.y += deltaY;
+            view.frame = frame;
+        }
+    }
+}
+
 - (void)updateLlmFieldsEnabled {
     BOOL enabled = (self.llmEnabledCheckbox.state == NSControlStateValueOn);
     self.llmProfilePopup.enabled = enabled;
     self.llmAddProfileButton.enabled = enabled;
     self.llmAddApfelProfileButton.enabled = enabled;
     self.llmDeleteProfileButton.enabled = enabled && self.llmProfiles.count > 1;
+    self.llmProfileNameField.enabled = enabled;
     self.llmProviderPopup.enabled = enabled;
 
     NSString *provider = self.llmProviderPopup.selectedItem.representedObject ?: @"openai";
     BOOL isOpenAI = [provider isEqualToString:@"openai"];
     BOOL isMlx = [provider isEqualToString:@"mlx"];
 
-    // Toggle OpenAI fields (tag 2001-2007)
+    // Toggle OpenAI fields (tag 2001-2008)
     [self setHidden:!isOpenAI
- forViewsWithTagInRange:NSMakeRange(2001, 7)
+ forViewsWithTagInRange:NSMakeRange(2001, 8)
              inView:self.currentPaneView];
     // Eye toggle doesn't use tag for show/hide (tag is used for 0/1 state)
     self.llmApiKeyToggle.hidden = !isOpenAI;
@@ -3914,10 +4050,22 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         self.llmApiKeySecureField.hidden = showPlain;
     }
 
+    self.llmTimeoutField.enabled = enabled;
     self.llmBaseUrlField.enabled = enabled;
     self.llmApiKeyField.enabled = enabled;
     self.llmApiKeySecureField.enabled = enabled;
     self.llmModelField.enabled = enabled;
+    self.llmToggleModelPickerButton.hidden = !isOpenAI;
+    self.llmToggleModelPickerButton.enabled = enabled && isOpenAI;
+    [self.llmToggleModelPickerButton setTitle:(self.llmRemoteModelPickerExpanded ? @"Hide" : @"Choose")];
+    BOOL showRemoteModelPicker = isOpenAI && self.llmRemoteModelPickerExpanded;
+    [self setLlmRemoteModelPickerRowVisible:showRemoteModelPicker];
+    [self setHidden:!showRemoteModelPicker
+ forViewsWithTagInRange:NSMakeRange(2004, 1)
+             inView:self.currentPaneView];
+    BOOL hasSelectableRemoteModel = (self.llmRemoteModelPopup.selectedItem.representedObject != nil);
+    self.llmRemoteModelPopup.enabled = enabled && showRemoteModelPicker && hasSelectableRemoteModel;
+    self.llmRefreshModelsButton.enabled = enabled && showRemoteModelPicker;
     self.llmChatCompletionsPathField.enabled = enabled;
     self.maxTokenParamPopup.enabled = enabled;
     self.llmTestButton.enabled = enabled;
@@ -3940,11 +4088,108 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     [self updateLlmFieldsEnabled];
     NSString *provider = self.llmProviderPopup.selectedItem.representedObject ?: @"openai";
     if ([provider isEqualToString:@"mlx"]) {
+        self.llmRemoteModelPickerExpanded = NO;
         [self populateLlmLocalModelPopup];
         [self updateLlmModelStatusLabel];
+    } else if ([provider isEqualToString:@"openai"] && self.llmRemoteModelPickerExpanded) {
+        [self refreshLlmRemoteModels:nil];
     }
+    [self updateLlmFieldsEnabled];
     [self syncActiveLlmProfileFromFields];
     self.llmTestResultLabel.stringValue = @"";
+}
+
+- (void)populateLlmRemoteModelPopupWithModels:(NSArray<NSString *> *)models selectedModel:(NSString *)selectedModel {
+    [self.llmRemoteModelPopup removeAllItems];
+
+    if (models.count == 0) {
+        [self.llmRemoteModelPopup addItemWithTitle:@"No models available"];
+        self.llmRemoteModelPopup.lastItem.representedObject = nil;
+        self.llmRemoteModelPopup.enabled = NO;
+        return;
+    }
+
+    for (NSString *modelId in models) {
+        [self.llmRemoteModelPopup addItemWithTitle:modelId];
+        self.llmRemoteModelPopup.lastItem.representedObject = modelId;
+    }
+
+    if (selectedModel.length > 0) {
+        for (NSInteger i = 0; i < self.llmRemoteModelPopup.numberOfItems; i++) {
+            if ([[self.llmRemoteModelPopup itemAtIndex:i].representedObject isEqualToString:selectedModel]) {
+                [self.llmRemoteModelPopup selectItemAtIndex:i];
+                break;
+            }
+        }
+    }
+    self.llmRemoteModelPopup.enabled = (self.llmEnabledCheckbox.state == NSControlStateValueOn);
+}
+
+- (void)llmRemoteModelChanged:(id)sender {
+    NSString *model = self.llmRemoteModelPopup.selectedItem.representedObject;
+    if (model.length > 0) {
+        self.llmModelField.stringValue = model;
+        [self syncActiveLlmProfileFromFields];
+        self.llmTestResultLabel.stringValue = @"";
+    }
+}
+
+- (void)refreshLlmRemoteModels:(id)sender {
+    NSString *provider = self.llmProviderPopup.selectedItem.representedObject ?: @"openai";
+    if (![provider isEqualToString:@"openai"]) return;
+    [self updateLlmFieldsEnabled];
+
+    NSString *baseURL = [self.llmBaseUrlField.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *apiKey = self.llmApiKeyToggle.tag == 1 ? self.llmApiKeyField.stringValue : self.llmApiKeySecureField.stringValue;
+    NSString *currentModel = [self.llmModelField.stringValue copy] ?: @"";
+    if (baseURL.length == 0) {
+        [self.llmRemoteModelPopup removeAllItems];
+        [self.llmRemoteModelPopup addItemWithTitle:@"Enter Base URL first"];
+        self.llmRemoteModelPopup.enabled = NO;
+        return;
+    }
+
+    [self.llmRemoteModelPopup removeAllItems];
+    [self.llmRemoteModelPopup addItemWithTitle:@"Loading models..."];
+    self.llmRemoteModelPopup.enabled = NO;
+    self.llmRefreshModelsButton.enabled = NO;
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        typeof(self) strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        NSDictionary *result = [strongSelf.rustBridge llmRemoteModelsForBaseURL:baseURL apiKey:apiKey];
+        BOOL success = [result[@"success"] boolValue];
+        NSArray *modelsRaw = [result[@"models"] isKindOfClass:[NSArray class]] ? result[@"models"] : @[];
+        NSMutableArray<NSString *> *models = [NSMutableArray arrayWithCapacity:modelsRaw.count];
+        for (id item in modelsRaw) {
+            if ([item isKindOfClass:[NSString class]] && [item length] > 0) {
+                [models addObject:item];
+            }
+        }
+        NSString *message = [result[@"message"] isKindOfClass:[NSString class]] ? result[@"message"] : @"";
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            typeof(self) innerSelf = weakSelf;
+            if (!innerSelf) return;
+            NSString *activeProvider = innerSelf.llmProviderPopup.selectedItem.representedObject ?: @"openai";
+            if (![activeProvider isEqualToString:@"openai"]) return;
+
+            innerSelf.llmRefreshModelsButton.enabled = (innerSelf.llmEnabledCheckbox.state == NSControlStateValueOn);
+            if (success) {
+                [innerSelf populateLlmRemoteModelPopupWithModels:models selectedModel:currentModel];
+            } else {
+                [innerSelf.llmRemoteModelPopup removeAllItems];
+                [innerSelf.llmRemoteModelPopup addItemWithTitle:@"Load failed"];
+                innerSelf.llmRemoteModelPopup.enabled = NO;
+                if (message.length > 0) {
+                    innerSelf.llmTestResultLabel.stringValue = [NSString stringWithFormat:@"Model list: %@", message];
+                    innerSelf.llmTestResultLabel.textColor = [NSColor systemOrangeColor];
+                }
+            }
+        });
+    });
 }
 
 - (void)populateLlmLocalModelPopup {
