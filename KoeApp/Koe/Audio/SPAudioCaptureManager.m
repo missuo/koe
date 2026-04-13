@@ -58,6 +58,18 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
     AVAudioFormat *hardwareFormat = [inputNode outputFormatForBus:0];
     NSLog(@"[Koe] Hardware audio format: %@", hardwareFormat);
 
+    // Guard against invalid inputNode state. After a fresh microphone
+    // permission grant the node may report 0 channels / 0 sampleRate
+    // until the audio system finishes reconfiguring.  Proceeding with
+    // such a format causes AVAudioEngine.start() to throw -10877
+    // (kAudioUnitErr_InvalidElement).
+    if (hardwareFormat.channelCount == 0 || hardwareFormat.sampleRate <= 0) {
+        NSLog(@"[Koe] ERROR: inputNode format invalid (channels=%u sampleRate=%.0f) — "
+              "microphone may not be ready yet",
+              hardwareFormat.channelCount, hardwareFormat.sampleRate);
+        return NO;
+    }
+
     // Target format: 16kHz, mono, Float32 for conversion
     AVAudioFormat *targetFormat = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
                                                                   sampleRate:kTargetSampleRate

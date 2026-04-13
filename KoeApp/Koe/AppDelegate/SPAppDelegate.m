@@ -298,13 +298,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
         [self handleAudioCaptureError:@"Failed to start session"];
         return;
     }
-    [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
-    BOOL started = [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
-        [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
-    }];
-    if (!started) {
-        [self handleAudioCaptureError:@"Failed to start audio capture"];
-    }
+    [self startAudioCaptureWithRetry];
 }
 
 - (void)hotkeyMonitorDidDetectHoldEnd {
@@ -344,13 +338,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
         [self handleAudioCaptureError:@"Failed to start session"];
         return;
     }
-    [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
-    BOOL started = [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
-        [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
-    }];
-    if (!started) {
-        [self handleAudioCaptureError:@"Failed to start audio capture"];
-    }
+    [self startAudioCaptureWithRetry];
 }
 
 - (void)hotkeyMonitorDidDetectTapEnd {
@@ -368,6 +356,36 @@ static BOOL configFlagEnabled(const char *keyPath) {
     self.pendingSessionEndBlock = block;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(300 * NSEC_PER_MSEC)),
                    dispatch_get_main_queue(), block);
+}
+
+#pragma mark - Audio Capture Start with Retry
+
+- (void)startAudioCaptureWithRetry {
+    [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
+    BOOL started = [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
+        [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
+    }];
+    if (started) return;
+
+    // After a fresh microphone permission grant the audio subsystem may need
+    // a moment to reconfigure.  Retry once after a short delay before giving up.
+    NSLog(@"[Koe] Audio capture failed on first attempt, retrying in 500ms...");
+    uint64_t token = self.rustBridge.currentSessionToken;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(500 * NSEC_PER_MSEC)),
+                   dispatch_get_main_queue(), ^{
+        if (token != self.rustBridge.currentSessionToken) return;
+        if (self.quitting) return;
+
+        [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
+        BOOL retryStarted = [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
+            [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
+        }];
+        if (!retryStarted) {
+            [self handleAudioCaptureError:@"Failed to start audio capture"];
+        } else {
+            NSLog(@"[Koe] Audio capture started on retry");
+        }
+    });
 }
 
 #pragma mark - SPRustBridgeDelegate
