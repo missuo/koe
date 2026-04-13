@@ -10,4 +10,9 @@
 /// The completion block is called after the paste takes effect.
 - (void)simulateUndoThenPasteWithCompletion:(void (^)(void))completion;
 
+/// Cancel any scheduled paste/undo blocks. Called on quit so that pending
+/// CGEventPost injections cannot leak into the user's target app after the
+/// hotkey monitor and event tap have been torn down.
+- (void)cancel;
+
 @end

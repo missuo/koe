@@ -1,8 +1,12 @@
 #import "SPPermissionManager.h"
+#import "SPLocalization.h"
 #import <AVFoundation/AVFoundation.h>
 #import <ApplicationServices/ApplicationServices.h>
+#import <Cocoa/Cocoa.h>
 #import <Speech/Speech.h>
 #import <UserNotifications/UserNotifications.h>
+
+static NSString *const kDontRemindPrefix = @"KoePermissionDontRemind_";
 
 @implementation SPPermissionManager
 
@@ -110,6 +114,80 @@ static CGEventRef inputMonitoringProbeCallback(CGEventTapProxy proxy,
             completion(granted);
         });
     }];
+}
+
+#pragma mark - Permission Alerts
+
+- (NSString *)dontRemindKeyForType:(SPPermissionType)type {
+    return [NSString stringWithFormat:@"%@%ld", kDontRemindPrefix, (long)type];
+}
+
+- (BOOL)isDontRemindSetForType:(SPPermissionType)type {
+    return [[NSUserDefaults standardUserDefaults] boolForKey:[self dontRemindKeyForType:type]];
+}
+
+- (void)setDontRemindForType:(SPPermissionType)type {
+    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:[self dontRemindKeyForType:type]];
+}
+
+- (void)resetDontRemindForType:(SPPermissionType)type {
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:[self dontRemindKeyForType:type]];
+}
+
+- (BOOL)showPermissionAlertForType:(SPPermissionType)type
+                       settingsURL:(nullable NSURL *)settingsURL {
+    if ([self isDontRemindSetForType:type]) {
+        return NO;
+    }
+
+    NSString *title = nil;
+    NSString *message = nil;
+
+    switch (type) {
+        case SPPermissionTypeMicrophone:
+            title = KoeLocalizedString(@"permission.microphone.title");
+            message = KoeLocalizedString(@"permission.microphone.message");
+            break;
+        case SPPermissionTypeAccessibility:
+            title = KoeLocalizedString(@"permission.accessibility.title");
+            message = KoeLocalizedString(@"permission.accessibility.message");
+            break;
+        case SPPermissionTypeInputMonitoring:
+            title = KoeLocalizedString(@"permission.inputMonitoring.title");
+            message = KoeLocalizedString(@"permission.inputMonitoring.message");
+            break;
+        case SPPermissionTypeSpeechRecognition:
+            title = KoeLocalizedString(@"permission.speechRecognition.title");
+            message = KoeLocalizedString(@"permission.speechRecognition.message");
+            break;
+    }
+
+    [NSApp activateIgnoringOtherApps:YES];
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.alertStyle = NSAlertStyleWarning;
+    alert.messageText = title;
+    alert.informativeText = message;
+
+    if (settingsURL) {
+        [alert addButtonWithTitle:KoeLocalizedString(@"permission.button.openSettings")];
+    }
+    [alert addButtonWithTitle:KoeLocalizedString(@"permission.button.dismiss")];
+    [alert addButtonWithTitle:KoeLocalizedString(@"permission.button.dontRemind")];
+
+    NSModalResponse response = [alert runModal];
+
+    if (settingsURL && response == NSAlertFirstButtonReturn) {
+        [[NSWorkspace sharedWorkspace] openURL:settingsURL];
+    }
+
+    // "Don't Remind Again" is the last button
+    NSModalResponse dontRemindResponse = settingsURL ? NSAlertThirdButtonReturn : NSAlertSecondButtonReturn;
+    if (response == dontRemindResponse) {
+        [self setDontRemindForType:type];
+    }
+
+    return YES;
 }
 
 @end

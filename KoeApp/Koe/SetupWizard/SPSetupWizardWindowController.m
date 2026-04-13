@@ -1,6 +1,7 @@
 #import "SPSetupWizardWindowController.h"
 #import "SPOverlayPanel.h"
 #import "SPRustBridge.h"
+#import "SPLocalization.h"
 #import <Cocoa/Cocoa.h>
 #import <Carbon/Carbon.h>
 #import <Speech/Speech.h>
@@ -761,11 +762,11 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Provider
     [pane addSubview:[self formLabel:@"Provider" frame:NSMakeRect(16, y, labelW, 22)]];
     self.asrProviderPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 200, 26) pullsDown:NO];
-    [self.asrProviderPopup addItemWithTitle:@"DoubaoIME (\u8c46\u5305\u8f93\u5165\u6cd5, \u514d\u8d39)"];
+    [self.asrProviderPopup addItemWithTitle:@"DoubaoIME (Built-in, Free)"];
     [self.asrProviderPopup lastItem].representedObject = @"doubaoime";
-    [self.asrProviderPopup addItemWithTitle:@"Doubao (\u8c46\u5305)"];
+    [self.asrProviderPopup addItemWithTitle:@"Doubao (ByteDance)"];
     [self.asrProviderPopup lastItem].representedObject = @"doubao";
-    [self.asrProviderPopup addItemWithTitle:@"Qwen (\u963f\u91cc\u4e91)"];
+    [self.asrProviderPopup addItemWithTitle:@"Qwen (Alibaba Cloud)"];
     [self.asrProviderPopup lastItem].representedObject = @"qwen";
     NSArray<NSString *> *supportedLocalProviders = [self.rustBridge supportedLocalProviders];
     // Add Apple Speech (macOS 26+, no model download required; also requires the
@@ -2375,7 +2376,7 @@ shouldChangeTextInRange:(NSRange)affectedCharRange
 
 - (NSView *)buildAboutPane {
     CGFloat paneWidth = 600;
-    CGFloat contentHeight = 300;
+    CGFloat contentHeight = 380;
     NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
     [self applySettingsPaneBackgroundToView:pane];
 
@@ -2403,7 +2404,43 @@ shouldChangeTextInRange:(NSRange)affectedCharRange
     desc.alignment = NSTextAlignmentCenter;
     desc.frame = NSMakeRect(60, y - 10, paneWidth - 120, 40);
     [pane addSubview:desc];
-    y -= 60;
+    y -= 56;
+
+    // ─── Interface Language ──────────────────────────────────────────
+    CGFloat labelWidth = 140;
+    CGFloat fieldX = 24 + labelWidth + 8;
+    CGFloat fieldWidth = paneWidth - fieldX - 32;
+
+    NSTextField *langLabel = [self formLabel:KoeLocalizedString(@"settings.language.title")
+                                      frame:NSMakeRect(24, y, labelWidth, 20)];
+    [pane addSubview:langLabel];
+
+    NSPopUpButton *langPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, MIN(fieldWidth, 200), 26) pullsDown:NO];
+    [langPopup addItemWithTitle:KoeLocalizedString(@"settings.language.followSystem")];
+    [langPopup addItemWithTitle:@"English"];
+    [langPopup addItemWithTitle:@"简体中文"];
+
+    NSString *currentLang = [SPLocalization effectiveLanguage];
+    BOOL isFollowing = [SPLocalization isFollowingSystem];
+    if (isFollowing) {
+        [langPopup selectItemAtIndex:0];
+    } else if ([currentLang isEqualToString:@"en"]) {
+        [langPopup selectItemAtIndex:1];
+    } else if ([currentLang isEqualToString:@"zh-Hans"]) {
+        [langPopup selectItemAtIndex:2];
+    } else {
+        [langPopup selectItemAtIndex:0];
+    }
+
+    langPopup.target = self;
+    langPopup.action = @selector(languagePopupChanged:);
+    [pane addSubview:langPopup];
+    y -= 24;
+
+    NSTextField *langNote = [self descriptionLabel:KoeLocalizedString(@"settings.language.restartRequired")];
+    langNote.frame = NSMakeRect(fieldX, y - 6, fieldWidth, 32);
+    [pane addSubview:langNote];
+    y -= 40;
 
     // GitHub button
     NSButton *githubButton = [NSButton buttonWithTitle:@"GitHub Repository" target:self action:@selector(openGitHub:)];
@@ -2430,6 +2467,24 @@ shouldChangeTextInRange:(NSRange)affectedCharRange
     [pane addSubview:license];
 
     return pane;
+}
+
+- (void)languagePopupChanged:(NSPopUpButton *)sender {
+    NSString *newLang = nil;
+    switch (sender.indexOfSelectedItem) {
+        case 0: newLang = nil; break;      // Follow System
+        case 1: newLang = @"en"; break;
+        case 2: newLang = @"zh-Hans"; break;
+        default: newLang = nil; break;
+    }
+    [SPLocalization setPreferredLanguage:newLang];
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.alertStyle = NSAlertStyleInformational;
+    alert.messageText = KoeLocalizedString(@"settings.language.restartTitle");
+    alert.informativeText = KoeLocalizedString(@"settings.language.restartMessage");
+    [alert addButtonWithTitle:KoeLocalizedString(@"settings.language.restartButton")];
+    [alert runModal];
 }
 
 - (void)openGitHub:(id)sender {
