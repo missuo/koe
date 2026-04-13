@@ -12,6 +12,7 @@
 #import "SPHistoryManager.h"
 #import "SPSetupWizardWindowController.h"
 #import "SPUpdateManager.h"
+#import "SPLocalization.h"
 #import "koe_core.h"
 #import <os/log.h>
 #import <sys/stat.h>
@@ -141,6 +142,10 @@ static BOOL configFlagEnabled(const char *keyPath) {
         if (strcmp(rawProvider, "apple-speech") == 0) {
             [self.permissionManager requestSpeechRecognitionPermissionWithCompletion:^(BOOL granted) {
                 NSLog(@"[Koe] Speech recognition permission: %@", granted ? @"granted" : @"denied");
+                if (!granted) {
+                    [self.permissionManager showPermissionAlertForType:SPPermissionTypeSpeechRecognition
+                                                          settingsURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition"]];
+                }
             }];
         }
         sp_core_free_string(rawProvider);
@@ -154,11 +159,21 @@ static BOOL configFlagEnabled(const char *keyPath) {
         if (!micGranted) {
             NSLog(@"[Koe] ERROR: Microphone permission not granted");
             [self.cuePlayer playError];
+            [self.permissionManager showPermissionAlertForType:SPPermissionTypeMicrophone
+                                                  settingsURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"]];
             return;
+        }
+
+        if (!accessibilityGranted) {
+            NSLog(@"[Koe] WARNING: Accessibility permission not granted");
+            [self.permissionManager showPermissionAlertForType:SPPermissionTypeAccessibility
+                                                  settingsURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]];
         }
 
         if (!inputMonitoringGranted) {
             NSLog(@"[Koe] WARNING: Input Monitoring probe failed, will attempt hotkey monitor anyway");
+            [self.permissionManager showPermissionAlertForType:SPPermissionTypeInputMonitoring
+                                                  settingsURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"]];
         }
 
         // Start hotkey monitor (let it try CGEventTap directly — the probe may give false negatives)
@@ -199,19 +214,19 @@ static BOOL configFlagEnabled(const char *keyPath) {
         [NSApp setMainMenu:mainMenu];
     }
 
-    NSMenuItem *editMenuItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:nil keyEquivalent:@""];
-    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+    NSMenuItem *editMenuItem = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"menu.edit") action:nil keyEquivalent:@""];
+    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:KoeLocalizedString(@"menu.edit")];
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wundeclared-selector"
-    [editMenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
-    [editMenu addItemWithTitle:@"Redo" action:@selector(redo:) keyEquivalent:@"Z"];
+    [editMenu addItemWithTitle:KoeLocalizedString(@"menu.edit.undo") action:@selector(undo:) keyEquivalent:@"z"];
+    [editMenu addItemWithTitle:KoeLocalizedString(@"menu.edit.redo") action:@selector(redo:) keyEquivalent:@"Z"];
 #pragma clang diagnostic pop
     [editMenu addItem:[NSMenuItem separatorItem]];
-    [editMenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
-    [editMenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
-    [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
-    [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+    [editMenu addItemWithTitle:KoeLocalizedString(@"menu.edit.cut") action:@selector(cut:) keyEquivalent:@"x"];
+    [editMenu addItemWithTitle:KoeLocalizedString(@"menu.edit.copy") action:@selector(copy:) keyEquivalent:@"c"];
+    [editMenu addItemWithTitle:KoeLocalizedString(@"menu.edit.paste") action:@selector(paste:) keyEquivalent:@"v"];
+    [editMenu addItemWithTitle:KoeLocalizedString(@"menu.edit.selectAll") action:@selector(selectAll:) keyEquivalent:@"a"];
 
     editMenuItem.submenu = editMenu;
     [mainMenu addItem:editMenuItem];
@@ -298,13 +313,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
         [self handleAudioCaptureError:@"Failed to start session"];
         return;
     }
-    [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
-    BOOL started = [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
-        [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
-    }];
-    if (!started) {
-        [self handleAudioCaptureError:@"Failed to start audio capture"];
-    }
+    [self startAudioCaptureWithRetry];
 }
 
 - (void)hotkeyMonitorDidDetectHoldEnd {
@@ -344,13 +353,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
         [self handleAudioCaptureError:@"Failed to start session"];
         return;
     }
-    [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
-    BOOL started = [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
-        [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
-    }];
-    if (!started) {
-        [self handleAudioCaptureError:@"Failed to start audio capture"];
-    }
+    [self startAudioCaptureWithRetry];
 }
 
 - (void)hotkeyMonitorDidDetectTapEnd {
@@ -368,6 +371,36 @@ static BOOL configFlagEnabled(const char *keyPath) {
     self.pendingSessionEndBlock = block;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(300 * NSEC_PER_MSEC)),
                    dispatch_get_main_queue(), block);
+}
+
+#pragma mark - Audio Capture Start with Retry
+
+- (void)startAudioCaptureWithRetry {
+    [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
+    BOOL started = [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
+        [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
+    }];
+    if (started) return;
+
+    // After a device route change or fresh permission grant the audio
+    // subsystem may need a moment to settle.  Retry once after a short delay.
+    NSLog(@"[Koe] Audio capture failed on first attempt, retrying in 500ms...");
+    uint64_t token = self.rustBridge.currentSessionToken;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(500 * NSEC_PER_MSEC)),
+                   dispatch_get_main_queue(), ^{
+        if (token != self.rustBridge.currentSessionToken) return;
+        if (self.quitting) return;
+
+        [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
+        BOOL retryStarted = [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
+            [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
+        }];
+        if (!retryStarted) {
+            [self handleAudioCaptureError:@"Failed to start audio capture"];
+        } else {
+            NSLog(@"[Koe] Audio capture started on retry");
+        }
+    });
 }
 
 #pragma mark - SPRustBridgeDelegate
@@ -446,7 +479,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 - (void)sendWarningNotification:(NSString *)message {
     UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
-    content.title = @"Koe Warning";
+    content.title = KoeLocalizedString(@"notification.warning.title");
     content.body = message;
     content.sound = nil;
 
@@ -465,7 +498,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 - (void)sendErrorNotification:(NSString *)message {
     UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
-    content.title = @"Koe Error";
+    content.title = KoeLocalizedString(@"notification.error.title");
     content.body = message;
     content.sound = nil; // Already playing error cue
 
@@ -579,6 +612,9 @@ static BOOL configFlagEnabled(const char *keyPath) {
     // Cancel any pending session-end block so it cannot trigger a paste
     // during the run-loop draining inside [NSApp terminate:].
     [self cancelPendingSessionEnd];
+    // Cancel any scheduled CGEventPost paste/undo blocks so they cannot leak
+    // synthetic key events into whichever app gains focus after Koe quits.
+    [self.pasteManager cancel];
     [self.audioCaptureManager stopCapture];
     [self.rustBridge cancelSession];
     [self.hotkeyMonitor stop];

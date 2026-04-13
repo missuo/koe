@@ -6,6 +6,11 @@
 static const NSUInteger kTargetSampleRate = 16000;
 static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
 
+// Maximum time to wait for AVAudioEngine.start() before giving up.
+// Prevents indefinite main-thread hang when CoreAudio's HAL proxy
+// blocks in StartAndWaitForState after a device route change.
+static const NSTimeInterval kEngineStartTimeoutSec = 3.0;
+
 @interface SPAudioCaptureManager ()
 
 @property (nonatomic, strong) AVAudioEngine *audioEngine;
@@ -39,7 +44,10 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
 
     AVAudioInputNode *inputNode = self.audioEngine.inputNode;
 
-    // Set input device if specified (must be before querying hardware format)
+    // Set input device if specified (must be before querying hardware format).
+    // If this fails (e.g. BT device route changed, error 'nope'/1852797029),
+    // abandon this engine entirely — the IO unit is in an inconsistent state
+    // and proceeding would cause startAndReturnError: to block indefinitely.
     if (self.pendingDeviceID != kAudioObjectUnknown) {
         AudioDeviceID deviceID = self.pendingDeviceID;
         OSStatus osStatus = AudioUnitSetProperty(inputNode.audioUnit,
@@ -47,8 +55,11 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
                                                   kAudioUnitScope_Global, 0,
                                                   &deviceID, sizeof(deviceID));
         if (osStatus != noErr) {
-            NSLog(@"[Koe] Failed to set input device (ID %u): %d, using default",
+            NSLog(@"[Koe] Failed to set input device (ID %u): OSStatus %d — "
+                  "falling back to a new engine with system default",
                   (unsigned)deviceID, (int)osStatus);
+            self.audioEngine = [[AVAudioEngine alloc] init];
+            inputNode = self.audioEngine.inputNode;
         } else {
             NSLog(@"[Koe] Input device set to ID %u", (unsigned)deviceID);
         }
@@ -57,6 +68,18 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
     // Use the hardware's native format for the tap — cannot request a different sample rate
     AVAudioFormat *hardwareFormat = [inputNode outputFormatForBus:0];
     NSLog(@"[Koe] Hardware audio format: %@", hardwareFormat);
+
+    // Guard against invalid inputNode state. After a Bluetooth device route
+    // change or a fresh mic permission grant, the node may report 0 channels
+    // or 0 sampleRate. Proceeding would cause audioEngine.start() to block
+    // or throw -10877 (kAudioUnitErr_InvalidElement).
+    if (hardwareFormat.channelCount == 0 || hardwareFormat.sampleRate <= 0) {
+        NSLog(@"[Koe] ERROR: inputNode format invalid (channels=%u sampleRate=%.0f) — "
+              "microphone may not be ready yet",
+              hardwareFormat.channelCount, hardwareFormat.sampleRate);
+        self.audioEngine = nil;
+        return NO;
+    }
 
     // Target format: 16kHz, mono, Float32 for conversion
     AVAudioFormat *targetFormat = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
@@ -69,6 +92,7 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
                                                                  toFormat:targetFormat];
     if (!converter) {
         NSLog(@"[Koe] ERROR: Failed to create audio converter from %@ to %@", hardwareFormat, targetFormat);
+        self.audioEngine = nil;
         return NO;
     }
 
@@ -136,10 +160,39 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
         }
     }];
 
-    NSError *error = nil;
+    // Start the engine off the main thread with a timeout to prevent the
+    // main-thread hang reported in missuo/koe#77: after a Bluetooth device
+    // route change, HALC_ProxyIOContext::StartAndWaitForState can block
+    // indefinitely (error 35 / EAGAIN), freezing the entire app.
     [self.audioEngine prepare];
-    if (![self.audioEngine startAndReturnError:&error]) {
-        NSLog(@"[Koe] Audio engine start failed: %@", error.localizedDescription ?: @"unknown error");
+
+    __block BOOL startOK = NO;
+    __block NSError *startError = nil;
+    AVAudioEngine *engine = self.audioEngine;
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSError *bgError = nil;
+        startOK = [engine startAndReturnError:&bgError];
+        startError = bgError;
+        dispatch_semaphore_signal(sem);
+    });
+
+    long timedOut = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW,
+                                            (int64_t)(kEngineStartTimeoutSec * NSEC_PER_SEC)));
+    if (timedOut != 0) {
+        NSLog(@"[Koe] Audio engine start timed out after %.0fs — "
+              "aborting to prevent main-thread hang", kEngineStartTimeoutSec);
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+            [engine stop];
+        });
+        self.audioEngine = nil;
+        return NO;
+    }
+
+    if (!startOK) {
+        NSLog(@"[Koe] Audio engine start failed: %@", startError.localizedDescription ?: @"unknown error");
+        self.audioEngine = nil;
         return NO;
     }
 
@@ -171,6 +224,7 @@ static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
 
     self.audioCallback = nil;
     self.isCapturing = NO;
+    self.audioEngine = nil;
     NSLog(@"[Koe] Audio capture stopped");
 }
 
