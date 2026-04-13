@@ -1029,14 +1029,14 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Sidebar +/- buttons (Finder-style)
     self.llmAddProfileButton = [[NSButton alloc] initWithFrame:NSMakeRect(sidebarX, sidebarY, 28, 24)];
     self.llmAddProfileButton.bezelStyle = NSBezelStyleSmallSquare;
-    self.llmAddProfileButton.image = [NSImage imageWithSystemSymbolName:@"plus" accessibilityDescription:@"Add"];
+    self.llmAddProfileButton.image = [NSImage imageWithSystemSymbolName:@"plus" accessibilityDescription:KoeLocalizedString(@"settings.setupWizard.common.button.add")];
     self.llmAddProfileButton.target = self;
     self.llmAddProfileButton.action = @selector(showAddLlmProfileMenu:);
     [pane addSubview:self.llmAddProfileButton];
 
     self.llmDeleteProfileButton = [[NSButton alloc] initWithFrame:NSMakeRect(sidebarX + 30, sidebarY, 28, 24)];
     self.llmDeleteProfileButton.bezelStyle = NSBezelStyleSmallSquare;
-    self.llmDeleteProfileButton.image = [NSImage imageWithSystemSymbolName:@"minus" accessibilityDescription:@"Delete"];
+    self.llmDeleteProfileButton.image = [NSImage imageWithSystemSymbolName:@"minus" accessibilityDescription:KoeLocalizedString(@"settings.setupWizard.common.button.delete")];
     self.llmDeleteProfileButton.target = self;
     self.llmDeleteProfileButton.action = @selector(deleteLlmProfile:);
     [pane addSubview:self.llmDeleteProfileButton];
@@ -1045,9 +1045,9 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat detailY = y;  // top of form area aligns with top of sidebar
 
     // Name field (editable custom display name for this profile)
-    NSTextField *nameLabel = [self formLabel:@"Name" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *nameLabel = [self formLabel:KoeLocalizedString(@"settings.setupWizard.llm.label.profileName") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     [pane addSubview:nameLabel];
-    self.llmProfileNameField = [self formTextField:NSMakeRect(fieldX, detailY, fieldW, 22) placeholder:@"My profile"];
+    self.llmProfileNameField = [self formTextField:NSMakeRect(fieldX, detailY, fieldW, 22) placeholder:KoeLocalizedString(@"settings.setupWizard.llm.placeholder.profileCustomName")];
     self.llmProfileNameField.target = self;
     self.llmProfileNameField.action = @selector(llmProfileNameChanged:);
     self.llmProfileNameField.delegate = self;
@@ -1055,7 +1055,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     detailY -= rowH;
 
     // Type (read-only label — locked at creation)
-    NSTextField *typeLabelLeft = [self formLabel:@"Type" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *typeLabelLeft = [self formLabel:KoeLocalizedString(@"settings.setupWizard.llm.label.type") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     [pane addSubview:typeLabelLeft];
     self.llmProfileTypeLabel = [NSTextField labelWithString:@""];
     self.llmProfileTypeLabel.frame = NSMakeRect(fieldX, detailY, fieldW, 22);
@@ -1069,10 +1069,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // --- OpenAI fields (tag 2001-2008 for show/hide) ---
 
     // Base URL
-    NSTextField *baseUrlLabel = [self formLabel:@"Base URL" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *baseUrlLabel = [self formLabel:KoeLocalizedString(@"settings.setupWizard.llm.label.baseUrl") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     baseUrlLabel.tag = 2001;
     [pane addSubview:baseUrlLabel];
-    self.llmBaseUrlField = [self formTextField:NSMakeRect(fieldX, detailY, fieldW, 22) placeholder:@"https://api.openai.com/v1"];
+    self.llmBaseUrlField = [self formTextField:NSMakeRect(fieldX, detailY, fieldW, 22) placeholder:KoeLocalizedString(@"settings.setupWizard.llm.placeholder.baseUrl")];
     self.llmBaseUrlField.tag = 2001;
     [pane addSubview:self.llmBaseUrlField];
     detailY -= rowH;
@@ -1080,15 +1080,15 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // API Key (secure by default)
     CGFloat eyeW = 28;
     CGFloat secFieldW = fieldW - eyeW - 4;
-    NSTextField *apiKeyLabel = [self formLabel:@"API Key" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *apiKeyLabel = [self formLabel:KoeLocalizedString(@"settings.setupWizard.common.label.apiKey") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     apiKeyLabel.tag = 2002;
     [pane addSubview:apiKeyLabel];
     self.llmApiKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, detailY, secFieldW, 22)];
-    self.llmApiKeySecureField.placeholderString = @"sk-... (leave empty if not required)";
+    self.llmApiKeySecureField.placeholderString = KoeLocalizedString(@"settings.setupWizard.llm.placeholder.apiKeyOptional");
     self.llmApiKeySecureField.font = [NSFont systemFontOfSize:13];
     self.llmApiKeySecureField.tag = 2002;
     [pane addSubview:self.llmApiKeySecureField];
-    self.llmApiKeyField = [self formTextField:NSMakeRect(fieldX, detailY, secFieldW, 22) placeholder:@"sk-... (leave empty if not required)"];
+    self.llmApiKeyField = [self formTextField:NSMakeRect(fieldX, detailY, secFieldW, 22) placeholder:KoeLocalizedString(@"settings.setupWizard.llm.placeholder.apiKeyOptional")];
     self.llmApiKeyField.hidden = YES;
     self.llmApiKeyField.tag = 2002;
     [pane addSubview:self.llmApiKeyField];
@@ -1100,10 +1100,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Model (text field for OpenAI) + Choose button (toggles remote model picker)
     CGFloat modelPickerButtonW = 74;
     CGFloat modelFieldW = fieldW - modelPickerButtonW - 6;
-    NSTextField *modelLabel = [self formLabel:@"Model" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *modelLabel = [self formLabel:KoeLocalizedString(@"settings.setupWizard.common.label.model") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     modelLabel.tag = 2003;
     [pane addSubview:modelLabel];
-    self.llmModelField = [self formTextField:NSMakeRect(fieldX, detailY, modelFieldW, 22) placeholder:@"gpt-5.4-nano"];
+    self.llmModelField = [self formTextField:NSMakeRect(fieldX, detailY, modelFieldW, 22) placeholder:KoeLocalizedString(@"settings.setupWizard.llm.placeholder.model")];
     self.llmModelField.tag = 2003;
     [pane addSubview:self.llmModelField];
     self.llmToggleModelPickerButton = [NSButton buttonWithTitle:KoeLocalizedString(@"settings.setupWizard.common.button.choose")
@@ -1116,7 +1116,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     detailY -= rowH;
 
     // Model List (OpenAI /models) — initially hidden, toggled by Choose button
-    NSTextField *modelListLabel = [self formLabel:@"Model List" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *modelListLabel = [self formLabel:KoeLocalizedString(@"settings.setupWizard.llm.label.modelList") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     modelListLabel.tag = 2004;
     [pane addSubview:modelListLabel];
     self.llmRemoteModelPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, detailY - 2, fieldW - 74, 26) pullsDown:NO];
@@ -1137,7 +1137,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     detailY -= rowH + 4;
 
     // Chat Completions Path
-    NSTextField *chatPathLabel = [self formLabel:@"Chat Path" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *chatPathLabel = [self formLabel:KoeLocalizedString(@"settings.setupWizard.llm.label.chatPath") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     chatPathLabel.tag = 2005;
     [pane addSubview:chatPathLabel];
     self.llmChatCompletionsPathField = [self formTextField:NSMakeRect(fieldX, detailY, fieldW, 22)
@@ -1147,7 +1147,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     detailY -= rowH;
 
     // Max Token Parameter
-    NSTextField *tokenParamLabel = [self formLabel:@"Token Parameter" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *tokenParamLabel = [self formLabel:KoeLocalizedString(@"settings.setupWizard.llm.label.tokenParameter") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     tokenParamLabel.tag = 2006;
     [pane addSubview:tokenParamLabel];
     self.maxTokenParamPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, detailY - 2, 240, 26) pullsDown:NO];
@@ -1188,7 +1188,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat mlxY = providerDetailStartY;  // same Y as Base URL row
 
     // MLX Model popup + Download button
-    NSTextField *llmModelLabel = [self formLabel:@"Model" frame:NSMakeRect(detailLabelX, mlxY, labelW, 22)];
+    NSTextField *llmModelLabel = [self formLabel:KoeLocalizedString(@"settings.setupWizard.common.label.model") frame:NSMakeRect(detailLabelX, mlxY, labelW, 22)];
     llmModelLabel.tag = 2010;
     llmModelLabel.hidden = YES;
     [pane addSubview:llmModelLabel];
@@ -1434,9 +1434,9 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [self.triggerModePopup itemAtIndex:1].representedObject = @"toggle";
 
     // ── Trigger card ──
-    NSView *triggerCard = [self cardWithTitle:@"Trigger" rows:@[
-        [self cardRowWithLabel:@"Trigger Shortcut" control:triggerShortcutControl],
-        [self cardRowWithLabel:@"Trigger Mode" control:self.triggerModePopup],
+    NSView *triggerCard = [self cardWithTitle:KoeLocalizedString(@"settings.setupWizard.hotkey.card.trigger") rows:@[
+        [self cardRowWithLabel:KoeLocalizedString(@"settings.setupWizard.hotkey.row.triggerShortcut") control:triggerShortcutControl],
+        [self cardRowWithLabel:KoeLocalizedString(@"settings.setupWizard.hotkey.row.triggerMode") control:self.triggerModePopup],
     ] width:cardWidth];
 
     // ── Feedback Sounds ──
@@ -2368,8 +2368,8 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
 - (void)addTemplate:(id)sender {
     if (self.templatesData.count >= 9) {
-        [self showAlert:@"Template limit reached"
-                   info:@"You can add up to 9 prompt templates because the overlay only supports number keys 1-9."];
+        [self showAlert:KoeLocalizedString(@"settings.setupWizard.alert.templateLimitReached.title")
+                   info:KoeLocalizedString(@"settings.setupWizard.alert.templateLimitReached.message")];
         return;
     }
 
@@ -3050,7 +3050,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
     // If selected model is currently downloading, show progress UI
     if ([self.downloadingModels containsObject:modelPath]) {
-        self.modelStatusLabel.stringValue = @"Downloading";
+        self.modelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.downloading");
         self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
         self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"stop.circle"
                                                      accessibilityDescription:KoeLocalizedString(@"settings.setupWizard.common.a11y.stop")];
@@ -3094,19 +3094,21 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                                                  accessibilityDescription:KoeLocalizedString(@"settings.setupWizard.common.a11y.download")];
     switch (status) {
         case 2:
-            self.modelStatusLabel.stringValue = verifying ? @"● Verifying…" : @"● Installed";
+            self.modelStatusLabel.stringValue = verifying ? KoeLocalizedString(@"settings.setupWizard.model.status.verifyingInstalled")
+                                                          : KoeLocalizedString(@"settings.setupWizard.model.status.installed");
             self.modelStatusLabel.textColor = verifying ? [NSColor secondaryLabelColor] : [NSColor systemGreenColor];
             self.modelDownloadButton.enabled = NO;
             self.modelDeleteButton.enabled = YES;
             break;
         case 1:
-            self.modelStatusLabel.stringValue = verifying ? @"◐ Verifying…" : @"◐ Incomplete";
+            self.modelStatusLabel.stringValue = verifying ? KoeLocalizedString(@"settings.setupWizard.model.status.verifyingIncomplete")
+                                                          : KoeLocalizedString(@"settings.setupWizard.model.status.incomplete");
             self.modelStatusLabel.textColor = verifying ? [NSColor secondaryLabelColor] : [NSColor systemOrangeColor];
             self.modelDownloadButton.enabled = YES;
             self.modelDeleteButton.enabled = YES;
             break;
         default:
-            self.modelStatusLabel.stringValue = @"○ Not installed";
+            self.modelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.notInstalled");
             self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
             self.modelDownloadButton.enabled = YES;
             self.modelDeleteButton.enabled = NO;
@@ -3140,7 +3142,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
         self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"stop.circle"
                                                  accessibilityDescription:KoeLocalizedString(@"settings.setupWizard.common.a11y.stop")];
     self.modelDownloadButton.hidden = NO;
-    self.modelStatusLabel.stringValue = @"Downloading...";
+    self.modelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.downloadingEllipsis");
     self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
     self.modelProgressBar.hidden = NO;
     self.modelProgressBar.doubleValue = 0;
@@ -3176,9 +3178,9 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
             double pct = (totalBytesAllFiles > 0)
                 ? (double)totalDownloaded / (double)totalBytesAllFiles * 100.0 : 0;
             strongSelf.modelProgressBar.doubleValue = pct;
-            strongSelf.modelStatusLabel.stringValue = @"Downloading";
+            strongSelf.modelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.downloading");
             strongSelf.modelProgressSizeLabel.stringValue =
-                [NSString stringWithFormat:@"%.1f / %.1f MB",
+                [NSString stringWithFormat:KoeLocalizedString(@"settings.setupWizard.model.status.progressFormat"),
                     (double)totalDownloaded / 1048576.0,
                     (double)totalBytesAllFiles / 1048576.0];
         }
@@ -3202,10 +3204,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     if (!modelPath) return;
 
     NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"Remove Model Files?";
-    alert.informativeText = @"Downloaded model files will be deleted. The model can be re-downloaded later.";
-    [alert addButtonWithTitle:@"Remove"];
-    [alert addButtonWithTitle:@"Cancel"];
+    alert.messageText = KoeLocalizedString(@"settings.setupWizard.alert.removeModelFiles.title");
+    alert.informativeText = KoeLocalizedString(@"settings.setupWizard.alert.removeModelFiles.message");
+    [alert addButtonWithTitle:KoeLocalizedString(@"settings.setupWizard.alert.removeModelFiles.confirm")];
+    [alert addButtonWithTitle:KoeLocalizedString(@"settings.setupWizard.common.button.cancel")];
     alert.alertStyle = NSAlertStyleWarning;
 
     if ([alert runModal] == NSAlertFirstButtonReturn) {
@@ -3254,7 +3256,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
         }
     } else {
         // Fallback if API unavailable
-        [self.appleSpeechLocalePopup addItemWithTitle:@"No languages available"];
+        [self.appleSpeechLocalePopup addItemWithTitle:KoeLocalizedString(@"settings.setupWizard.model.noLanguagesAvailable")];
         self.appleSpeechLocalePopup.enabled = NO;
     }
 }
@@ -3265,7 +3267,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
     switch (status) {
         case 3: { // installed
-            self.modelStatusLabel.stringValue = @"● Installed";
+            self.modelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.installed");
             self.modelStatusLabel.textColor = [NSColor systemGreenColor];
             self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
                                                         accessibilityDescription:KoeLocalizedString(@"settings.setupWizard.common.a11y.download")];
@@ -3274,13 +3276,13 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
             break;
         }
         case 2: // downloading
-            self.modelStatusLabel.stringValue = @"◐ Downloading…";
+            self.modelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.downloadingInProgress");
             self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
             self.modelDownloadButton.enabled = NO;
             self.modelDeleteButton.enabled = NO;
             break;
         case 1: // supported (downloadable)
-            self.modelStatusLabel.stringValue = @"○ Not installed";
+            self.modelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.notInstalled");
             self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
             self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
                                                         accessibilityDescription:KoeLocalizedString(@"settings.setupWizard.common.a11y.download")];
@@ -3288,7 +3290,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
             self.modelDeleteButton.enabled = NO;
             break;
         default: // unsupported
-            self.modelStatusLabel.stringValue = @"✕ Not supported for this language";
+            self.modelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.notSupportedLanguage");
             self.modelStatusLabel.textColor = [NSColor systemRedColor];
             self.modelDownloadButton.enabled = NO;
             self.modelDeleteButton.enabled = NO;
@@ -3302,14 +3304,14 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     dispatch_async(dispatch_get_main_queue(), ^{
         switch (eventType) {
             case 0: // progress
-                controller.modelStatusLabel.stringValue = textStr ?: @"Downloading…";
+                controller.modelStatusLabel.stringValue = textStr ?: KoeLocalizedString(@"settings.setupWizard.model.status.downloadingInProgress");
                 controller.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
                 break;
             case 1: // completed
                 [controller updateAppleSpeechAssetStatus];
                 break;
             case 2: // error
-                controller.modelStatusLabel.stringValue = textStr ?: @"Download failed";
+                controller.modelStatusLabel.stringValue = textStr ?: KoeLocalizedString(@"settings.setupWizard.model.status.downloadFailed");
                 controller.modelStatusLabel.textColor = [NSColor systemRedColor];
                 controller.modelDownloadButton.enabled = YES;
                 break;
@@ -3325,10 +3327,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     NSString *locale = self.appleSpeechLocalePopup.selectedItem.representedObject;
 
     NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"Release Speech Assets?";
-    alert.informativeText = @"The system may reclaim storage for this language's speech model. You can re-download it later.";
-    [alert addButtonWithTitle:@"Release"];
-    [alert addButtonWithTitle:@"Cancel"];
+    alert.messageText = KoeLocalizedString(@"settings.setupWizard.alert.releaseSpeechAssets.title");
+    alert.informativeText = KoeLocalizedString(@"settings.setupWizard.alert.releaseSpeechAssets.message");
+    [alert addButtonWithTitle:KoeLocalizedString(@"settings.setupWizard.alert.releaseSpeechAssets.confirm")];
+    [alert addButtonWithTitle:KoeLocalizedString(@"settings.setupWizard.common.button.cancel")];
     alert.alertStyle = NSAlertStyleWarning;
 
     if ([alert runModal] == NSAlertFirstButtonReturn) {
@@ -3339,7 +3341,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
 - (void)downloadAppleSpeechAsset {
     NSString *locale = self.appleSpeechLocalePopup.selectedItem.representedObject;
-    self.modelStatusLabel.stringValue = @"Downloading…";
+    self.modelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.downloadingInProgress");
     self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
     self.modelDownloadButton.enabled = NO;
     koe_apple_speech_install_asset(locale.UTF8String, appleSpeechInstallCallback, (__bridge void *)self);
@@ -3370,7 +3372,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     }
 
     if (self.localModelPopup.numberOfItems == 0) {
-        [self.localModelPopup addItemWithTitle:@"No models found"];
+        [self.localModelPopup addItemWithTitle:KoeLocalizedString(@"settings.setupWizard.model.noModelsFound")];
         self.localModelPopup.enabled = NO;
     } else {
         self.localModelPopup.enabled = YES;
@@ -3606,19 +3608,19 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
 - (void)showAddLlmProfileMenu:(id)sender {
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
-    NSMenuItem *openaiItem = [[NSMenuItem alloc] initWithTitle:@"OpenAI Compatible"
+    NSMenuItem *openaiItem = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"settings.setupWizard.llm.provider.openaiCompatible")
                                                         action:@selector(addLlmProfileFromMenu:)
                                                  keyEquivalent:@""];
     openaiItem.target = self;
     openaiItem.representedObject = @"openai";
     [menu addItem:openaiItem];
-    NSMenuItem *apfelItem = [[NSMenuItem alloc] initWithTitle:@"APFEL"
+    NSMenuItem *apfelItem = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"settings.setupWizard.llm.provider.apfel")
                                                        action:@selector(addLlmProfileFromMenu:)
                                                 keyEquivalent:@""];
     apfelItem.target = self;
     apfelItem.representedObject = @"apfel";
     [menu addItem:apfelItem];
-    NSMenuItem *mlxItem = [[NSMenuItem alloc] initWithTitle:@"MLX (Apple Silicon)"
+    NSMenuItem *mlxItem = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"settings.setupWizard.llm.provider.mlx")
                                                      action:@selector(addLlmProfileFromMenu:)
                                               keyEquivalent:@""];
     mlxItem.target = self;
@@ -3835,10 +3837,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
             int32_t assetStatus = koe_apple_speech_asset_status(locale.UTF8String);
             if (assetStatus != 3) { // not installed
                 NSAlert *alert = [[NSAlert alloc] init];
-                alert.messageText = @"Speech Assets Not Installed";
-                alert.informativeText = @"The speech recognition model for the selected language has not been downloaded yet. Saving will start downloading automatically.";
-                [alert addButtonWithTitle:@"Save & Download"];
-                [alert addButtonWithTitle:@"Cancel"];
+                alert.messageText = KoeLocalizedString(@"settings.setupWizard.alert.speechAssetsNotInstalled.title");
+                alert.informativeText = KoeLocalizedString(@"settings.setupWizard.alert.speechAssetsNotInstalled.message");
+                [alert addButtonWithTitle:KoeLocalizedString(@"settings.setupWizard.alert.speechAssetsNotInstalled.confirm")];
+                [alert addButtonWithTitle:KoeLocalizedString(@"settings.setupWizard.common.button.cancel")];
                 alert.alertStyle = NSAlertStyleWarning;
                 if ([alert runModal] != NSAlertFirstButtonReturn) {
                     return;
@@ -3858,10 +3860,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
                 NSInteger status = [self.rustBridge modelStatus:modelPath mode:SPModelVerifyCacheOnly];
                 if (status != 2) { // not installed
                     NSAlert *alert = [[NSAlert alloc] init];
-                    alert.messageText = @"Model Not Installed";
-                    alert.informativeText = @"The selected model has not been downloaded yet. ASR will not work until the model is installed.";
-                    [alert addButtonWithTitle:@"Save Anyway"];
-                    [alert addButtonWithTitle:@"Cancel"];
+                    alert.messageText = KoeLocalizedString(@"settings.setupWizard.alert.modelNotInstalled.title");
+                    alert.informativeText = KoeLocalizedString(@"settings.setupWizard.alert.modelNotInstalled.message");
+                    [alert addButtonWithTitle:KoeLocalizedString(@"settings.setupWizard.alert.modelNotInstalled.confirm")];
+                    [alert addButtonWithTitle:KoeLocalizedString(@"settings.setupWizard.common.button.cancel")];
                     alert.alertStyle = NSAlertStyleWarning;
                     if ([alert runModal] != NSAlertFirstButtonReturn) {
                         return;
@@ -3884,8 +3886,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         [self saveCurrentTemplateEdits];
         NSString *templateError = nil;
         if (![self validateTemplatesDataWithMessage:&templateError]) {
-            [self showAlert:@"Invalid prompt templates"
-                       info:templateError ?: @"Check your templates and try again."];
+            [self showAlert:KoeLocalizedString(@"settings.setupWizard.alert.invalidPromptTemplates.title")
+                       info:templateError ?: KoeLocalizedString(@"settings.setupWizard.alert.invalidPromptTemplates.message")];
             return;
         }
         serializedTemplates = [self serializedTemplatesData];
@@ -3990,8 +3992,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
     if (!saveOk) {
         rollbackConfigIfNeeded();
-        [self showAlert:@"Some settings failed to save"
-                   info:@"Check that ~/.koe/config.yaml is writable and try again."];
+        [self showAlert:KoeLocalizedString(@"settings.setupWizard.alert.saveFailed.title")
+                   info:KoeLocalizedString(@"settings.setupWizard.alert.saveFailed.message")];
         return;
     }
 
@@ -3999,8 +4001,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     if (serializedTemplates) {
         if (![self.rustBridge setPromptTemplates:serializedTemplates]) {
             rollbackConfigIfNeeded();
-            [self showAlert:@"Failed to save prompt templates"
-                       info:@"Check your prompt templates and ~/.koe/config.yaml, then try again."];
+            [self showAlert:KoeLocalizedString(@"settings.setupWizard.alert.savePromptTemplatesFailed.title")
+                       info:KoeLocalizedString(@"settings.setupWizard.alert.savePromptTemplatesFailed.message")];
             return;
         }
     }
@@ -4013,7 +4015,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         if (error) {
             NSLog(@"[Koe] Failed to write dictionary.txt: %@", error.localizedDescription);
             rollbackConfigIfNeeded();
-            [self showAlert:@"Failed to save dictionary.txt" info:error.localizedDescription];
+            [self showAlert:KoeLocalizedString(@"settings.setupWizard.alert.saveDictionaryFailed.title") info:error.localizedDescription];
             return;
         }
     }
@@ -4025,7 +4027,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         if (error) {
             NSLog(@"[Koe] Failed to write system_prompt.txt: %@", error.localizedDescription);
             rollbackConfigIfNeeded();
-            [self showAlert:@"Failed to save system_prompt.txt" info:error.localizedDescription];
+            [self showAlert:KoeLocalizedString(@"settings.setupWizard.alert.saveSystemPromptFailed.title") info:error.localizedDescription];
             return;
         }
     }
@@ -4089,7 +4091,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     [self.llmRemoteModelPopup removeAllItems];
 
     if (models.count == 0) {
-        [self.llmRemoteModelPopup addItemWithTitle:@"No models available"];
+        [self.llmRemoteModelPopup addItemWithTitle:KoeLocalizedString(@"settings.setupWizard.llm.modelList.noModelsAvailable")];
         self.llmRemoteModelPopup.lastItem.representedObject = nil;
         self.llmRemoteModelPopup.enabled = NO;
         return;
@@ -4132,13 +4134,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     NSString *currentModel = [self.llmModelField.stringValue copy] ?: @"";
     if (baseURL.length == 0) {
         [self.llmRemoteModelPopup removeAllItems];
-        [self.llmRemoteModelPopup addItemWithTitle:@"Enter Base URL first"];
+        [self.llmRemoteModelPopup addItemWithTitle:KoeLocalizedString(@"settings.setupWizard.llm.modelList.enterBaseUrlFirst")];
         self.llmRemoteModelPopup.enabled = NO;
         return;
     }
 
     [self.llmRemoteModelPopup removeAllItems];
-    [self.llmRemoteModelPopup addItemWithTitle:@"Loading models..."];
+    [self.llmRemoteModelPopup addItemWithTitle:KoeLocalizedString(@"settings.setupWizard.llm.modelList.loading")];
     self.llmRemoteModelPopup.enabled = NO;
     self.llmRefreshModelsButton.enabled = NO;
 
@@ -4171,10 +4173,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
                 [innerSelf populateLlmRemoteModelPopupWithModels:models selectedModel:currentModel];
             } else {
                 [innerSelf.llmRemoteModelPopup removeAllItems];
-                [innerSelf.llmRemoteModelPopup addItemWithTitle:@"Load failed"];
+                [innerSelf.llmRemoteModelPopup addItemWithTitle:KoeLocalizedString(@"settings.setupWizard.llm.modelList.loadFailed")];
                 innerSelf.llmRemoteModelPopup.enabled = NO;
                 if (message.length > 0) {
-                    innerSelf.llmTestResultLabel.stringValue = [NSString stringWithFormat:@"Model list: %@", message];
+                    innerSelf.llmTestResultLabel.stringValue = [NSString stringWithFormat:KoeLocalizedString(@"settings.setupWizard.llm.modelList.resultPrefix"), message];
                     innerSelf.llmTestResultLabel.textColor = [NSColor systemOrangeColor];
                 }
             }
@@ -4217,7 +4219,9 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     self.llmModelField.enabled = enabled;
     self.llmToggleModelPickerButton.hidden = !isOpenAiLike;
     self.llmToggleModelPickerButton.enabled = enabled && isOpenAiLike;
-    [self.llmToggleModelPickerButton setTitle:(self.llmRemoteModelPickerExpanded ? @"Hide" : @"Choose")];
+    [self.llmToggleModelPickerButton setTitle:(self.llmRemoteModelPickerExpanded
+                                               ? KoeLocalizedString(@"settings.setupWizard.common.button.hide")
+                                               : KoeLocalizedString(@"settings.setupWizard.common.button.choose"))];
     BOOL showRemoteModelPicker = isOpenAiLike && self.llmRemoteModelPickerExpanded;
     [self setLlmRemoteModelPickerRowVisible:showRemoteModelPicker];
     [self setHidden:!showRemoteModelPicker
@@ -4262,7 +4266,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     }
 
     if (self.llmLocalModelPopup.numberOfItems == 0) {
-        [self.llmLocalModelPopup addItemWithTitle:@"No models found"];
+        [self.llmLocalModelPopup addItemWithTitle:KoeLocalizedString(@"settings.setupWizard.model.noModelsFound")];
         self.llmLocalModelPopup.enabled = NO;
     } else {
         self.llmLocalModelPopup.enabled = YES;
@@ -4285,7 +4289,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     }
 
     if ([self.downloadingModels containsObject:modelPath]) {
-        self.llmModelStatusLabel.stringValue = @"Downloading";
+        self.llmModelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.downloading");
         self.llmModelStatusLabel.textColor = [NSColor secondaryLabelColor];
         self.llmModelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"stop.circle"
                                                          accessibilityDescription:KoeLocalizedString(@"settings.setupWizard.common.a11y.stop")];
@@ -4326,19 +4330,21 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
                                                      accessibilityDescription:KoeLocalizedString(@"settings.setupWizard.common.a11y.download")];
     switch (status) {
         case 2:
-            self.llmModelStatusLabel.stringValue = verifying ? @"● Verifying…" : @"● Installed";
+            self.llmModelStatusLabel.stringValue = verifying ? KoeLocalizedString(@"settings.setupWizard.model.status.verifyingInstalled")
+                                                             : KoeLocalizedString(@"settings.setupWizard.model.status.installed");
             self.llmModelStatusLabel.textColor = verifying ? [NSColor secondaryLabelColor] : [NSColor systemGreenColor];
             self.llmModelDownloadButton.enabled = NO;
             self.llmModelDeleteButton.enabled = YES;
             break;
         case 1:
-            self.llmModelStatusLabel.stringValue = verifying ? @"◐ Verifying…" : @"◐ Incomplete";
+            self.llmModelStatusLabel.stringValue = verifying ? KoeLocalizedString(@"settings.setupWizard.model.status.verifyingIncomplete")
+                                                             : KoeLocalizedString(@"settings.setupWizard.model.status.incomplete");
             self.llmModelStatusLabel.textColor = verifying ? [NSColor secondaryLabelColor] : [NSColor systemOrangeColor];
             self.llmModelDownloadButton.enabled = YES;
             self.llmModelDeleteButton.enabled = YES;
             break;
         default:
-            self.llmModelStatusLabel.stringValue = @"○ Not installed";
+            self.llmModelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.notInstalled");
             self.llmModelStatusLabel.textColor = [NSColor secondaryLabelColor];
             self.llmModelDownloadButton.enabled = YES;
             self.llmModelDeleteButton.enabled = NO;
@@ -4363,7 +4369,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     self.llmModelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"stop.circle"
                                                      accessibilityDescription:KoeLocalizedString(@"settings.setupWizard.common.a11y.stop")];
     self.llmModelDownloadButton.hidden = NO;
-    self.llmModelStatusLabel.stringValue = @"Downloading...";
+    self.llmModelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.downloadingEllipsis");
     self.llmModelStatusLabel.textColor = [NSColor secondaryLabelColor];
     self.llmModelProgressBar.hidden = NO;
     self.llmModelProgressBar.doubleValue = 0;
@@ -4397,9 +4403,9 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
             double pct = (totalBytesAllFiles > 0)
                 ? (double)totalDownloaded / (double)totalBytesAllFiles * 100.0 : 0;
             strongSelf.llmModelProgressBar.doubleValue = pct;
-            strongSelf.llmModelStatusLabel.stringValue = @"Downloading";
+            strongSelf.llmModelStatusLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.model.status.downloading");
             strongSelf.llmModelProgressSizeLabel.stringValue =
-                [NSString stringWithFormat:@"%.1f / %.1f MB",
+                [NSString stringWithFormat:KoeLocalizedString(@"settings.setupWizard.model.status.progressFormat"),
                     (double)totalDownloaded / 1048576.0,
                     (double)totalBytesAllFiles / 1048576.0];
         }
@@ -4416,10 +4422,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     if (!modelPath) return;
 
     NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"Remove Model Files?";
-    alert.informativeText = @"Downloaded model files will be deleted. The model can be re-downloaded later.";
-    [alert addButtonWithTitle:@"Remove"];
-    [alert addButtonWithTitle:@"Cancel"];
+    alert.messageText = KoeLocalizedString(@"settings.setupWizard.alert.removeModelFiles.title");
+    alert.informativeText = KoeLocalizedString(@"settings.setupWizard.alert.removeModelFiles.message");
+    [alert addButtonWithTitle:KoeLocalizedString(@"settings.setupWizard.alert.removeModelFiles.confirm")];
+    [alert addButtonWithTitle:KoeLocalizedString(@"settings.setupWizard.common.button.cancel")];
     alert.alertStyle = NSAlertStyleWarning;
 
     if ([alert runModal] == NSAlertFirstButtonReturn) {
@@ -4431,7 +4437,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 - (void)testLlmConnection:(id)sender {
     NSDictionary *profile = [self runtimeLlmProfileForActiveProfile];
     if (!profile) {
-        self.llmTestResultLabel.stringValue = @"Please select an LLM profile first.";
+        self.llmTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.llm.selectProfileFirst");
         self.llmTestResultLabel.textColor = [NSColor systemOrangeColor];
         return;
     }
@@ -4440,7 +4446,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     NSString *baseUrl = [profile[@"base_url"] isKindOfClass:[NSString class]] ? profile[@"base_url"] : @"";
     NSString *model = [profile[@"model"] isKindOfClass:[NSString class]] ? profile[@"model"] : @"";
     if ([provider isEqualToString:@"openai"] && (baseUrl.length == 0 || model.length == 0)) {
-        self.llmTestResultLabel.stringValue = @"Please fill in Base URL and Model first.";
+        self.llmTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.llm.fillBaseUrlModelFirst");
         self.llmTestResultLabel.textColor = [NSColor systemOrangeColor];
         return;
     }
@@ -4448,13 +4454,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:profile options:0 error:nil];
     NSString *profileJson = jsonData ? [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding] : nil;
     if (profileJson.length == 0) {
-        self.llmTestResultLabel.stringValue = @"Test failed: invalid profile data";
+        self.llmTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.llm.invalidProfileData");
         self.llmTestResultLabel.textColor = [NSColor systemRedColor];
         return;
     }
 
     self.llmTestButton.enabled = NO;
-    self.llmTestResultLabel.stringValue = @"Testing...";
+    self.llmTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.common.testing");
     self.llmTestResultLabel.textColor = [NSColor secondaryLabelColor];
 
     // Run the Rust-side test on a background thread; the profile path matches runtime correction.
@@ -4473,16 +4479,16 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
             self.llmTestButton.enabled = (self.llmEnabledCheckbox.state == NSControlStateValueOn);
 
             if (!result) {
-                self.llmTestResultLabel.stringValue = @"Test failed: invalid response from core";
+                self.llmTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.llm.invalidResponseFromCore");
                 self.llmTestResultLabel.textColor = [NSColor systemRedColor];
                 return;
             }
 
             BOOL success = [result[@"success"] boolValue];
-            NSString *message = result[@"message"] ?: @"Unknown result";
+            NSString *message = result[@"message"] ?: KoeLocalizedString(@"settings.setupWizard.test.common.unknownResult");
             NSNumber *elapsedMs = result[@"elapsed_ms"];
             NSString *timeStr = elapsedMs
-                ? [NSString stringWithFormat:@" (%.1fs)", elapsedMs.doubleValue / 1000.0] : @"";
+                ? [NSString stringWithFormat:KoeLocalizedString(@"settings.setupWizard.test.common.elapsedSecondsFormat"), elapsedMs.doubleValue / 1000.0] : @"";
 
             self.llmTestResultLabel.stringValue =
                 [NSString stringWithFormat:@"%@%@", message, timeStr];
@@ -4507,7 +4513,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
 - (void)testDoubaoImeConnection {
     self.asrTestButton.enabled = NO;
-    self.asrTestResultLabel.stringValue = @"Testing...";
+    self.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.common.testing");
     self.asrTestResultLabel.textColor = [NSColor secondaryLabelColor];
 
     // Test by connecting to the DoubaoIME WebSocket endpoint
@@ -4535,15 +4541,15 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         if (wsTask.state == NSURLSessionTaskStateRunning) {
             [wsTask cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
             strongSelf.asrTestButton.enabled = YES;
-            strongSelf.asrTestResultLabel.stringValue = @"Connected (device registration will complete on first use)";
+            strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.connectedWithDeviceRegistration");
             strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
         } else if (wsTask.state == NSURLSessionTaskStateCompleted) {
             strongSelf.asrTestButton.enabled = YES;
             if (wsTask.error) {
-                strongSelf.asrTestResultLabel.stringValue = [NSString stringWithFormat:@"Connection failed: %@", wsTask.error.localizedDescription];
+                strongSelf.asrTestResultLabel.stringValue = [NSString stringWithFormat:KoeLocalizedString(@"settings.setupWizard.test.asr.connectionFailedFormat"), wsTask.error.localizedDescription];
                 strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
             } else {
-                strongSelf.asrTestResultLabel.stringValue = @"Connected (device registration will complete on first use)";
+                strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.connectedWithDeviceRegistration");
                 strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
             }
         }
@@ -4556,13 +4562,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     NSString *accessKey = self.asrAccessKeyToggle.tag == 1 ? self.asrAccessKeyField.stringValue : self.asrAccessKeySecureField.stringValue;
 
     if (appKey.length == 0 || accessKey.length == 0) {
-        self.asrTestResultLabel.stringValue = @"Please fill in App Key and Access Key first";
+        self.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.fillAppKeyAccessKeyFirst");
         self.asrTestResultLabel.textColor = [NSColor systemOrangeColor];
         return;
     }
 
     self.asrTestButton.enabled = NO;
-    self.asrTestResultLabel.stringValue = @"Testing...";
+    self.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.common.testing");
     self.asrTestResultLabel.textColor = [NSColor secondaryLabelColor];
 
     // Create WebSocket connection test
@@ -4610,27 +4616,27 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
                 if ([errorMsg containsString:@"401"] || [errorMsg containsString:@"403"] ||
                     [error.localizedFailureReason containsString:@"401"] || statusCode == 401) {
-                    strongSelf.asrTestResultLabel.stringValue = @"Auth failed: please check App Key and Access Key";
+                    strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.authFailedAppKeyAccessKey");
                 } else if ([errorMsg containsString:@"time"] || error.code == NSURLErrorTimedOut) {
-                    strongSelf.asrTestResultLabel.stringValue = @"Connection timed out: please check your network";
+                    strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.connectionTimedOut");
                 } else if ([errorMsg containsString:@"bad response"] ||
                            [errorMsg containsString:@"Bad response"] ||
                            statusCode == 400 || statusCode == 403) {
                     // HTTP error during WebSocket handshake (e.g. 400 Bad Request)
-                    strongSelf.asrTestResultLabel.stringValue = @"Auth failed: please check App Key and Access Key";
+                    strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.authFailedAppKeyAccessKey");
                 } else if ([errorMsg containsString:@"unable"] ||
                            [errorMsg containsString:@"Unable"] ||
                            [errorMsg containsString:@"Cannot connect"] ||
                            [errorMsg containsString:@"Network"]) {
-                    strongSelf.asrTestResultLabel.stringValue = @"Network error: please check your network settings";
+                    strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.networkError");
                 } else {
-                    strongSelf.asrTestResultLabel.stringValue = @"Connection failed: please check your configuration";
+                    strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.connectionFailedConfig");
                 }
                 strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
                 return;
             }
 
-            strongSelf.asrTestResultLabel.stringValue = @"Connected";
+            strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.common.connected");
             strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
         });
     }];
@@ -4649,7 +4655,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
         if (!strongSelf.asrTestButton.enabled) {
             strongSelf.asrTestButton.enabled = YES;
-            strongSelf.asrTestResultLabel.stringValue = @"Connected";
+            strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.common.connected");
             strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
         }
     });
@@ -4664,7 +4670,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
         [wsTask cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
         strongSelf.asrTestButton.enabled = YES;
-        strongSelf.asrTestResultLabel.stringValue = @"Connection timed out: please check your network";
+        strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.connectionTimedOut");
         strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
     });
 }
@@ -4674,13 +4680,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     NSString *apiKey = self.asrQwenApiKeyToggle.tag == 1 ? self.asrQwenApiKeyField.stringValue : self.asrQwenApiKeySecureField.stringValue;
 
     if (apiKey.length == 0) {
-        self.asrTestResultLabel.stringValue = @"Please fill in API Key first";
+        self.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.fillApiKeyFirst");
         self.asrTestResultLabel.textColor = [NSColor systemOrangeColor];
         return;
     }
 
     self.asrTestButton.enabled = NO;
-    self.asrTestResultLabel.stringValue = @"Testing...";
+    self.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.common.testing");
     self.asrTestResultLabel.textColor = [NSColor secondaryLabelColor];
 
     // Create WebSocket connection test
@@ -4725,29 +4731,29 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
                 if ([errorMsg containsString:@"401"] || [errorMsg containsString:@"403"] ||
                     statusCode == 401) {
-                    strongSelf.asrTestResultLabel.stringValue = @"Auth failed: please check your API Key";
+                    strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.authFailedApiKey");
                 } else if ([errorMsg containsString:@"time"] || error.code == NSURLErrorTimedOut) {
-                    strongSelf.asrTestResultLabel.stringValue = @"Connection timed out: please check your network";
+                    strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.connectionTimedOut");
                 } else if ([errorMsg containsString:@"bad response"] ||
                            [errorMsg containsString:@"Bad response"]) {
                     // HTTP error during WebSocket handshake
-                    strongSelf.asrTestResultLabel.stringValue = @"Auth failed: please check your API Key";
+                    strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.authFailedApiKey");
                 } else if ([errorMsg containsString:@"unable"] ||
                            [errorMsg containsString:@"Unable"] ||
                            [errorMsg containsString:@"Cannot connect"]) {
-                    strongSelf.asrTestResultLabel.stringValue = @"Network error: please check your network settings";
+                    strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.networkError");
                 } else {
-                    strongSelf.asrTestResultLabel.stringValue = @"Connection failed: please check your configuration";
+                    strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.connectionFailedConfig");
                 }
                 strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
                 return;
             }
 
             if (message) {
-                strongSelf.asrTestResultLabel.stringValue = @"Connected";
+                strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.common.connected");
                 strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
             } else {
-                strongSelf.asrTestResultLabel.stringValue = @"Connection failed: no response from server";
+                strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.connectionFailedNoResponse");
                 strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
             }
         });
@@ -4762,7 +4768,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
 
         [wsTask cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
         strongSelf.asrTestButton.enabled = YES;
-        strongSelf.asrTestResultLabel.stringValue = @"Connection timed out: please check your network";
+        strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"settings.setupWizard.test.asr.connectionTimedOut");
         strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
     });
 }
@@ -4772,7 +4778,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     alert.messageText = message;
     alert.informativeText = info ?: @"";
     alert.alertStyle = NSAlertStyleWarning;
-    [alert addButtonWithTitle:@"OK"];
+    [alert addButtonWithTitle:KoeLocalizedString(@"settings.setupWizard.common.button.ok")];
     [alert runModal];
 }
 

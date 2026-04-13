@@ -151,6 +151,7 @@
 "settings.setupWizard.llm.placeholder.apiKey" = "sk-...";
 "settings.setupWizard.llm.placeholder.model" = "gpt-5.4-nano";
 "settings.setupWizard.llm.provider.openaiCompatible" = "OpenAI Compatible";
+"settings.setupWizard.llm.provider.apfel" = "APFEL";
 "settings.setupWizard.llm.provider.mlx" = "MLX (Apple Silicon)";
 "settings.setupWizard.llm.modelList.noModelsLoaded" = "No models loaded";
 "settings.setupWizard.llm.tokenHint" = "GPT-4o and older models use max_tokens. GPT-5 and reasoning models (o1/o3) use max_completion_tokens.";
@@ -254,3 +255,81 @@
 "menu.edit.copy" = "Copy";
 "menu.edit.paste" = "Paste";
 "menu.edit.selectAll" = "Select All";
+
+/* ─── Setup Wizard Missing I18n ─── */
+"settings.setupWizard.common.button.ok" = "OK";
+"settings.setupWizard.llm.label.type" = "Type";
+"settings.setupWizard.llm.placeholder.profileCustomName" = "My profile";
+"settings.setupWizard.llm.placeholder.apiKeyOptional" = "sk-... (leave empty if not required)";
+"settings.setupWizard.llm.modelList.error.invalidEncoding" = "Invalid model list response encoding";
+"settings.setupWizard.llm.modelList.error.invalidPayload" = "Invalid model list response payload";
+
+"settings.setupWizard.model.noLanguagesAvailable" = "No languages available";
+"settings.setupWizard.model.noModelsFound" = "No models found";
+"settings.setupWizard.model.status.downloading" = "Downloading";
+"settings.setupWizard.model.status.downloadingEllipsis" = "Downloading...";
+"settings.setupWizard.model.status.downloadingInProgress" = "◐ Downloading…";
+"settings.setupWizard.model.status.verifyingInstalled" = "● Verifying…";
+"settings.setupWizard.model.status.verifyingIncomplete" = "◐ Verifying…";
+"settings.setupWizard.model.status.installed" = "● Installed";
+"settings.setupWizard.model.status.incomplete" = "◐ Incomplete";
+"settings.setupWizard.model.status.notInstalled" = "○ Not installed";
+"settings.setupWizard.model.status.notSupportedLanguage" = "✕ Not supported for this language";
+"settings.setupWizard.model.status.downloadFailed" = "Download failed";
+"settings.setupWizard.model.download.alreadyDownloading" = "Already downloading";
+"settings.setupWizard.model.download.startFailed" = "Failed to start download";
+
+"settings.setupWizard.alert.templateLimitReached.title" = "Template limit reached";
+"settings.setupWizard.alert.templateLimitReached.message" = "You can add up to 9 prompt templates because the overlay only supports number keys 1-9.";
+"settings.setupWizard.alert.removeModelFiles.title" = "Remove Model Files?";
+"settings.setupWizard.alert.removeModelFiles.message" = "Downloaded model files will be deleted. The model can be re-downloaded later.";
+"settings.setupWizard.alert.removeModelFiles.confirm" = "Remove";
+"settings.setupWizard.alert.releaseSpeechAssets.title" = "Release Speech Assets?";
+"settings.setupWizard.alert.releaseSpeechAssets.message" = "The system may reclaim storage for this language's speech model. You can re-download it later.";
+"settings.setupWizard.alert.releaseSpeechAssets.confirm" = "Release";
+"settings.setupWizard.alert.speechAssetsNotInstalled.title" = "Speech Assets Not Installed";
+"settings.setupWizard.alert.speechAssetsNotInstalled.message" = "The speech recognition model for the selected language has not been downloaded yet. Saving will start downloading automatically.";
+"settings.setupWizard.alert.speechAssetsNotInstalled.confirm" = "Save & Download";
+"settings.setupWizard.alert.modelNotInstalled.title" = "Model Not Installed";
+"settings.setupWizard.alert.modelNotInstalled.message" = "The selected model has not been downloaded yet. ASR will not work until the model is installed.";
+"settings.setupWizard.alert.modelNotInstalled.confirm" = "Save Anyway";
+"settings.setupWizard.alert.invalidPromptTemplates.title" = "Invalid prompt templates";
+"settings.setupWizard.alert.invalidPromptTemplates.message" = "Check your templates and try again.";
+"settings.setupWizard.alert.saveFailed.title" = "Some settings failed to save";
+"settings.setupWizard.alert.saveFailed.message" = "Check that ~/.koe/config.yaml is writable and try again.";
+"settings.setupWizard.alert.savePromptTemplatesFailed.title" = "Failed to save prompt templates";
+"settings.setupWizard.alert.savePromptTemplatesFailed.message" = "Check your prompt templates and ~/.koe/config.yaml, then try again.";
+"settings.setupWizard.alert.saveDictionaryFailed.title" = "Failed to save dictionary.txt";
+"settings.setupWizard.alert.saveSystemPromptFailed.title" = "Failed to save system_prompt.txt";
+
+"settings.setupWizard.test.common.testing" = "Testing...";
+"settings.setupWizard.test.common.connected" = "Connected";
+"settings.setupWizard.test.common.unknownResult" = "Unknown result";
+"settings.setupWizard.test.common.elapsedSecondsFormat" = " (%.1fs)";
+"settings.setupWizard.test.llm.selectProfileFirst" = "Please select an LLM profile first.";
+"settings.setupWizard.test.llm.fillBaseUrlModelFirst" = "Please fill in Base URL and Model first.";
+"settings.setupWizard.test.llm.invalidProfileData" = "Test failed: invalid profile data";
+"settings.setupWizard.test.llm.invalidResponseFromCore" = "Test failed: invalid response from core";
+"settings.setupWizard.test.asr.connectedWithDeviceRegistration" = "Connected (device registration will complete on first use)";
+"settings.setupWizard.test.asr.connectionFailedFormat" = "Connection failed: %@";
+"settings.setupWizard.test.asr.fillAppKeyAccessKeyFirst" = "Please fill in App Key and Access Key first";
+"settings.setupWizard.test.asr.authFailedAppKeyAccessKey" = "Auth failed: please check App Key and Access Key";
+"settings.setupWizard.test.asr.connectionTimedOut" = "Connection timed out: please check your network";
+"settings.setupWizard.test.asr.networkError" = "Network error: please check your network settings";
+"settings.setupWizard.test.asr.connectionFailedConfig" = "Connection failed: please check your configuration";
+"settings.setupWizard.test.asr.fillApiKeyFirst" = "Please fill in API Key first";
+"settings.setupWizard.test.asr.authFailedApiKey" = "Auth failed: please check your API Key";
+"settings.setupWizard.test.asr.connectionFailedNoResponse" = "Connection failed: no response from server";
+
+/* ─── Update Feed Errors ─── */
+"update.feedError.empty" = "The update feed was empty.";
+"update.feedError.notJsonObject" = "The update feed must be a JSON object.";
+"update.feedError.missingRequiredFields" = "The update feed must include version and download_url.";
+"update.feedError.invalidDownloadUrl" = "The update feed download_url is invalid.";
+
+"settings.setupWizard.model.status.progressFormat" = "%.1f / %.1f MB";
+"settings.setupWizard.llm.modelList.noModelsAvailable" = "No models available";
+"settings.setupWizard.llm.modelList.enterBaseUrlFirst" = "Enter Base URL first";
+"settings.setupWizard.llm.modelList.loading" = "Loading models...";
+"settings.setupWizard.llm.modelList.loadFailed" = "Load failed";
+"settings.setupWizard.llm.modelList.resultPrefix" = "Model list: %@";

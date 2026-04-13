@@ -151,6 +151,7 @@
 "settings.setupWizard.llm.placeholder.apiKey" = "sk-...";
 "settings.setupWizard.llm.placeholder.model" = "gpt-5.4-nano";
 "settings.setupWizard.llm.provider.openaiCompatible" = "OpenAI Compatible";
+"settings.setupWizard.llm.provider.apfel" = "APFEL";
 "settings.setupWizard.llm.provider.mlx" = "MLX（Apple Silicon）";
 "settings.setupWizard.llm.modelList.noModelsLoaded" = "尚未加载模型";
 "settings.setupWizard.llm.tokenHint" = "GPT-4o 及更早模型使用 max_tokens。GPT-5 和推理模型（o1/o3）使用 max_completion_tokens。";
@@ -254,3 +255,81 @@
 "menu.edit.copy" = "拷贝";
 "menu.edit.paste" = "粘贴";
 "menu.edit.selectAll" = "全选";
+
+/* ─── 设置向导缺失文案 ─── */
+"settings.setupWizard.common.button.ok" = "好";
+"settings.setupWizard.llm.label.type" = "类型";
+"settings.setupWizard.llm.placeholder.profileCustomName" = "我的配置";
+"settings.setupWizard.llm.placeholder.apiKeyOptional" = "sk-...（非必填可留空）";
+"settings.setupWizard.llm.modelList.error.invalidEncoding" = "模型列表响应编码无效";
+"settings.setupWizard.llm.modelList.error.invalidPayload" = "模型列表响应数据无效";
+
+"settings.setupWizard.model.noLanguagesAvailable" = "无可用语言";
+"settings.setupWizard.model.noModelsFound" = "未找到模型";
+"settings.setupWizard.model.status.downloading" = "下载中";
+"settings.setupWizard.model.status.downloadingEllipsis" = "下载中...";
+"settings.setupWizard.model.status.downloadingInProgress" = "◐ 下载中…";
+"settings.setupWizard.model.status.verifyingInstalled" = "● 校验中…";
+"settings.setupWizard.model.status.verifyingIncomplete" = "◐ 校验中…";
+"settings.setupWizard.model.status.installed" = "● 已安装";
+"settings.setupWizard.model.status.incomplete" = "◐ 不完整";
+"settings.setupWizard.model.status.notInstalled" = "○ 未安装";
+"settings.setupWizard.model.status.notSupportedLanguage" = "✕ 此语言不支持";
+"settings.setupWizard.model.status.downloadFailed" = "下载失败";
+"settings.setupWizard.model.download.alreadyDownloading" = "已在下载中";
+"settings.setupWizard.model.download.startFailed" = "无法开始下载";
+
+"settings.setupWizard.alert.templateLimitReached.title" = "已达到模板数量上限";
+"settings.setupWizard.alert.templateLimitReached.message" = "最多只能添加 9 个提示词模板，因为叠加层仅支持数字键 1-9。";
+"settings.setupWizard.alert.removeModelFiles.title" = "删除模型文件？";
+"settings.setupWizard.alert.removeModelFiles.message" = "已下载的模型文件将被删除，之后可重新下载。";
+"settings.setupWizard.alert.removeModelFiles.confirm" = "删除";
+"settings.setupWizard.alert.releaseSpeechAssets.title" = "释放语音资源？";
+"settings.setupWizard.alert.releaseSpeechAssets.message" = "系统可能回收该语言语音模型占用的存储空间，之后可重新下载。";
+"settings.setupWizard.alert.releaseSpeechAssets.confirm" = "释放";
+"settings.setupWizard.alert.speechAssetsNotInstalled.title" = "语音资源未安装";
+"settings.setupWizard.alert.speechAssetsNotInstalled.message" = "所选语言的语音识别模型尚未下载。保存后将自动开始下载。";
+"settings.setupWizard.alert.speechAssetsNotInstalled.confirm" = "保存并下载";
+"settings.setupWizard.alert.modelNotInstalled.title" = "模型未安装";
+"settings.setupWizard.alert.modelNotInstalled.message" = "所选模型尚未下载完成。在模型安装前，ASR 将无法使用。";
+"settings.setupWizard.alert.modelNotInstalled.confirm" = "仍然保存";
+"settings.setupWizard.alert.invalidPromptTemplates.title" = "提示词模板无效";
+"settings.setupWizard.alert.invalidPromptTemplates.message" = "请检查模板后重试。";
+"settings.setupWizard.alert.saveFailed.title" = "部分设置保存失败";
+"settings.setupWizard.alert.saveFailed.message" = "请检查 `~/.koe/config.yaml` 是否可写，然后重试。";
+"settings.setupWizard.alert.savePromptTemplatesFailed.title" = "保存提示词模板失败";
+"settings.setupWizard.alert.savePromptTemplatesFailed.message" = "请检查提示词模板和 `~/.koe/config.yaml`，然后重试。";
+"settings.setupWizard.alert.saveDictionaryFailed.title" = "保存 dictionary.txt 失败";
+"settings.setupWizard.alert.saveSystemPromptFailed.title" = "保存 system_prompt.txt 失败";
+
+"settings.setupWizard.test.common.testing" = "测试中...";
+"settings.setupWizard.test.common.connected" = "已连接";
+"settings.setupWizard.test.common.unknownResult" = "未知结果";
+"settings.setupWizard.test.common.elapsedSecondsFormat" = "（%.1f 秒）";
+"settings.setupWizard.test.llm.selectProfileFirst" = "请先选择一个 LLM 配置。";
+"settings.setupWizard.test.llm.fillBaseUrlModelFirst" = "请先填写 Base URL 和 Model。";
+"settings.setupWizard.test.llm.invalidProfileData" = "测试失败：配置数据无效";
+"settings.setupWizard.test.llm.invalidResponseFromCore" = "测试失败：核心响应无效";
+"settings.setupWizard.test.asr.connectedWithDeviceRegistration" = "已连接（设备注册将在首次使用时完成）";
+"settings.setupWizard.test.asr.connectionFailedFormat" = "连接失败：%@";
+"settings.setupWizard.test.asr.fillAppKeyAccessKeyFirst" = "请先填写 App Key 和 Access Key";
+"settings.setupWizard.test.asr.authFailedAppKeyAccessKey" = "认证失败：请检查 App Key 和 Access Key";
+"settings.setupWizard.test.asr.connectionTimedOut" = "连接超时：请检查网络";
+"settings.setupWizard.test.asr.networkError" = "网络错误：请检查网络设置";
+"settings.setupWizard.test.asr.connectionFailedConfig" = "连接失败：请检查配置";
+"settings.setupWizard.test.asr.fillApiKeyFirst" = "请先填写 API Key";
+"settings.setupWizard.test.asr.authFailedApiKey" = "认证失败：请检查 API Key";
+"settings.setupWizard.test.asr.connectionFailedNoResponse" = "连接失败：服务器无响应";
+
+/* ─── 更新源错误 ─── */
+"update.feedError.empty" = "更新源为空。";
+"update.feedError.notJsonObject" = "更新源必须是 JSON 对象。";
+"update.feedError.missingRequiredFields" = "更新源必须包含 version 和 download_url。";
+"update.feedError.invalidDownloadUrl" = "更新源中的 download_url 无效。";
+
+"settings.setupWizard.model.status.progressFormat" = "%.1f / %.1f MB";
+"settings.setupWizard.llm.modelList.noModelsAvailable" = "暂无可用模型";
+"settings.setupWizard.llm.modelList.enterBaseUrlFirst" = "请先填写 Base URL";
+"settings.setupWizard.llm.modelList.loading" = "正在加载模型...";
+"settings.setupWizard.llm.modelList.loadFailed" = "加载失败";
+"settings.setupWizard.llm.modelList.resultPrefix" = "模型列表：%@";
