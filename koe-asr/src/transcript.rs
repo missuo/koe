@@ -40,15 +40,15 @@ impl TranscriptAggregator {
         }
     }
 
-    /// Update with a final result (appends to final text).
+    /// Update with a final result.
+    ///
+    /// Providers in this project emit `Final` as the best full transcript seen
+    /// so far, not as a delta chunk. Replace the previous final text instead of
+    /// appending, otherwise repeated final events can duplicate the whole utterance.
     pub fn update_final(&mut self, text: &str) {
         self.has_final = true;
         if !text.is_empty() {
-            if !self.final_text.is_empty() {
-                self.final_text.push_str(text);
-            } else {
-                self.final_text = text.to_string();
-            }
+            self.final_text = text.to_string();
         }
     }
 
