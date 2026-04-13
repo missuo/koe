@@ -2,6 +2,7 @@
 #import "SPPermissionManager.h"
 #import "SPAudioDeviceManager.h"
 #import "SPHistoryManager.h"
+#import "SPLocalization.h"
 #import "koe_core.h"
 #import <Cocoa/Cocoa.h>
 #import <Carbon/Carbon.h>
@@ -256,14 +257,14 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     NSDictionary *info = [[NSBundle mainBundle] infoDictionary];
     NSString *version = info[@"CFBundleShortVersionString"] ?: @"?";
     NSString *build = info[@"CFBundleVersion"] ?: @"?";
-    NSString *statusTitle = [NSString stringWithFormat:@"Ready — v%@ (%@)", version, build];
+    NSString *statusTitle = [NSString stringWithFormat:KoeLocalizedString(@"statusBar.status.ready"), version, build];
     self.statusMenuItem = [[NSMenuItem alloc] initWithTitle:statusTitle
                                                     action:nil
                                              keyEquivalent:@""];
     self.statusMenuItem.enabled = NO;
     [menu addItem:self.statusMenuItem];
 
-    self.hotkeyDisplayItem = [[NSMenuItem alloc] initWithTitle:@"Shortcut: Fn"
+    self.hotkeyDisplayItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:KoeLocalizedString(@"statusBar.shortcut.format"), @"Fn"]
                                                         action:nil
                                                  keyEquivalent:@""];
     self.hotkeyDisplayItem.enabled = NO;
@@ -273,7 +274,7 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
 
     // Statistics section
     NSMenuItem *statsHeader = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
-    statsHeader.view = [self headerViewWithTitle:@"Statistics"];
+    statsHeader.view = [self headerViewWithTitle:KoeLocalizedString(@"statusBar.section.statistics")];
     [menu addItem:statsHeader];
 
     self.statsCountItem = [[NSMenuItem alloc] initWithTitle:@"  ..."
@@ -298,69 +299,69 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
 
     // Permissions section
     NSMenuItem *permHeader = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
-    permHeader.view = [self headerViewWithTitle:@"Permissions"];
+    permHeader.view = [self headerViewWithTitle:KoeLocalizedString(@"statusBar.section.permissions")];
     [menu addItem:permHeader];
 
-    self.micPermissionItem = [[NSMenuItem alloc] initWithTitle:@"  Microphone: Checking..."
+    self.micPermissionItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:KoeLocalizedString(@"statusBar.permission.microphone"), KoeLocalizedString(@"statusBar.permission.checking")]
                                                        action:@selector(openMicrophoneSettings)
                                                 keyEquivalent:@""];
     self.micPermissionItem.target = self;
     self.micPermissionItem.enabled = NO;
     [menu addItem:self.micPermissionItem];
 
-    self.accessibilityPermissionItem = [[NSMenuItem alloc] initWithTitle:@"  Accessibility: Checking..."
+    self.accessibilityPermissionItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:KoeLocalizedString(@"statusBar.permission.accessibility"), KoeLocalizedString(@"statusBar.permission.checking")]
                                                                  action:@selector(requestAccessibilityPermission)
                                                           keyEquivalent:@""];
     self.accessibilityPermissionItem.target = self;
     self.accessibilityPermissionItem.enabled = NO;
     [menu addItem:self.accessibilityPermissionItem];
 
-    self.inputMonitoringPermissionItem = [[NSMenuItem alloc] initWithTitle:@"  Input Monitoring: Checking..."
+    self.inputMonitoringPermissionItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:KoeLocalizedString(@"statusBar.permission.inputMonitoring"), KoeLocalizedString(@"statusBar.permission.checking")]
                                                                    action:@selector(openInputMonitoringSettings)
                                                             keyEquivalent:@""];
     self.inputMonitoringPermissionItem.target = self;
     self.inputMonitoringPermissionItem.enabled = NO;
     [menu addItem:self.inputMonitoringPermissionItem];
 
-    self.notificationPermissionItem = [[NSMenuItem alloc] initWithTitle:@"  Notifications: Checking..."
+    self.notificationPermissionItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:KoeLocalizedString(@"statusBar.permission.notifications"), KoeLocalizedString(@"statusBar.permission.checking")]
                                                                 action:@selector(requestNotificationPermission)
                                                          keyEquivalent:@""];
     self.notificationPermissionItem.target = self;
     self.notificationPermissionItem.enabled = NO;
     [menu addItem:self.notificationPermissionItem];
 
-    self.speechRecognitionPermissionItem = [[NSMenuItem alloc] initWithTitle:@"  Speech Recognition: Checking..."
+    self.speechRecognitionPermissionItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:KoeLocalizedString(@"statusBar.permission.speechRecognition"), KoeLocalizedString(@"statusBar.permission.checking")]
                                                                      action:nil
                                                               keyEquivalent:@""];
     self.speechRecognitionPermissionItem.enabled = NO;
-    self.speechRecognitionPermissionItem.hidden = YES; // shown only for apple-speech provider
+    self.speechRecognitionPermissionItem.hidden = YES;
     [menu addItem:self.speechRecognitionPermissionItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
 
     // Microphone selection submenu
-    NSMenuItem *microphoneItem = [[NSMenuItem alloc] initWithTitle:@"Microphone"
+    NSMenuItem *microphoneItem = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"statusBar.menu.microphone")
                                                            action:nil
                                                     keyEquivalent:@""];
-    NSMenu *micSubmenu = [[NSMenu alloc] initWithTitle:@"Microphone"];
+    NSMenu *micSubmenu = [[NSMenu alloc] initWithTitle:KoeLocalizedString(@"statusBar.menu.microphone")];
     microphoneItem.submenu = micSubmenu;
     [menu addItem:microphoneItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
 
-    NSMenuItem *setupWizard = [[NSMenuItem alloc] initWithTitle:@"Setup Wizard..."
+    NSMenuItem *setupWizard = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"statusBar.menu.setupWizard")
                                                         action:@selector(openSetupWizard:)
                                                  keyEquivalent:@","];
     setupWizard.target = self;
     [menu addItem:setupWizard];
 
-    NSMenuItem *openConfig = [[NSMenuItem alloc] initWithTitle:@"Open Config Folder..."
+    NSMenuItem *openConfig = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"statusBar.menu.openConfig")
                                                        action:@selector(openConfigFolder:)
                                                 keyEquivalent:@""];
     openConfig.target = self;
     [menu addItem:openConfig];
 
-    NSMenuItem *checkForUpdates = [[NSMenuItem alloc] initWithTitle:@"Check for Updates..."
+    NSMenuItem *checkForUpdates = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"statusBar.menu.checkUpdates")
                                                              action:@selector(checkForUpdates:)
                                                       keyEquivalent:@""];
     checkForUpdates.target = self;
@@ -368,7 +369,7 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
 
     [menu addItem:[NSMenuItem separatorItem]];
 
-    NSMenuItem *loginItem = [[NSMenuItem alloc] initWithTitle:@"Launch at Login"
+    NSMenuItem *loginItem = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"statusBar.menu.launchAtLogin")
                                                       action:@selector(toggleLaunchAtLogin:)
                                                keyEquivalent:@""];
     loginItem.target = self;
@@ -380,7 +381,7 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
 
     [menu addItem:[NSMenuItem separatorItem]];
 
-    NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"Quit Koe"
+    NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"statusBar.menu.quit")
                                                  action:@selector(quitApp:)
                                           keyEquivalent:@"q"];
     quit.target = self;
@@ -412,20 +413,23 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     BOOL accessibility = [self.permissionManager isAccessibilityGranted];
     BOOL inputMonitoring = [self.permissionManager isInputMonitoringGranted];
 
-    self.micPermissionItem.title = [NSString stringWithFormat:@"  Microphone: %@",
-                                    mic ? @"Granted" : @"Not Granted ▸"];
+    NSString *granted = KoeLocalizedString(@"statusBar.permission.granted");
+    NSString *notGranted = KoeLocalizedString(@"statusBar.permission.notGranted");
+
+    self.micPermissionItem.title = [NSString stringWithFormat:KoeLocalizedString(@"statusBar.permission.microphone"),
+                                    mic ? granted : notGranted];
     self.micPermissionItem.enabled = !mic;
-    self.accessibilityPermissionItem.title = [NSString stringWithFormat:@"  Accessibility: %@",
-                                              accessibility ? @"Granted" : @"Not Granted ▸"];
+    self.accessibilityPermissionItem.title = [NSString stringWithFormat:KoeLocalizedString(@"statusBar.permission.accessibility"),
+                                              accessibility ? granted : notGranted];
     self.accessibilityPermissionItem.enabled = !accessibility;
-    self.inputMonitoringPermissionItem.title = [NSString stringWithFormat:@"  Input Monitoring: %@",
-                                                inputMonitoring ? @"Granted" : @"Not Granted ▸"];
+    self.inputMonitoringPermissionItem.title = [NSString stringWithFormat:KoeLocalizedString(@"statusBar.permission.inputMonitoring"),
+                                                inputMonitoring ? granted : notGranted];
     self.inputMonitoringPermissionItem.enabled = !inputMonitoring;
 
-    [self.permissionManager checkNotificationPermissionWithCompletion:^(BOOL granted) {
-        self.notificationPermissionItem.title = [NSString stringWithFormat:@"  Notifications: %@",
-                                                  granted ? @"Granted" : @"Not Granted ▸"];
-        self.notificationPermissionItem.enabled = !granted;
+    [self.permissionManager checkNotificationPermissionWithCompletion:^(BOOL notifGranted) {
+        self.notificationPermissionItem.title = [NSString stringWithFormat:KoeLocalizedString(@"statusBar.permission.notifications"),
+                                                  notifGranted ? granted : notGranted];
+        self.notificationPermissionItem.enabled = !notifGranted;
     }];
 
     // Speech Recognition — only visible when apple-speech provider is configured
@@ -435,8 +439,8 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     self.speechRecognitionPermissionItem.hidden = !isAppleSpeech;
     if (isAppleSpeech) {
         BOOL speechGranted = [self.permissionManager isSpeechRecognitionGranted];
-        self.speechRecognitionPermissionItem.title = [NSString stringWithFormat:@"  Speech Recognition: %@",
-                                                       speechGranted ? @"Granted" : @"Not Granted"];
+        self.speechRecognitionPermissionItem.title = [NSString stringWithFormat:KoeLocalizedString(@"statusBar.permission.speechRecognition"),
+                                                       speechGranted ? granted : notGranted];
     }
 }
 
@@ -462,16 +466,16 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     // Count display
     NSMutableArray *parts = [NSMutableArray array];
     if (stats.totalCharCount > 0) {
-        [parts addObject:[NSString stringWithFormat:@"%ld chars", (long)stats.totalCharCount]];
+        [parts addObject:[NSString stringWithFormat:KoeLocalizedString(@"statusBar.stats.chars"), (long)stats.totalCharCount]];
     }
     if (stats.totalWordCount > 0) {
-        [parts addObject:[NSString stringWithFormat:@"%ld words", (long)stats.totalWordCount]];
+        [parts addObject:[NSString stringWithFormat:KoeLocalizedString(@"statusBar.stats.words"), (long)stats.totalWordCount]];
     }
     if (parts.count > 0) {
-        self.statsCountItem.title = [NSString stringWithFormat:@"  Total: %@",
+        self.statsCountItem.title = [NSString stringWithFormat:KoeLocalizedString(@"statusBar.stats.total"),
                                      [parts componentsJoinedByString:@" / "]];
     } else {
-        self.statsCountItem.title = @"  Total: No data yet";
+        self.statsCountItem.title = KoeLocalizedString(@"statusBar.stats.totalNone");
     }
 
     // Time + session count
@@ -479,26 +483,24 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     NSInteger min = totalSec / 60;
     NSInteger sec = totalSec % 60;
     if (stats.sessionCount > 0) {
-        self.statsTimeItem.title = [NSString stringWithFormat:@"  Time: %ld min %ld sec | %ld sessions",
+        self.statsTimeItem.title = [NSString stringWithFormat:KoeLocalizedString(@"statusBar.stats.time"),
                                     (long)min, (long)sec, (long)stats.sessionCount];
     } else {
-        self.statsTimeItem.title = @"  Time: --";
+        self.statsTimeItem.title = KoeLocalizedString(@"statusBar.stats.timeNone");
     }
 
     // Typing speed
     if (stats.totalDurationMs > 0 && (stats.totalCharCount + stats.totalWordCount) > 0) {
         double minutes = (double)stats.totalDurationMs / 60000.0;
         if (stats.totalCharCount > stats.totalWordCount) {
-            // Primarily Chinese
             double speed = (double)stats.totalCharCount / minutes;
-            self.statsSpeedItem.title = [NSString stringWithFormat:@"  Speed: %.0f chars/min", speed];
+            self.statsSpeedItem.title = [NSString stringWithFormat:KoeLocalizedString(@"statusBar.stats.speedChars"), speed];
         } else {
-            // Primarily English
             double speed = (double)stats.totalWordCount / minutes;
-            self.statsSpeedItem.title = [NSString stringWithFormat:@"  Speed: %.0f words/min", speed];
+            self.statsSpeedItem.title = [NSString stringWithFormat:KoeLocalizedString(@"statusBar.stats.speedWords"), speed];
         }
     } else {
-        self.statsSpeedItem.title = @"  Speed: --";
+        self.statsSpeedItem.title = KoeLocalizedString(@"statusBar.stats.speedNone");
     }
 }
 
@@ -507,18 +509,24 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     NSString *triggerKey = t ? @(t) : @"fn";
     sp_core_free_string(t);
 
-    self.hotkeyDisplayItem.title = [NSString stringWithFormat:@"Shortcut: %@",
+    self.hotkeyDisplayItem.title = [NSString stringWithFormat:KoeLocalizedString(@"statusBar.shortcut.format"),
                                     displayNameForHotkeyValue(triggerKey)];
 }
 
 #pragma mark - Microphone Selection
 
 - (void)refreshMicrophoneSubmenu:(NSMenu *)menu {
-    // Find the Microphone menu item
-    NSInteger micIndex = [menu indexOfItemWithTitle:@"Microphone"];
-    if (micIndex == -1) return;
+    // Find the Microphone menu item by tag instead of title (title is localized)
+    NSMenuItem *micItem = nil;
+    for (NSMenuItem *item in menu.itemArray) {
+        if (item.submenu && [item.submenu.title isEqualToString:KoeLocalizedString(@"statusBar.menu.microphone")]) {
+            micItem = item;
+            break;
+        }
+    }
+    if (!micItem) return;
 
-    NSMenu *submenu = [menu itemAtIndex:micIndex].submenu;
+    NSMenu *submenu = micItem.submenu;
     [submenu removeAllItems];
 
     NSString *selectedUID = self.audioDeviceManager.selectedDeviceUID;
@@ -536,7 +544,7 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     }
 
     // "System Default" option
-    NSMenuItem *defaultItem = [[NSMenuItem alloc] initWithTitle:@"System Default"
+    NSMenuItem *defaultItem = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"statusBar.menu.systemDefault")
                                                         action:@selector(selectAudioDevice:)
                                                  keyEquivalent:@""];
     defaultItem.target = self;
@@ -566,7 +574,7 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     if (selectedUID && !selectedFound) {
         NSString *deviceName = self.audioDeviceManager.selectedDeviceName ?: selectedUID;
         [submenu addItem:[NSMenuItem separatorItem]];
-        NSMenuItem *unavailableItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:@"%@ (Unavailable)", deviceName]
+        NSMenuItem *unavailableItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithFormat:KoeLocalizedString(@"statusBar.menu.unavailable"), deviceName]
                                                                 action:nil
                                                          keyEquivalent:@""];
         unavailableItem.state = NSControlStateValueOn;
@@ -751,35 +759,35 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
         NSDictionary *info = [[NSBundle mainBundle] infoDictionary];
         NSString *ver = info[@"CFBundleShortVersionString"] ?: @"?";
         NSString *bld = info[@"CFBundleVersion"] ?: @"?";
-        self.statusMenuItem.title = [NSString stringWithFormat:@"Ready — v%@ (%@)", ver, bld];
+        self.statusMenuItem.title = [NSString stringWithFormat:KoeLocalizedString(@"statusBar.status.ready"), ver, bld];
         [self applyIdleIcon];
 
     } else if ([state hasPrefix:@"recording"]) {
-        self.statusMenuItem.title = @"Listening...";
+        self.statusMenuItem.title = KoeLocalizedString(@"statusBar.status.listening");
         [self startRecordingAnimation];
 
     } else if ([state isEqualToString:@"connecting_asr"]) {
-        self.statusMenuItem.title = @"Connecting...";
+        self.statusMenuItem.title = KoeLocalizedString(@"statusBar.status.connecting");
         [self startProcessingAnimation];
 
     } else if ([state isEqualToString:@"finalizing_asr"]) {
-        self.statusMenuItem.title = @"Recognizing...";
+        self.statusMenuItem.title = KoeLocalizedString(@"statusBar.status.recognizing");
         [self startProcessingAnimation];
 
     } else if ([state isEqualToString:@"correcting"]) {
-        self.statusMenuItem.title = @"Thinking...";
+        self.statusMenuItem.title = KoeLocalizedString(@"statusBar.status.thinking");
         [self startProcessingAnimation];
 
     } else if ([state hasPrefix:@"preparing_paste"] || [state isEqualToString:@"pasting"]) {
-        self.statusMenuItem.title = @"Pasting...";
+        self.statusMenuItem.title = KoeLocalizedString(@"statusBar.status.pasting");
         [self applyPasteIcon];
 
     } else if ([state isEqualToString:@"error"] || [state isEqualToString:@"failed"]) {
-        self.statusMenuItem.title = @"Error";
+        self.statusMenuItem.title = KoeLocalizedString(@"statusBar.status.error");
         [self applyErrorIcon];
 
     } else {
-        self.statusMenuItem.title = @"Working...";
+        self.statusMenuItem.title = KoeLocalizedString(@"statusBar.status.working");
         [self startProcessingAnimation];
     }
 }
