@@ -1239,6 +1239,10 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     self.sessionMaxHeight = 0;
     self.currentState = @"idle";
     [self hide];
+
+    if ([self.delegate respondsToSelector:@selector(overlayPanelDidDismiss:)]) {
+        [self.delegate overlayPanelDidDismiss:self];
+    }
 }
 
 - (void)scheduleDismissAfter:(NSTimeInterval)duration {

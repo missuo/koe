@@ -656,6 +656,11 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 #pragma mark - SPOverlayPanelDelegate
 
+- (void)overlayPanelDidDismiss:(id)panel {
+    [self stopNumberKeyMonitoring];
+    [self stopAnyKeyDismissMonitoring];
+}
+
 - (void)overlayPanel:(id)panel didSelectTemplateAtIndex:(NSInteger)templateIndex {
     NSLog(@"[Koe] Template selected: index %ld", (long)templateIndex);
     [self stopNumberKeyMonitoring];
