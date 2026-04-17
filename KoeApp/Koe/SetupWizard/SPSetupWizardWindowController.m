@@ -84,6 +84,37 @@ static BOOL configSet(NSString *keyPath, NSString *value) {
     return sp_config_set(keyPath.UTF8String, (value ?: @"").UTF8String) == 0;
 }
 
+// Fetch a config sub-tree as a parsed JSON object (NSDictionary / NSArray).
+// Returns nil if the key is missing, empty, or not parseable.
+static id configGetJSON(NSString *keyPath) {
+    char *raw = sp_config_get_json(keyPath.UTF8String);
+    if (!raw) return nil;
+    NSString *jsonStr = [NSString stringWithUTF8String:raw] ?: @"";
+    sp_core_free_string(raw);
+    if (jsonStr.length == 0) return nil;
+    NSData *data = [jsonStr dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data) return nil;
+    id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+    return parsed;
+}
+
+// Returns user-configured custom headers for the given ASR provider, or nil.
+// Mirrors Rust behavior: when `asr.<provider>.headers` is a non-empty map,
+// those headers fully replace the provider's default auth headers.
+static NSDictionary<NSString *, NSString *> *asrCustomHeaders(NSString *providerKey) {
+    NSString *keyPath = [NSString stringWithFormat:@"asr.%@.headers", providerKey];
+    id parsed = configGetJSON(keyPath);
+    if (![parsed isKindOfClass:[NSDictionary class]]) return nil;
+    NSMutableDictionary<NSString *, NSString *> *out = [NSMutableDictionary dictionary];
+    for (id key in parsed) {
+        if (![key isKindOfClass:[NSString class]]) continue;
+        id value = parsed[key];
+        if (![value isKindOfClass:[NSString class]]) continue;
+        out[key] = value;
+    }
+    return out.count > 0 ? out : nil;
+}
+
 static NSInteger clampedOverlayFontSizeValue(NSInteger value) {
     return MAX(kOverlayFontSizeMin, MIN(kOverlayFontSizeMax, value));
 }
@@ -4546,7 +4577,9 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     NSString *appKey = self.asrAppKeyField.stringValue;
     NSString *accessKey = self.asrAccessKeyToggle.tag == 1 ? self.asrAccessKeyField.stringValue : self.asrAccessKeySecureField.stringValue;
 
-    if (appKey.length == 0 || accessKey.length == 0) {
+    NSDictionary<NSString *, NSString *> *customHeaders = asrCustomHeaders(@"doubao");
+
+    if (customHeaders == nil && (appKey.length == 0 || accessKey.length == 0)) {
         self.asrTestResultLabel.stringValue = @"Please fill in App Key and Access Key first";
         self.asrTestResultLabel.textColor = [NSColor systemOrangeColor];
         return;
@@ -4563,11 +4596,18 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.timeoutInterval = 5;
 
-    // Set Doubao auth headers
-    [request setValue:appKey forHTTPHeaderField:@"X-Api-App-Key"];
-    [request setValue:accessKey forHTTPHeaderField:@"X-Api-Access-Key"];
-    [request setValue:@"volc.seedasr.sauc.duration" forHTTPHeaderField:@"X-Api-Resource-Id"];
-    [request setValue:[[NSUUID UUID] UUIDString] forHTTPHeaderField:@"X-Api-Connect-Id"];
+    if (customHeaders) {
+        // Runtime fully replaces default auth headers when asr.doubao.headers is set.
+        for (NSString *headerName in customHeaders) {
+            [request setValue:customHeaders[headerName] forHTTPHeaderField:headerName];
+        }
+    } else {
+        // Set Doubao auth headers
+        [request setValue:appKey forHTTPHeaderField:@"X-Api-App-Key"];
+        [request setValue:accessKey forHTTPHeaderField:@"X-Api-Access-Key"];
+        [request setValue:@"volc.seedasr.sauc.duration" forHTTPHeaderField:@"X-Api-Resource-Id"];
+        [request setValue:[[NSUUID UUID] UUIDString] forHTTPHeaderField:@"X-Api-Connect-Id"];
+    }
 
     NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
     config.timeoutIntervalForRequest = 5;
@@ -4664,7 +4704,9 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     // Get current key value (account for plain/secure toggle state)
     NSString *apiKey = self.asrQwenApiKeyToggle.tag == 1 ? self.asrQwenApiKeyField.stringValue : self.asrQwenApiKeySecureField.stringValue;
 
-    if (apiKey.length == 0) {
+    NSDictionary<NSString *, NSString *> *customHeaders = asrCustomHeaders(@"qwen");
+
+    if (customHeaders == nil && apiKey.length == 0) {
         self.asrTestResultLabel.stringValue = @"Please fill in API Key first";
         self.asrTestResultLabel.textColor = [NSColor systemOrangeColor];
         return;
@@ -4683,8 +4725,15 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.timeoutInterval = 10;
 
-    // Set Qwen DashScope auth header
-    [request setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
+    if (customHeaders) {
+        // Runtime fully replaces the Authorization header when asr.qwen.headers is set.
+        for (NSString *headerName in customHeaders) {
+            [request setValue:customHeaders[headerName] forHTTPHeaderField:headerName];
+        }
+    } else {
+        // Set Qwen DashScope auth header
+        [request setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
+    }
 
     NSURLSessionConfiguration *config2 = [NSURLSessionConfiguration defaultSessionConfiguration];
     config2.timeoutIntervalForRequest = 10;

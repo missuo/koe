@@ -1368,6 +1368,29 @@ pub fn config_get(key_path: &str) -> Result<String> {
     Ok(s)
 }
 
+/// Get a config value by dot-separated key path as JSON.
+/// Unlike [`config_get`], this preserves non-scalar values (maps, sequences).
+/// Returns an empty string if the key is not found.
+pub fn config_get_json(key_path: &str) -> Result<String> {
+    let path = config_path();
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| KoeError::Config(format!("read {}: {e}", path.display())))?;
+    let root: serde_yaml::Value = serde_yaml::from_str(&raw)
+        .map_err(|e| KoeError::Config(format!("parse {}: {e}", path.display())))?;
+
+    let mut current = &root;
+    for part in key_path.split('.') {
+        let key = serde_yaml::Value::String(part.to_string());
+        match current.as_mapping().and_then(|m| m.get(&key)) {
+            Some(v) => current = v,
+            None => return Ok(String::new()),
+        }
+    }
+
+    serde_json::to_string(current)
+        .map_err(|e| KoeError::Config(format!("encode {key_path} to JSON: {e}")))
+}
+
 /// Write serialized YAML to config.yaml atomically.
 pub fn atomic_write_config(data: &str) -> Result<()> {
     atomic_write_file(&config_path(), data)

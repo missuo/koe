@@ -1435,6 +1435,28 @@ pub unsafe extern "C" fn sp_config_get(key_path: *const c_char) -> *mut c_char {
     }
 }
 
+/// Get a config value by dot-separated key path, returned as JSON.
+/// Unlike [`sp_config_get`], this preserves non-scalar values (maps, sequences).
+/// Returns a heap-allocated C string that must be freed with sp_core_free_string().
+/// Returns an empty string if the key is not found.
+///
+/// # Safety
+/// `key_path` must be a valid null-terminated C string.
+#[no_mangle]
+pub unsafe extern "C" fn sp_config_get_json(key_path: *const c_char) -> *mut c_char {
+    let key = match unsafe { cstr_to_str(key_path) } {
+        Some(s) => s,
+        None => return CString::new("").unwrap().into_raw(),
+    };
+    match config::config_get_json(key) {
+        Ok(value) => CString::new(value).unwrap_or_default().into_raw(),
+        Err(e) => {
+            log::error!("sp_config_get_json({key}): {e}");
+            CString::new("").unwrap().into_raw()
+        }
+    }
+}
+
 /// Set a config value by dot-separated key path. Reads, modifies, and writes config.yaml.
 /// Returns 0 on success, -1 on error.
 ///
