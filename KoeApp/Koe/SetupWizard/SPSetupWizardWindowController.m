@@ -561,6 +561,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property (nonatomic, copy) NSString *recordingHotkeyTarget;
 // Trigger mode
 @property (nonatomic, strong) NSPopUpButton *triggerModePopup;
+@property (nonatomic, strong) NSButton *escapeCancelCheckbox;
 @property (nonatomic, strong) NSSwitch *startSoundCheckbox;
 @property (nonatomic, strong) NSSwitch *stopSoundCheckbox;
 @property (nonatomic, strong) NSSwitch *errorSoundCheckbox;
@@ -606,7 +607,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable
                     backing:NSBackingStoreBuffered
                       defer:YES];
-    window.title = @"Koe Settings";
+    window.title = KoeLocalizedString(@"wizard.window.title");
     window.toolbarStyle = NSWindowToolbarStylePreference;
 
     self = [super initWithWindow:window];
@@ -614,8 +615,28 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
         _verifyQueue = dispatch_queue_create("koe.model.verify", DISPATCH_QUEUE_SERIAL);
         window.delegate = self;
         [self setupToolbar];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(interfaceLanguageDidChange:)
+                                                     name:SPLocalizationLanguageDidChangeNotification
+                                                   object:nil];
     }
     return self;
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)interfaceLanguageDidChange:(NSNotification *)notification {
+    // Rebuild UI on language change: update window title, toolbar labels,
+    // and re-render the current pane so visible strings refresh immediately.
+    self.window.title = KoeLocalizedString(@"wizard.window.title");
+    [self setupToolbar];
+    NSString *current = self.currentPaneIdentifier;
+    if (current) {
+        self.currentPaneIdentifier = nil;
+        [self switchToPane:current];
+    }
 }
 
 - (void)showWindow:(id)sender {
@@ -639,7 +660,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:@"KoeSettingsToolbar"];
     toolbar.delegate = self;
     toolbar.displayMode = NSToolbarDisplayModeIconAndLabel;
-    toolbar.selectedItemIdentifier = kToolbarASR;
+    toolbar.selectedItemIdentifier = self.currentPaneIdentifier ?: kToolbarASR;
     self.window.toolbar = toolbar;
 }
 
@@ -661,29 +682,29 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     item.action = @selector(toolbarItemClicked:);
 
     if ([itemIdentifier isEqualToString:kToolbarASR]) {
-        item.label = @"ASR";
-        item.image = [NSImage imageWithSystemSymbolName:@"mic.fill" accessibilityDescription:@"ASR"];
+        item.label = KoeLocalizedString(@"wizard.toolbar.asr");
+        item.image = [NSImage imageWithSystemSymbolName:@"mic.fill" accessibilityDescription:item.label];
     } else if ([itemIdentifier isEqualToString:kToolbarLLM]) {
-        item.label = @"LLM";
-        item.image = [NSImage imageWithSystemSymbolName:@"cpu" accessibilityDescription:@"LLM"];
+        item.label = KoeLocalizedString(@"wizard.toolbar.llm");
+        item.image = [NSImage imageWithSystemSymbolName:@"cpu" accessibilityDescription:item.label];
     } else if ([itemIdentifier isEqualToString:kToolbarOverlay]) {
-        item.label = @"Overlay";
-        item.image = [NSImage imageWithSystemSymbolName:@"captions.bubble" accessibilityDescription:@"Overlay"];
+        item.label = KoeLocalizedString(@"wizard.toolbar.overlay");
+        item.image = [NSImage imageWithSystemSymbolName:@"captions.bubble" accessibilityDescription:item.label];
     } else if ([itemIdentifier isEqualToString:kToolbarHotkey]) {
-        item.label = @"Controls";
-        item.image = [NSImage imageWithSystemSymbolName:@"slider.horizontal.3" accessibilityDescription:@"Controls"];
+        item.label = KoeLocalizedString(@"wizard.toolbar.controls");
+        item.image = [NSImage imageWithSystemSymbolName:@"slider.horizontal.3" accessibilityDescription:item.label];
     } else if ([itemIdentifier isEqualToString:kToolbarDictionary]) {
-        item.label = @"Dictionary";
-        item.image = [NSImage imageWithSystemSymbolName:@"book" accessibilityDescription:@"Dictionary"];
+        item.label = KoeLocalizedString(@"wizard.toolbar.dictionary");
+        item.image = [NSImage imageWithSystemSymbolName:@"book" accessibilityDescription:item.label];
     } else if ([itemIdentifier isEqualToString:kToolbarSystemPrompt]) {
-        item.label = @"Prompt";
-        item.image = [NSImage imageWithSystemSymbolName:@"text.bubble" accessibilityDescription:@"System Prompt"];
+        item.label = KoeLocalizedString(@"wizard.toolbar.prompt");
+        item.image = [NSImage imageWithSystemSymbolName:@"text.bubble" accessibilityDescription:item.label];
     } else if ([itemIdentifier isEqualToString:kToolbarTemplates]) {
-        item.label = @"Templates";
-        item.image = [NSImage imageWithSystemSymbolName:@"sparkles" accessibilityDescription:@"Templates"];
+        item.label = KoeLocalizedString(@"wizard.toolbar.templates");
+        item.image = [NSImage imageWithSystemSymbolName:@"sparkles" accessibilityDescription:item.label];
     } else if ([itemIdentifier isEqualToString:kToolbarAbout]) {
-        item.label = @"About";
-        item.image = [NSImage imageWithSystemSymbolName:@"info.circle" accessibilityDescription:@"About"];
+        item.label = KoeLocalizedString(@"wizard.toolbar.about");
+        item.image = [NSImage imageWithSystemSymbolName:@"info.circle" accessibilityDescription:item.label];
     }
 
     return item;
@@ -781,40 +802,40 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat y = contentHeight - 30.0;
 
     // Description
-    NSTextField *desc = [self addSettingsDescriptionText:@"Choose the ASR provider used for transcription."
+    NSTextField *desc = [self addSettingsDescriptionText:KoeLocalizedString(@"wizard.asr.description")
                                                   toPane:pane
                                                    topY:y
                                                       x:contentX
                                                   width:contentW];
 
-    NSTextField *sectionTitle = [self sectionTitleLabel:@"Connection"
+    NSTextField *sectionTitle = [self sectionTitleLabel:KoeLocalizedString(@"wizard.asr.connection")
                                                   frame:NSMakeRect(contentX, floor(NSMinY(desc.frame) - 36.0), contentW, 20)];
     [pane addSubview:sectionTitle];
     y = NSMinY(sectionTitle.frame) - 32.0;
     CGFloat formStartY = y;
 
     // Provider
-    [pane addSubview:[self formLabel:@"Provider" frame:NSMakeRect(16, y, labelW, 22)]];
+    [pane addSubview:[self formLabel:KoeLocalizedString(@"wizard.asr.provider") frame:NSMakeRect(16, y, labelW, 22)]];
     self.asrProviderPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 200, 26) pullsDown:NO];
-    [self.asrProviderPopup addItemWithTitle:@"DoubaoIME (Built-in, Free)"];
+    [self.asrProviderPopup addItemWithTitle:KoeLocalizedString(@"wizard.asr.provider.doubaoime")];
     [self.asrProviderPopup lastItem].representedObject = @"doubaoime";
-    [self.asrProviderPopup addItemWithTitle:@"Doubao (ByteDance)"];
+    [self.asrProviderPopup addItemWithTitle:KoeLocalizedString(@"wizard.asr.provider.doubao")];
     [self.asrProviderPopup lastItem].representedObject = @"doubao";
-    [self.asrProviderPopup addItemWithTitle:@"Qwen (Alibaba Cloud)"];
+    [self.asrProviderPopup addItemWithTitle:KoeLocalizedString(@"wizard.asr.provider.qwen")];
     [self.asrProviderPopup lastItem].representedObject = @"qwen";
     NSArray<NSString *> *supportedLocalProviders = [self.rustBridge supportedLocalProviders];
     // Add Apple Speech (macOS 26+, no model download required; also requires the
     // apple-speech feature to be compiled into the Rust core — excluded on x86_64)
     if (@available(macOS 26.0, *)) {
         if ([supportedLocalProviders containsObject:@"apple-speech"]) {
-            [self.asrProviderPopup addItemWithTitle:@"Apple Speech (On-Device)"];
+            [self.asrProviderPopup addItemWithTitle:KoeLocalizedString(@"wizard.asr.provider.appleSpeech")];
             [self.asrProviderPopup lastItem].representedObject = @"apple-speech";
         }
     }
     // Add local providers supported by this build (model-based)
     NSDictionary *localProviderLabels = @{
-        @"mlx": @"MLX (Apple Silicon)",
-        @"sherpa-onnx": @"Sherpa-ONNX",
+        @"mlx": KoeLocalizedString(@"wizard.asr.provider.mlx"),
+        @"sherpa-onnx": KoeLocalizedString(@"wizard.asr.provider.sherpa"),
     };
     for (NSString *provider in supportedLocalProviders) {
         NSString *label = localProviderLabels[provider];
@@ -827,21 +848,21 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [pane addSubview:self.asrProviderPopup];
 
     // Test button next to Provider
-    self.asrTestButton = [NSButton buttonWithTitle:@"Test" target:self action:@selector(testAsrConnection:)];
+    self.asrTestButton = [NSButton buttonWithTitle:KoeLocalizedString(@"wizard.asr.test") target:self action:@selector(testAsrConnection:)];
     self.asrTestButton.bezelStyle = NSBezelStyleRounded;
     self.asrTestButton.frame = NSMakeRect(fieldX + 208, y - 2, 70, 28);
     [pane addSubview:self.asrTestButton];
     y -= rowH;
 
     // App Key (Doubao only)
-    self.asrAppKeyField = [self formTextField:NSMakeRect(fieldX, y, fieldW, 22) placeholder:@"Volcengine App ID"];
+    self.asrAppKeyField = [self formTextField:NSMakeRect(fieldX, y, fieldW, 22) placeholder:KoeLocalizedString(@"wizard.asr.appKeyDoubao")];
     [pane addSubview:self.asrAppKeyField];
-    NSTextField *appKeyLabel = [self formLabel:@"App Key" frame:NSMakeRect(16, y, labelW, 22)];
+    NSTextField *appKeyLabel = [self formLabel:KoeLocalizedString(@"wizard.asr.appKey") frame:NSMakeRect(16, y, labelW, 22)];
     appKeyLabel.tag = 1001;
     [pane addSubview:appKeyLabel];
 
     // Apple Speech locale popup (same row as App Key / Model, tag 1005)
-    NSTextField *localeLabel = [self formLabel:@"Language" frame:NSMakeRect(16, y, labelW, 22)];
+    NSTextField *localeLabel = [self formLabel:KoeLocalizedString(@"wizard.asr.language") frame:NSMakeRect(16, y, labelW, 22)];
     localeLabel.tag = 1005;
     localeLabel.hidden = YES;
     [pane addSubview:localeLabel];
@@ -854,7 +875,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [pane addSubview:self.appleSpeechLocalePopup];
 
     // Row 1: Model popup + Download button (Local providers, same row as App Key)
-    self.localModelLabel = [self formLabel:@"Model" frame:NSMakeRect(16, y, labelW, 22)];
+    self.localModelLabel = [self formLabel:KoeLocalizedString(@"wizard.asr.model") frame:NSMakeRect(16, y, labelW, 22)];
     self.localModelLabel.tag = 1004;
     self.localModelLabel.hidden = YES;
     [pane addSubview:self.localModelLabel];
@@ -867,7 +888,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Download button (right of model popup, same style as eye button)
     self.modelDownloadButton = [[NSButton alloc] initWithFrame:NSMakeRect(fieldX + fieldW - 20, y + 1, 20, 20)];
     self.modelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
-                                                  accessibilityDescription:@"Download"];
+                                                  accessibilityDescription:KoeLocalizedString(@"wizard.asr.download")];
     self.modelDownloadButton.bezelStyle = NSBezelStyleInline;
     self.modelDownloadButton.bordered = NO;
     self.modelDownloadButton.imageScaling = NSImageScaleProportionallyUpOrDown;
@@ -891,7 +912,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Delete button (right end of status row, same style as eye button)
     self.modelDeleteButton = [[NSButton alloc] initWithFrame:NSMakeRect(fieldX + fieldW - 20, y + 1, 20, 20)];
     self.modelDeleteButton.image = [NSImage imageWithSystemSymbolName:@"trash"
-                                                accessibilityDescription:@"Delete"];
+                                                accessibilityDescription:KoeLocalizedString(@"wizard.asr.delete")];
     self.modelDeleteButton.bezelStyle = NSBezelStyleInline;
     self.modelDeleteButton.bordered = NO;
     self.modelDeleteButton.imageScaling = NSImageScaleProportionallyUpOrDown;
@@ -931,34 +952,34 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat secFieldW = fieldW - eyeW - 4;
 
     self.asrAccessKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, accessKeyY, secFieldW, 22)];
-    self.asrAccessKeySecureField.placeholderString = @"Volcengine Access Token";
+    self.asrAccessKeySecureField.placeholderString = KoeLocalizedString(@"wizard.asr.accessKeyDoubao");
     self.asrAccessKeySecureField.font = [NSFont systemFontOfSize:13];
     [pane addSubview:self.asrAccessKeySecureField];
-    self.asrAccessKeyField = [self formTextField:NSMakeRect(fieldX, accessKeyY, secFieldW, 22) placeholder:@"Volcengine Access Token"];
+    self.asrAccessKeyField = [self formTextField:NSMakeRect(fieldX, accessKeyY, secFieldW, 22) placeholder:KoeLocalizedString(@"wizard.asr.accessKeyDoubao")];
     self.asrAccessKeyField.hidden = YES;
     [pane addSubview:self.asrAccessKeyField];
     self.asrAccessKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, accessKeyY - 1, eyeW, 24)
                                                 action:@selector(toggleAsrAccessKeyVisibility:)];
     [pane addSubview:self.asrAccessKeyToggle];
-    NSTextField *accessKeyLabel = [self formLabel:@"Access Key" frame:NSMakeRect(16, accessKeyY, labelW, 22)];
+    NSTextField *accessKeyLabel = [self formLabel:KoeLocalizedString(@"wizard.asr.accessKey") frame:NSMakeRect(16, accessKeyY, labelW, 22)];
     accessKeyLabel.tag = 1002;
     [pane addSubview:accessKeyLabel];
 
     // Qwen API Key — fixed at row 1 (same position as App Key)
     CGFloat qwenY = formStartY - rowH;
     self.asrQwenApiKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, qwenY, secFieldW, 22)];
-    self.asrQwenApiKeySecureField.placeholderString = @"DashScope API Key (sk-xxx)";
+    self.asrQwenApiKeySecureField.placeholderString = KoeLocalizedString(@"wizard.asr.apiKeyQwenPlaceholder");
     self.asrQwenApiKeySecureField.font = [NSFont systemFontOfSize:13];
     self.asrQwenApiKeySecureField.hidden = YES;
     [pane addSubview:self.asrQwenApiKeySecureField];
-    self.asrQwenApiKeyField = [self formTextField:NSMakeRect(fieldX, qwenY, secFieldW, 22) placeholder:@"DashScope API Key (sk-xxx)"];
+    self.asrQwenApiKeyField = [self formTextField:NSMakeRect(fieldX, qwenY, secFieldW, 22) placeholder:KoeLocalizedString(@"wizard.asr.apiKeyQwenPlaceholder")];
     self.asrQwenApiKeyField.hidden = YES;
     [pane addSubview:self.asrQwenApiKeyField];
     self.asrQwenApiKeyToggle = [self eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, qwenY - 1, eyeW, 24)
                                                 action:@selector(toggleQwenApiKeyVisibility:)];
     self.asrQwenApiKeyToggle.hidden = YES;
     [pane addSubview:self.asrQwenApiKeyToggle];
-    NSTextField *qwenKeyLabel = [self formLabel:@"API Key" frame:NSMakeRect(16, qwenY, labelW, 22)];
+    NSTextField *qwenKeyLabel = [self formLabel:KoeLocalizedString(@"wizard.asr.apiKey") frame:NSMakeRect(16, qwenY, labelW, 22)];
     qwenKeyLabel.tag = 1003;
     qwenKeyLabel.hidden = YES;
     [pane addSubview:qwenKeyLabel];
@@ -1005,7 +1026,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat y = contentHeight - 30.0;
 
     // Description
-    NSTextField *desc = [self addSettingsDescriptionText:@"Configure LLM for post-correction. When disabled, raw ASR output is used directly."
+    NSTextField *desc = [self addSettingsDescriptionText:KoeLocalizedString(@"wizard.llm.description")
                                                   toPane:pane
                                                    topY:y
                                                       x:contentX
@@ -1015,12 +1036,12 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Enabled toggle
     self.llmEnabledCheckbox = [self settingsSwitchWithAction:@selector(llmEnabledToggled:)];
     NSView *llmEnabledCard = [self settingsToggleCardWithFrame:NSMakeRect(contentX, y - 48.0, contentW, 48.0)
-                                                         title:@"LLM Correction"
+                                                         title:KoeLocalizedString(@"wizard.llm.correction")
                                                         toggle:self.llmEnabledCheckbox];
     [pane addSubview:llmEnabledCard];
     y = NSMinY(llmEnabledCard.frame) - 24.0;
 
-    NSTextField *sectionTitle = [self sectionTitleLabel:@"Profiles"
+    NSTextField *sectionTitle = [self sectionTitleLabel:KoeLocalizedString(@"wizard.llm.profiles")
                                                   frame:NSMakeRect(contentX, floor(y - 20.0), contentW, 20.0)];
     [pane addSubview:sectionTitle];
     y = NSMinY(sectionTitle.frame) - 16.0;
@@ -1060,14 +1081,14 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Sidebar +/- buttons (Finder-style)
     self.llmAddProfileButton = [[NSButton alloc] initWithFrame:NSMakeRect(sidebarX, sidebarY, 28, 24)];
     self.llmAddProfileButton.bezelStyle = NSBezelStyleSmallSquare;
-    self.llmAddProfileButton.image = [NSImage imageWithSystemSymbolName:@"plus" accessibilityDescription:@"Add"];
+    self.llmAddProfileButton.image = [NSImage imageWithSystemSymbolName:@"plus" accessibilityDescription:KoeLocalizedString(@"wizard.llm.add")];
     self.llmAddProfileButton.target = self;
     self.llmAddProfileButton.action = @selector(showAddLlmProfileMenu:);
     [pane addSubview:self.llmAddProfileButton];
 
     self.llmDeleteProfileButton = [[NSButton alloc] initWithFrame:NSMakeRect(sidebarX + 30, sidebarY, 28, 24)];
     self.llmDeleteProfileButton.bezelStyle = NSBezelStyleSmallSquare;
-    self.llmDeleteProfileButton.image = [NSImage imageWithSystemSymbolName:@"minus" accessibilityDescription:@"Delete"];
+    self.llmDeleteProfileButton.image = [NSImage imageWithSystemSymbolName:@"minus" accessibilityDescription:KoeLocalizedString(@"wizard.llm.delete")];
     self.llmDeleteProfileButton.target = self;
     self.llmDeleteProfileButton.action = @selector(deleteLlmProfile:);
     [pane addSubview:self.llmDeleteProfileButton];
@@ -1076,9 +1097,9 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat detailY = y;  // top of form area aligns with top of sidebar
 
     // Name field (editable custom display name for this profile)
-    NSTextField *nameLabel = [self formLabel:@"Name" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *nameLabel = [self formLabel:KoeLocalizedString(@"wizard.llm.name") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     [pane addSubview:nameLabel];
-    self.llmProfileNameField = [self formTextField:NSMakeRect(fieldX, detailY, fieldW, 22) placeholder:@"My profile"];
+    self.llmProfileNameField = [self formTextField:NSMakeRect(fieldX, detailY, fieldW, 22) placeholder:KoeLocalizedString(@"wizard.llm.myProfile")];
     self.llmProfileNameField.target = self;
     self.llmProfileNameField.action = @selector(llmProfileNameChanged:);
     self.llmProfileNameField.delegate = self;
@@ -1086,7 +1107,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     detailY -= rowH;
 
     // Type (read-only label — locked at creation)
-    NSTextField *typeLabelLeft = [self formLabel:@"Type" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *typeLabelLeft = [self formLabel:KoeLocalizedString(@"wizard.llm.type") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     [pane addSubview:typeLabelLeft];
     self.llmProfileTypeLabel = [NSTextField labelWithString:@""];
     self.llmProfileTypeLabel.frame = NSMakeRect(fieldX, detailY, fieldW, 22);
@@ -1100,7 +1121,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // --- OpenAI fields (tag 2001-2008 for show/hide) ---
 
     // Base URL
-    NSTextField *baseUrlLabel = [self formLabel:@"Base URL" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *baseUrlLabel = [self formLabel:KoeLocalizedString(@"wizard.llm.baseUrl") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     baseUrlLabel.tag = 2001;
     [pane addSubview:baseUrlLabel];
     self.llmBaseUrlField = [self formTextField:NSMakeRect(fieldX, detailY, fieldW, 22) placeholder:@"https://api.openai.com/v1"];
@@ -1111,15 +1132,15 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // API Key (secure by default)
     CGFloat eyeW = 28;
     CGFloat secFieldW = fieldW - eyeW - 4;
-    NSTextField *apiKeyLabel = [self formLabel:@"API Key" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *apiKeyLabel = [self formLabel:KoeLocalizedString(@"wizard.llm.apiKey") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     apiKeyLabel.tag = 2002;
     [pane addSubview:apiKeyLabel];
     self.llmApiKeySecureField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(fieldX, detailY, secFieldW, 22)];
-    self.llmApiKeySecureField.placeholderString = @"sk-... (leave empty if not required)";
+    self.llmApiKeySecureField.placeholderString = KoeLocalizedString(@"wizard.llm.apiKeyPlaceholder");
     self.llmApiKeySecureField.font = [NSFont systemFontOfSize:13];
     self.llmApiKeySecureField.tag = 2002;
     [pane addSubview:self.llmApiKeySecureField];
-    self.llmApiKeyField = [self formTextField:NSMakeRect(fieldX, detailY, secFieldW, 22) placeholder:@"sk-... (leave empty if not required)"];
+    self.llmApiKeyField = [self formTextField:NSMakeRect(fieldX, detailY, secFieldW, 22) placeholder:KoeLocalizedString(@"wizard.llm.apiKeyPlaceholder")];
     self.llmApiKeyField.hidden = YES;
     self.llmApiKeyField.tag = 2002;
     [pane addSubview:self.llmApiKeyField];
@@ -1131,13 +1152,13 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // Model (text field for OpenAI) + Choose button (toggles remote model picker)
     CGFloat modelPickerButtonW = 74;
     CGFloat modelFieldW = fieldW - modelPickerButtonW - 6;
-    NSTextField *modelLabel = [self formLabel:@"Model" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *modelLabel = [self formLabel:KoeLocalizedString(@"wizard.llm.model") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     modelLabel.tag = 2003;
     [pane addSubview:modelLabel];
     self.llmModelField = [self formTextField:NSMakeRect(fieldX, detailY, modelFieldW, 22) placeholder:@"gpt-5.4-nano"];
     self.llmModelField.tag = 2003;
     [pane addSubview:self.llmModelField];
-    self.llmToggleModelPickerButton = [NSButton buttonWithTitle:@"Choose"
+    self.llmToggleModelPickerButton = [NSButton buttonWithTitle:KoeLocalizedString(@"wizard.llm.choose")
                                                           target:self
                                                           action:@selector(toggleLlmRemoteModelPicker:)];
     self.llmToggleModelPickerButton.frame = NSMakeRect(fieldX + modelFieldW + 6, detailY - 2, modelPickerButtonW, 26);
@@ -1147,17 +1168,17 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     detailY -= rowH;
 
     // Model List (OpenAI /models) — initially hidden, toggled by Choose button
-    NSTextField *modelListLabel = [self formLabel:@"Model List" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *modelListLabel = [self formLabel:KoeLocalizedString(@"wizard.llm.modelList") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     modelListLabel.tag = 2004;
     [pane addSubview:modelListLabel];
     self.llmRemoteModelPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, detailY - 2, fieldW - 74, 26) pullsDown:NO];
     self.llmRemoteModelPopup.tag = 2004;
-    [self.llmRemoteModelPopup addItemWithTitle:@"No models loaded"];
+    [self.llmRemoteModelPopup addItemWithTitle:KoeLocalizedString(@"wizard.llm.noModels")];
     self.llmRemoteModelPopup.enabled = NO;
     [self.llmRemoteModelPopup setTarget:self];
     [self.llmRemoteModelPopup setAction:@selector(llmRemoteModelChanged:)];
     [pane addSubview:self.llmRemoteModelPopup];
-    self.llmRefreshModelsButton = [NSButton buttonWithTitle:@"Refresh" target:self action:@selector(refreshLlmRemoteModels:)];
+    self.llmRefreshModelsButton = [NSButton buttonWithTitle:KoeLocalizedString(@"wizard.llm.refresh") target:self action:@selector(refreshLlmRemoteModels:)];
     self.llmRefreshModelsButton.frame = NSMakeRect(fieldX + fieldW - 66, detailY - 2, 66, 26);
     self.llmRefreshModelsButton.bezelStyle = NSBezelStyleRounded;
     self.llmRefreshModelsButton.tag = 2004;
@@ -1168,7 +1189,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     detailY -= rowH + 4;
 
     // Chat Completions Path
-    NSTextField *chatPathLabel = [self formLabel:@"Chat Path" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *chatPathLabel = [self formLabel:KoeLocalizedString(@"wizard.llm.chatPath") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     chatPathLabel.tag = 2005;
     [pane addSubview:chatPathLabel];
     self.llmChatCompletionsPathField = [self formTextField:NSMakeRect(fieldX, detailY, fieldW, 22)
@@ -1178,7 +1199,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     detailY -= rowH;
 
     // Max Token Parameter
-    NSTextField *tokenParamLabel = [self formLabel:@"Token Parameter" frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
+    NSTextField *tokenParamLabel = [self formLabel:KoeLocalizedString(@"wizard.llm.tokenParameter") frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
     tokenParamLabel.tag = 2006;
     [pane addSubview:tokenParamLabel];
     self.maxTokenParamPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, detailY - 2, 240, 26) pullsDown:NO];
@@ -1193,14 +1214,14 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     detailY -= 42;
 
     // Hint text
-    NSTextField *tokenHint = [self descriptionLabel:@"GPT-4o and older models use max_tokens. GPT-5 and reasoning models (o1/o3) use max_completion_tokens."];
+    NSTextField *tokenHint = [self descriptionLabel:KoeLocalizedString(@"wizard.llm.tokenParameter.hint")];
     tokenHint.frame = NSMakeRect(fieldX, detailY - 2, fieldW, 32);
     tokenHint.tag = 2007;
     [pane addSubview:tokenHint];
     detailY -= 44;
 
     // Test button
-    self.llmTestButton = [NSButton buttonWithTitle:@"Test Connection" target:self action:@selector(testLlmConnection:)];
+    self.llmTestButton = [NSButton buttonWithTitle:KoeLocalizedString(@"wizard.llm.testConnection") target:self action:@selector(testLlmConnection:)];
     self.llmTestButton.bezelStyle = NSBezelStyleRounded;
     self.llmTestButton.frame = NSMakeRect(fieldX, detailY, 130, 28);
     self.llmTestButton.tag = 2008;
@@ -1219,7 +1240,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat mlxY = providerDetailStartY;  // same Y as Base URL row
 
     // MLX Model popup + Download button
-    NSTextField *llmModelLabel = [self formLabel:@"Model" frame:NSMakeRect(detailLabelX, mlxY, labelW, 22)];
+    NSTextField *llmModelLabel = [self formLabel:KoeLocalizedString(@"wizard.llm.model") frame:NSMakeRect(detailLabelX, mlxY, labelW, 22)];
     llmModelLabel.tag = 2010;
     llmModelLabel.hidden = YES;
     [pane addSubview:llmModelLabel];
@@ -1232,7 +1253,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
     self.llmModelDownloadButton = [[NSButton alloc] initWithFrame:NSMakeRect(fieldX + fieldW - 20, mlxY + 1, 20, 20)];
     self.llmModelDownloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
-                                                      accessibilityDescription:@"Download"];
+                                                      accessibilityDescription:KoeLocalizedString(@"wizard.llm.download")];
     self.llmModelDownloadButton.bezelStyle = NSBezelStyleInline;
     self.llmModelDownloadButton.bordered = NO;
     self.llmModelDownloadButton.imageScaling = NSImageScaleProportionallyUpOrDown;
@@ -1257,7 +1278,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
     self.llmModelDeleteButton = [[NSButton alloc] initWithFrame:NSMakeRect(fieldX + fieldW - 20, mlxY + 1, 20, 20)];
     self.llmModelDeleteButton.image = [NSImage imageWithSystemSymbolName:@"trash"
-                                                    accessibilityDescription:@"Delete"];
+                                                    accessibilityDescription:KoeLocalizedString(@"wizard.llm.delete")];
     self.llmModelDeleteButton.bezelStyle = NSBezelStyleInline;
     self.llmModelDeleteButton.bordered = NO;
     self.llmModelDeleteButton.imageScaling = NSImageScaleProportionallyUpOrDown;
@@ -1300,7 +1321,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat paneWidth = 600.0;
     CGFloat contentX = 24.0;
     CGFloat contentW = paneWidth - 48.0;
-    NSString *descriptionText = @"Adjust the bottom live transcript overlay. Choose a system font, tune text size, set the bottom distance, and decide whether long live text stays capped to a few lines or expands fully. Every change is previewed directly in the real desktop overlay position.";
+    NSString *descriptionText = KoeLocalizedString(@"wizard.overlay.description");
 
     self.overlayFontFamilyPopup = [self overlayFontFamilyPopupControl];
 
@@ -1323,20 +1344,20 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     self.overlayLimitVisibleLinesSwitch = [self settingsSwitchWithAction:@selector(overlayControlChanged:)];
     self.overlayMaxVisibleLinesPopup = [self overlayMaxVisibleLinesPopupControl];
 
-    NSButton *resetButton = [NSButton buttonWithTitle:@"Reset to Default"
+    NSButton *resetButton = [NSButton buttonWithTitle:KoeLocalizedString(@"wizard.overlay.resetButton")
                                                target:self
                                                action:@selector(resetOverlaySettings:)];
     resetButton.bezelStyle = NSBezelStyleRounded;
     resetButton.frame = NSMakeRect(0, 0, 126.0, 28.0);
 
-    NSView *controlsCard = [self cardWithTitle:@"Overlay"
+    NSView *controlsCard = [self cardWithTitle:KoeLocalizedString(@"wizard.overlay.cardTitle")
                                           rows:@[
-        [self cardRowWithLabel:@"Font" control:self.overlayFontFamilyPopup],
-        [self cardRowWithLabel:@"Text Size" control:fontSliderControl],
-        [self cardRowWithLabel:@"Distance from Bottom" control:bottomSliderControl],
-        [self cardRowWithLabel:@"Limit Visible Lines" control:self.overlayLimitVisibleLinesSwitch],
-        [self cardRowWithLabel:@"Max Visible Lines" control:self.overlayMaxVisibleLinesPopup],
-        [self cardRowWithLabel:@"Defaults" control:resetButton],
+        [self cardRowWithLabel:KoeLocalizedString(@"wizard.overlay.font") control:self.overlayFontFamilyPopup],
+        [self cardRowWithLabel:KoeLocalizedString(@"wizard.overlay.textSize") control:fontSliderControl],
+        [self cardRowWithLabel:KoeLocalizedString(@"wizard.overlay.distanceFromBottom") control:bottomSliderControl],
+        [self cardRowWithLabel:KoeLocalizedString(@"wizard.overlay.limitVisibleLines") control:self.overlayLimitVisibleLinesSwitch],
+        [self cardRowWithLabel:KoeLocalizedString(@"wizard.overlay.maxVisibleLines") control:self.overlayMaxVisibleLinesPopup],
+        [self cardRowWithLabel:KoeLocalizedString(@"wizard.overlay.defaults") control:resetButton],
     ]
                                          width:contentW];
     CGFloat descriptionHeight = [self fittingHeightForWrappingLabel:[self descriptionLabel:descriptionText] width:contentW];
@@ -1354,7 +1375,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     y = NSMinY(desc.frame) - 18.0;
 
     CGFloat controlsTitleY = y - 20.0;
-    NSTextField *controlsTitle = [self sectionTitleLabel:@"Style Controls"
+    NSTextField *controlsTitle = [self sectionTitleLabel:KoeLocalizedString(@"wizard.overlay.styleControls")
                                                    frame:NSMakeRect(contentX, controlsTitleY, contentW, 20.0)];
     [pane addSubview:controlsTitle];
     controlsCard.frame = NSMakeRect(contentX,
@@ -1445,10 +1466,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     self.hotkeyPopup = [self hotkeyPresetPopup];
     self.hotkeyPopup.target = self;
     self.hotkeyPopup.action = @selector(triggerHotkeyChanged:);
-    self.recordTriggerHotkeyButton = [NSButton buttonWithTitle:@"Record" target:self action:@selector(recordTriggerHotkey:)];
+    self.recordTriggerHotkeyButton = [NSButton buttonWithTitle:KoeLocalizedString(@"wizard.hotkey.recordButton") target:self action:@selector(recordTriggerHotkey:)];
     self.recordTriggerHotkeyButton.bezelStyle = NSBezelStyleRounded;
     self.recordTriggerHotkeyButton.frame = NSMakeRect(0, 0, 70, 28);
-    self.resetTriggerHotkeyButton = [NSButton buttonWithTitle:@"Reset" target:self action:@selector(resetTriggerHotkey:)];
+    self.resetTriggerHotkeyButton = [NSButton buttonWithTitle:KoeLocalizedString(@"wizard.hotkey.resetButton") target:self action:@selector(resetTriggerHotkey:)];
     self.resetTriggerHotkeyButton.bezelStyle = NSBezelStyleRounded;
     self.resetTriggerHotkeyButton.frame = NSMakeRect(0, 0, 58, 28);
     NSView *triggerShortcutControl = [self hotkeyPickerControlWithPopup:self.hotkeyPopup
@@ -1458,16 +1479,20 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     // ── Trigger Mode ──
     self.triggerModePopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 220, 26) pullsDown:NO];
     [self.triggerModePopup addItemsWithTitles:@[
-        @"Hold (Press & Hold)",
-        @"Toggle (Tap to Start/Stop)",
+        KoeLocalizedString(@"wizard.hotkey.mode.hold"),
+        KoeLocalizedString(@"wizard.hotkey.mode.toggle"),
     ]];
     [self.triggerModePopup itemAtIndex:0].representedObject = @"hold";
     [self.triggerModePopup itemAtIndex:1].representedObject = @"toggle";
 
+    // ── ESC Cancel ──
+    self.escapeCancelCheckbox = [self settingsSwitchWithAction:NULL];
+
     // ── Trigger card ──
-    NSView *triggerCard = [self cardWithTitle:@"Trigger" rows:@[
-        [self cardRowWithLabel:@"Trigger Shortcut" control:triggerShortcutControl],
-        [self cardRowWithLabel:@"Trigger Mode" control:self.triggerModePopup],
+    NSView *triggerCard = [self cardWithTitle:KoeLocalizedString(@"wizard.hotkey.cardTitle") rows:@[
+        [self cardRowWithLabel:KoeLocalizedString(@"wizard.hotkey.triggerShortcut") control:triggerShortcutControl],
+        [self cardRowWithLabel:KoeLocalizedString(@"wizard.hotkey.triggerMode") control:self.triggerModePopup],
+        [self cardRowWithLabel:KoeLocalizedString(@"wizard.hotkey.escapeCancel") control:self.escapeCancelCheckbox],
     ] width:cardWidth];
 
     // ── Feedback Sounds ──
@@ -1475,10 +1500,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     self.stopSoundCheckbox = [self settingsSwitchWithAction:NULL];
     self.errorSoundCheckbox = [self settingsSwitchWithAction:NULL];
 
-    NSView *feedbackCard = [self cardWithTitle:@"Feedback Sounds" rows:@[
-        [self cardRowWithLabel:@"Recording starts" control:self.startSoundCheckbox],
-        [self cardRowWithLabel:@"Recording stops" control:self.stopSoundCheckbox],
-        [self cardRowWithLabel:@"Error occurs" control:self.errorSoundCheckbox],
+    NSView *feedbackCard = [self cardWithTitle:KoeLocalizedString(@"wizard.feedback.cardTitle") rows:@[
+        [self cardRowWithLabel:KoeLocalizedString(@"wizard.feedback.startSound") control:self.startSoundCheckbox],
+        [self cardRowWithLabel:KoeLocalizedString(@"wizard.feedback.stopSound") control:self.stopSoundCheckbox],
+        [self cardRowWithLabel:KoeLocalizedString(@"wizard.feedback.errorSound") control:self.errorSoundCheckbox],
     ] width:cardWidth];
 
     // ── Layout ──
@@ -1711,13 +1736,13 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat y = contentHeight - 30.0;
 
     // Description
-    NSTextField *desc = [self addSettingsDescriptionText:@"User dictionary \u2014 one term per line. These terms are prioritized during LLM correction. Lines starting with # are comments."
+    NSTextField *desc = [self addSettingsDescriptionText:KoeLocalizedString(@"wizard.dict.description")
                                                   toPane:pane
                                                    topY:y
                                                       x:contentX
                                                   width:contentW];
 
-    NSTextField *sectionTitle = [self sectionTitleLabel:@"Dictionary"
+    NSTextField *sectionTitle = [self sectionTitleLabel:KoeLocalizedString(@"wizard.dict.title")
                                                   frame:NSMakeRect(contentX, floor(NSMinY(desc.frame) - 36.0), contentW, 20)];
     [pane addSubview:sectionTitle];
 
@@ -1767,13 +1792,13 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat y = contentHeight - 30.0;
 
     // Description
-    NSTextField *desc = [self addSettingsDescriptionText:@"System prompt sent to the LLM for text correction. Edit to customize behavior."
+    NSTextField *desc = [self addSettingsDescriptionText:KoeLocalizedString(@"wizard.prompt.description")
                                                   toPane:pane
                                                    topY:y
                                                       x:contentX
                                                   width:contentW];
 
-    NSTextField *sectionTitle = [self sectionTitleLabel:@"System Prompt"
+    NSTextField *sectionTitle = [self sectionTitleLabel:KoeLocalizedString(@"wizard.prompt.title")
                                                   frame:NSMakeRect(contentX, floor(NSMinY(desc.frame) - 36.0), contentW, 20)];
     [pane addSubview:sectionTitle];
 
@@ -1824,7 +1849,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat contentW = paneWidth - 48.0;
     CGFloat y = contentHeight - 30.0;
 
-    NSTextField *desc = [self addSettingsDescriptionText:@"Manage overlay templates. Reorder them, control visibility, and edit each prompt here."
+    NSTextField *desc = [self addSettingsDescriptionText:KoeLocalizedString(@"wizard.templates.description")
                                                   toPane:pane
                                                    topY:y
                                                       x:contentX
@@ -1833,7 +1858,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
     self.templatesEnabledSwitch = [self settingsSwitchWithAction:NULL];
     NSView *visibilityCard = [self settingsToggleCardWithFrame:NSMakeRect(contentX, y - 48, contentW, 48)
-                                                         title:@"Show template buttons in overlay"
+                                                         title:KoeLocalizedString(@"wizard.templates.showButtons")
                                                         toggle:self.templatesEnabledSwitch];
     [pane addSubview:visibilityCard];
 
@@ -1845,11 +1870,11 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat editorW = contentW - listW - cardGap;
     CGFloat editorX = contentX + listW + cardGap;
 
-    NSTextField *listTitle = [self sectionTitleLabel:@"Template Library"
+    NSTextField *listTitle = [self sectionTitleLabel:KoeLocalizedString(@"wizard.templates.library")
                                                frame:NSMakeRect(contentX, sectionTitleY, listW, 20)];
     [pane addSubview:listTitle];
 
-    NSTextField *editorTitle = [self sectionTitleLabel:@"Template Editor"
+    NSTextField *editorTitle = [self sectionTitleLabel:KoeLocalizedString(@"wizard.templates.editor")
                                                  frame:NSMakeRect(editorX, sectionTitleY, editorW, 20)];
     [pane addSubview:editorTitle];
 
@@ -1879,13 +1904,13 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [listCard addSubview:footerSeparator];
 
     self.templatePrimaryActionsControl = [self templateActionSegmentedControlWithSymbols:@[@"plus", @"minus"]
-                                                                                toolTips:@[@"Add template", @"Remove selected template"]
+                                                                                toolTips:@[KoeLocalizedString(@"wizard.templates.addTooltip"), KoeLocalizedString(@"wizard.templates.removeTooltip")]
                                                                                   action:@selector(handleTemplatePrimaryActions:)];
     self.templatePrimaryActionsControl.frame = NSMakeRect(12, 5, 50, 24);
     [listCard addSubview:self.templatePrimaryActionsControl];
 
     self.templateReorderActionsControl = [self templateActionSegmentedControlWithSymbols:@[@"arrow.up", @"arrow.down"]
-                                                                                 toolTips:@[@"Move selected template up", @"Move selected template down"]
+                                                                                 toolTips:@[KoeLocalizedString(@"wizard.templates.moveUpTooltip"), KoeLocalizedString(@"wizard.templates.moveDownTooltip")]
                                                                                    action:@selector(handleTemplateReorderActions:)];
     self.templateReorderActionsControl.frame = NSMakeRect(listW - 12 - 50, 5, 50, 24);
     [listCard addSubview:self.templateReorderActionsControl];
@@ -1919,10 +1944,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     self.templatesTableView.dataSource = (id)self;
     scrollView.documentView = self.templatesTableView;
 
-    NSTextField *nameLabel = [self sectionTitleLabel:@"Name" frame:NSMakeRect(16, mainCardH - 34, editorW - 32, 18)];
+    NSTextField *nameLabel = [self sectionTitleLabel:KoeLocalizedString(@"wizard.templates.name") frame:NSMakeRect(16, mainCardH - 34, editorW - 32, 18)];
     [editorCard addSubview:nameLabel];
 
-    self.templateNameField = [self formTextField:NSMakeRect(16, mainCardH - 64, editorW - 32, 24) placeholder:@"Template name"];
+    self.templateNameField = [self formTextField:NSMakeRect(16, mainCardH - 64, editorW - 32, 24) placeholder:KoeLocalizedString(@"wizard.templates.templateName")];
     self.templateNameField.delegate = self;
     [editorCard addSubview:self.templateNameField];
 
@@ -1932,7 +1957,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat templateItemToggleH = self.templateItemEnabledSwitch.frame.size.height;
     CGFloat templateVisibilityCenterY = mainCardH - 86.0;
 
-    NSTextField *templateVisibilityLabel = [self settingsRowLabelWithString:@"Visible in overlay"];
+    NSTextField *templateVisibilityLabel = [self settingsRowLabelWithString:KoeLocalizedString(@"wizard.templates.visible")];
     templateVisibilityLabel.frame = NSMakeRect(16,
                                                floor(templateVisibilityCenterY - 10.0),
                                                editorW - templateItemToggleW - 44.0,
@@ -1945,7 +1970,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                                                       templateItemToggleH);
     [editorCard addSubview:self.templateItemEnabledSwitch];
 
-    NSTextField *promptLabel = [self sectionTitleLabel:@"Prompt" frame:NSMakeRect(16, mainCardH - 124, editorW - 32, 18)];
+    NSTextField *promptLabel = [self sectionTitleLabel:KoeLocalizedString(@"wizard.templates.prompt") frame:NSMakeRect(16, mainCardH - 124, editorW - 32, 18)];
     [editorCard addSubview:promptLabel];
 
     NSScrollView *promptScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(16, 16, editorW - 32, mainCardH - 146)];
@@ -2057,7 +2082,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
     if (row < (NSInteger)self.templatesData.count) {
         NSDictionary *tmpl = self.templatesData[row];
-        NSString *name = tmpl[@"name"] ?: @"Untitled";
+        NSString *name = tmpl[@"name"] ?: KoeLocalizedString(@"wizard.templates.untitled");
         BOOL enabled = [self isTemplateEnabled:tmpl];
 
         NSTextField *titleLabel = nil;
@@ -2363,7 +2388,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
 - (BOOL)validateTemplatesDataWithMessage:(NSString **)message {
     if (self.templatesData.count > 9) {
-        if (message) *message = @"You can add up to 9 prompt templates.";
+        if (message) *message = KoeLocalizedString(@"wizard.templates.limitMessage");
         return NO;
     }
 
@@ -2372,15 +2397,15 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
         NSNumber *shortcut = [tmpl[@"shortcut"] isKindOfClass:[NSNumber class]] ? tmpl[@"shortcut"] : nil;
         NSInteger value = shortcut.integerValue;
         if (!shortcut || value < 1 || value > 9) {
-            if (message) *message = @"Each prompt template needs a shortcut between 1 and 9.";
+            if (message) *message = KoeLocalizedString(@"wizard.templates.validation.shortcutRange");
             return NO;
         }
         if ([used containsObject:@(value)]) {
-            if (message) *message = @"Each prompt template shortcut must be unique.";
+            if (message) *message = KoeLocalizedString(@"wizard.templates.validation.shortcutUnique");
             return NO;
         }
         if ([self trimmedResolvedPromptTextForTemplate:tmpl].length == 0) {
-            if (message) *message = @"Each prompt template needs a non-empty prompt.";
+            if (message) *message = KoeLocalizedString(@"wizard.templates.validation.prompt");
             return NO;
         }
         [used addObject:@(value)];
@@ -2391,14 +2416,14 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
 - (void)addTemplate:(id)sender {
     if (self.templatesData.count >= 9) {
-        [self showAlert:@"Template limit reached"
-                   info:@"You can add up to 9 prompt templates because the overlay only supports number keys 1-9."];
+        [self showAlert:KoeLocalizedString(@"wizard.templates.limitReached")
+                   info:KoeLocalizedString(@"wizard.templates.limitMessage")];
         return;
     }
 
     [self flushEditorToIndex:self.selectedTemplateIndex];
     [self.templatesData addObject:[NSMutableDictionary dictionaryWithDictionary:@{
-        @"name": @"New Template",
+        @"name": KoeLocalizedString(@"wizard.templates.newTemplate"),
         @"enabled": @YES,
         @"shortcut": @((NSInteger)self.templatesData.count + 1),
         @"system_prompt": @"",
@@ -2467,7 +2492,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
 - (NSView *)buildAboutPane {
     CGFloat paneWidth = 600;
-    CGFloat contentHeight = 308;
+    CGFloat contentHeight = 348;
     NSView *pane = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
     [self applySettingsPaneBackgroundToView:pane];
 
@@ -2491,14 +2516,14 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     y -= 32;
 
     // Description
-    NSTextField *desc = [self descriptionLabel:@"A background-first macOS voice input tool.\nPress a hotkey, speak, and the corrected text is pasted into whatever app you\u2019re using."];
+    NSTextField *desc = [self descriptionLabel:KoeLocalizedString(@"wizard.about.description")];
     desc.alignment = NSTextAlignmentCenter;
     desc.frame = NSMakeRect(60, y - 10, paneWidth - 120, 40);
     [pane addSubview:desc];
     y -= 56;
 
     // GitHub button
-    NSButton *githubButton = [NSButton buttonWithTitle:@"GitHub Repository" target:self action:@selector(openGitHub:)];
+    NSButton *githubButton = [NSButton buttonWithTitle:KoeLocalizedString(@"wizard.about.github") target:self action:@selector(openGitHub:)];
     githubButton.bezelStyle = NSBezelStyleRounded;
     githubButton.image = [NSImage imageWithSystemSymbolName:@"arrow.up.right" accessibilityDescription:nil];
     githubButton.imagePosition = NSImageTrailing;
@@ -2507,7 +2532,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     y -= 40;
 
     // Documentation link
-    NSButton *docsButton = [NSButton buttonWithTitle:@"Documentation" target:self action:@selector(openDocs:)];
+    NSButton *docsButton = [NSButton buttonWithTitle:KoeLocalizedString(@"wizard.about.docs") target:self action:@selector(openDocs:)];
     docsButton.bezelStyle = NSBezelStyleRounded;
     docsButton.image = [NSImage imageWithSystemSymbolName:@"arrow.up.right" accessibilityDescription:nil];
     docsButton.imagePosition = NSImageTrailing;
@@ -2516,12 +2541,55 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     y -= 48;
 
     // License
-    NSTextField *license = [self descriptionLabel:@"MIT License \u00b7 Made with Rust + Objective-C"];
+    NSTextField *license = [self descriptionLabel:KoeLocalizedString(@"wizard.about.license")];
     license.alignment = NSTextAlignmentCenter;
     license.frame = NSMakeRect(24, y, paneWidth - 48, 20);
     [pane addSubview:license];
+    y -= 40;
+
+    // Language selector
+    NSTextField *langLabel = [NSTextField labelWithString:KoeLocalizedString(@"wizard.about.interfaceLanguage")];
+    langLabel.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
+    langLabel.textColor = [NSColor secondaryLabelColor];
+    langLabel.alignment = NSTextAlignmentCenter;
+    langLabel.frame = NSMakeRect(24, y, paneWidth - 48, 18);
+    [pane addSubview:langLabel];
+    y -= 28;
+
+    NSPopUpButton *langPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect((paneWidth - 220) / 2.0, y, 220, 26) pullsDown:NO];
+    [langPopup addItemWithTitle:KoeLocalizedString(@"wizard.about.language.system")];
+    [langPopup itemAtIndex:0].representedObject = @"system";
+
+    for (NSString *code in [SPLocalization availableLanguages]) {
+        NSString *display = [SPLocalization displayNameForLanguage:code];
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:display action:nil keyEquivalent:@""];
+        item.representedObject = code;
+        [langPopup.menu addItem:item];
+    }
+
+    NSString *current = [SPLocalization isFollowingSystem] ? @"system" : [SPLocalization effectiveLanguage];
+    for (NSInteger i = 0; i < langPopup.numberOfItems; i++) {
+        if ([[langPopup itemAtIndex:i].representedObject isEqualToString:current]) {
+            [langPopup selectItemAtIndex:i];
+            break;
+        }
+    }
+    [langPopup setTarget:self];
+    [langPopup setAction:@selector(interfaceLanguageChanged:)];
+    [pane addSubview:langPopup];
 
     return pane;
+}
+
+- (void)interfaceLanguageChanged:(NSPopUpButton *)sender {
+    NSString *lang = sender.selectedItem.representedObject;
+    if ([lang isEqualToString:@"system"]) {
+        [SPLocalization setPreferredLanguage:nil];
+    } else {
+        [SPLocalization setPreferredLanguage:lang];
+    }
+    // setPreferredLanguage posts SPLocalizationLanguageDidChangeNotification,
+    // which interfaceLanguageDidChange: handles by rebuilding toolbar + pane.
 }
 
 - (void)openGitHub:(id)sender {
@@ -2535,13 +2603,13 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 // ─── Shared button bar ──────────────────────────────────────────────
 
 - (void)addButtonsToPane:(NSView *)pane atY:(CGFloat)y width:(CGFloat)paneWidth {
-    NSButton *saveButton = [NSButton buttonWithTitle:@"Save" target:self action:@selector(saveConfig:)];
+    NSButton *saveButton = [NSButton buttonWithTitle:KoeLocalizedString(@"wizard.button.save") target:self action:@selector(saveConfig:)];
     saveButton.bezelStyle = NSBezelStyleRounded;
     saveButton.keyEquivalent = @"\r";
     saveButton.frame = NSMakeRect(paneWidth - 32 - 80, y, 80, 28);
     [pane addSubview:saveButton];
 
-    NSButton *cancelButton = [NSButton buttonWithTitle:@"Cancel" target:self action:@selector(cancelSetup:)];
+    NSButton *cancelButton = [NSButton buttonWithTitle:KoeLocalizedString(@"wizard.button.cancel") target:self action:@selector(cancelSetup:)];
     cancelButton.bezelStyle = NSBezelStyleRounded;
     cancelButton.keyEquivalent = @"\033";
     cancelButton.frame = NSMakeRect(paneWidth - 32 - 80 - 88, y, 80, 28);
@@ -2624,9 +2692,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
     [popup removeAllItems];
 
-    NSMenuItem *systemItem = [[NSMenuItem alloc] initWithTitle:kOverlayFontFamilySystemLabel action:nil keyEquivalent:@""];
+    NSString *systemFontDisplay = KoeLocalizedString(@"wizard.overlay.fontSystemDefault");
+    NSMenuItem *systemItem = [[NSMenuItem alloc] initWithTitle:systemFontDisplay action:nil keyEquivalent:@""];
     systemItem.representedObject = kOverlayFontFamilyDefault;
-    systemItem.attributedTitle = [self overlayFontMenuTitleWithLabel:kOverlayFontFamilySystemLabel value:kOverlayFontFamilyDefault];
+    systemItem.attributedTitle = [self overlayFontMenuTitleWithLabel:systemFontDisplay value:kOverlayFontFamilyDefault];
     [popup.menu addItem:systemItem];
 
     for (NSString *family in [self availableOverlayFontFamilies]) {
@@ -3810,6 +3879,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
             [self.triggerModePopup selectItemAtIndex:0];
         }
 
+        // Load ESC cancel (default: enabled)
+        NSString *escapeCancel = configGet(@"hotkey.escape_cancel_enabled");
+        self.escapeCancelCheckbox.state = [escapeCancel isEqualToString:@"false"] ? NSControlStateValueOff : NSControlStateValueOn;
+
         NSString *startSound = configGet(@"feedback.start_sound");
         NSString *stopSound = configGet(@"feedback.stop_sound");
         NSString *errorSound = configGet(@"feedback.error_sound");
@@ -3984,6 +4057,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
         // Save trigger mode
         NSString *triggerModeValue = [self.triggerModePopup selectedItem].representedObject ?: @"hold";
         saveOk &= configSet(@"hotkey.trigger_mode", triggerModeValue);
+
+        // Save ESC cancel enabled
+        NSString *escapeCancelValue = self.escapeCancelCheckbox.state == NSControlStateValueOn ? @"true" : @"false";
+        saveOk &= configSet(@"hotkey.escape_cancel_enabled", escapeCancelValue);
     }
     if (self.overlayFontSizeSlider) {
         NSString *fontFamily = [self selectedOverlayFontFamilyValue];

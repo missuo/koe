@@ -1,0 +1,138 @@
+/* Koe — 繁體中文在地化 */
+
+/* ─── 狀態列 ─── */
+"statusBar.status.ready" = "就緒 — v%@ (%@)";
+"statusBar.status.listening" = "正在錄音...";
+"statusBar.status.connecting" = "正在連線...";
+"statusBar.status.recognizing" = "正在辨識...";
+"statusBar.status.thinking" = "正在校正...";
+"statusBar.status.pasting" = "正在貼上...";
+"statusBar.status.error" = "發生錯誤";
+"statusBar.status.working" = "處理中...";
+
+"statusBar.shortcut.format" = "快捷鍵：%@";
+"statusBar.menu.setupWizard" = "設定精靈...";
+
+/* ─── 設定精靈 ─── */
+"wizard.window.title" = "Koe 設定";
+"wizard.toolbar.asr" = "語音辨識";
+"wizard.toolbar.llm" = "大型模型";
+"wizard.toolbar.overlay" = "浮動視窗";
+"wizard.toolbar.controls" = "控制";
+"wizard.toolbar.dictionary" = "詞典";
+"wizard.toolbar.prompt" = "提示詞";
+"wizard.toolbar.templates" = "模板";
+"wizard.toolbar.about" = "關於";
+
+"wizard.button.save" = "儲存";
+"wizard.button.cancel" = "取消";
+
+"wizard.hotkey.cardTitle" = "觸發鍵";
+"wizard.hotkey.triggerShortcut" = "觸發快捷鍵";
+"wizard.hotkey.triggerMode" = "觸發模式";
+"wizard.hotkey.escapeCancel" = "按 ESC 取消錄音";
+"wizard.hotkey.mode.hold" = "按住（長按錄音）";
+"wizard.hotkey.mode.toggle" = "切換（按一下開始/停止）";
+"wizard.hotkey.recordButton" = "錄製";
+"wizard.hotkey.resetButton" = "重設";
+
+"wizard.feedback.cardTitle" = "回饋音效";
+"wizard.feedback.startSound" = "開始錄音時";
+"wizard.feedback.stopSound" = "停止錄音時";
+"wizard.feedback.errorSound" = "發生錯誤時";
+
+"wizard.overlay.description" = "調整底部的即時字幕浮動視窗。選擇系統字型、調整字體大小、設定距離底部的距離，並決定長文字是否限制在幾行或完全展開。每次變更都會在實際桌面位置即時預覽。";
+"wizard.overlay.styleControls" = "樣式控制";
+"wizard.overlay.cardTitle" = "浮動視窗";
+"wizard.overlay.font" = "字型";
+"wizard.overlay.fontSystemDefault" = "系統預設";
+"wizard.overlay.textSize" = "字體大小";
+"wizard.overlay.distanceFromBottom" = "距底部距離";
+"wizard.overlay.limitVisibleLines" = "限制可見行數";
+"wizard.overlay.maxVisibleLines" = "最大行數";
+"wizard.overlay.defaults" = "恢復預設";
+"wizard.overlay.resetButton" = "重設為預設值";
+
+/* ─── 語音辨識頁 ─── */
+"wizard.asr.description" = "選擇用於轉寫的語音辨識服務。";
+"wizard.asr.provider" = "服務商";
+"wizard.asr.provider.doubaoime" = "豆包輸入法（內建、免費）";
+"wizard.asr.provider.doubao" = "豆包（字節跳動）";
+"wizard.asr.provider.qwen" = "通義（阿里雲）";
+"wizard.asr.provider.mlx" = "MLX（Apple Silicon）";
+"wizard.asr.provider.sherpa" = "Sherpa-ONNX";
+"wizard.asr.provider.appleSpeech" = "Apple 語音（本機）";
+"wizard.asr.connection" = "連線";
+"wizard.asr.appKey" = "App Key";
+"wizard.asr.accessKey" = "Access Key";
+"wizard.asr.apiKey" = "API Key";
+"wizard.asr.appKeyDoubao" = "火山引擎 App ID";
+"wizard.asr.accessKeyDoubao" = "火山引擎 Access Token";
+"wizard.asr.apiKeyQwenPlaceholder" = "DashScope API Key（sk-xxx）";
+"wizard.asr.model" = "模型";
+"wizard.asr.language" = "語言";
+"wizard.asr.test" = "測試";
+"wizard.asr.download" = "下載";
+"wizard.asr.delete" = "刪除";
+
+/* ─── 大型模型頁 ─── */
+"wizard.llm.description" = "設定用於校正的 LLM。停用後將直接使用原始語音辨識結果。";
+"wizard.llm.correction" = "LLM 校正";
+"wizard.llm.profiles" = "設定檔";
+"wizard.llm.type" = "類型";
+"wizard.llm.name" = "名稱";
+"wizard.llm.baseUrl" = "Base URL";
+"wizard.llm.apiKey" = "API Key";
+"wizard.llm.apiKeyPlaceholder" = "sk-...（若不需要可留空）";
+"wizard.llm.model" = "模型";
+"wizard.llm.modelList" = "模型清單";
+"wizard.llm.chatPath" = "Chat 路徑";
+"wizard.llm.tokenParameter" = "Token 參數";
+"wizard.llm.tokenParameter.hint" = "GPT-4o 與更早的模型使用 max_tokens。GPT-5 及推理類模型（o1/o3）使用 max_completion_tokens。";
+"wizard.llm.testConnection" = "測試連線";
+"wizard.llm.refresh" = "重新整理";
+"wizard.llm.choose" = "選擇";
+"wizard.llm.hideModels" = "隱藏";
+"wizard.llm.noModels" = "沒有已載入的模型";
+"wizard.llm.add" = "新增";
+"wizard.llm.delete" = "刪除";
+"wizard.llm.download" = "下載";
+"wizard.llm.myProfile" = "我的設定";
+
+/* ─── 詞典頁 ─── */
+"wizard.dict.title" = "詞典";
+"wizard.dict.description" = "使用者詞典——每行一個詞條。這些詞條在 LLM 校正時會被優先考慮。以 # 開頭的行為註解。";
+
+/* ─── 系統提示詞頁 ─── */
+"wizard.prompt.title" = "系統提示詞";
+"wizard.prompt.description" = "傳送給 LLM 用於文字校正的系統提示詞。可自行編輯以調整行為。";
+
+/* ─── 範本頁 ─── */
+"wizard.templates.description" = "管理浮動視窗範本。在此調整順序、控制顯示、編輯每個提示詞。";
+"wizard.templates.showButtons" = "在浮動視窗中顯示範本按鈕";
+"wizard.templates.library" = "範本庫";
+"wizard.templates.editor" = "範本編輯器";
+"wizard.templates.newTemplate" = "新增範本";
+"wizard.templates.untitled" = "未命名";
+"wizard.templates.templateName" = "範本名稱";
+"wizard.templates.name" = "名稱";
+"wizard.templates.prompt" = "提示詞";
+"wizard.templates.visible" = "在浮動視窗顯示";
+"wizard.templates.addTooltip" = "新增範本";
+"wizard.templates.removeTooltip" = "刪除所選範本";
+"wizard.templates.moveUpTooltip" = "上移所選範本";
+"wizard.templates.moveDownTooltip" = "下移所選範本";
+"wizard.templates.limitReached" = "已達範本上限";
+"wizard.templates.limitMessage" = "浮動視窗僅支援數字鍵 1-9，因此最多只能新增 9 個範本。";
+"wizard.templates.validation.shortcutRange" = "每個範本的快捷鍵必須在 1 到 9 之間。";
+"wizard.templates.validation.shortcutUnique" = "每個範本的快捷鍵必須唯一。";
+"wizard.templates.validation.prompt" = "每個範本都需要一個非空的提示詞。";
+
+"wizard.about.github" = "GitHub 儲存庫";
+"wizard.about.docs" = "使用文件";
+"wizard.about.license" = "MIT 授權 · 使用 Rust + Objective-C 打造";
+"wizard.about.interfaceLanguage" = "介面語言";
+"wizard.about.language.system" = "跟隨系統";
+"wizard.about.language.english" = "English";
+"wizard.about.language.chinese" = "简体中文";
+"wizard.about.description" = "後台優先的 macOS 語音輸入工具。\n按下熱鍵開口說話，校正後的文字會自動貼到目前使用的應用中。";

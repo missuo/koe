@@ -97,4 +97,34 @@ static NSString *_cachedLanguage = nil;
     return [NSBundle mainBundle];
 }
 
++ (NSArray<NSString *> *)availableLanguages {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *resourcePath = [NSBundle mainBundle].resourcePath;
+    if (!resourcePath) return @[];
+
+    NSArray<NSString *> *entries = [fm contentsOfDirectoryAtPath:resourcePath error:NULL] ?: @[];
+    NSMutableArray<NSString *> *langs = [NSMutableArray array];
+    for (NSString *entry in entries) {
+        if (![entry.pathExtension isEqualToString:@"lproj"]) continue;
+        NSString *lproj = [resourcePath stringByAppendingPathComponent:entry];
+        NSString *strings = [lproj stringByAppendingPathComponent:@"Localizable.strings"];
+        if (![fm fileExistsAtPath:strings]) continue;
+        NSString *code = [entry stringByDeletingPathExtension];
+        [langs addObject:code];
+    }
+    [langs sortUsingSelector:@selector(caseInsensitiveCompare:)];
+    return langs;
+}
+
++ (NSString *)displayNameForLanguage:(NSString *)code {
+    if (!code.length) return @"";
+    NSLocale *targetLocale = [NSLocale localeWithLocaleIdentifier:code];
+    NSString *name = [targetLocale localizedStringForLocaleIdentifier:code];
+    if (name.length) {
+        NSString *first = [[name substringToIndex:1] uppercaseStringWithLocale:targetLocale];
+        return [name stringByReplacingCharactersInRange:NSMakeRange(0, 1) withString:first];
+    }
+    return code;
+}
+
 @end

@@ -104,6 +104,15 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
             return monitor.canConsumeGlobalKeyEvents ? NULL : event;
         }
 
+        // ESC (keyCode 53) during recording → cancel session.
+        if (type == kCGEventKeyDown && keyCode == 53 && monitor.escapeKeyHandler) {
+            void (^handler)(void) = monitor.escapeKeyHandler;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                handler();
+            });
+            return monitor.canConsumeGlobalKeyEvents ? NULL : event;
+        }
+
         // Any keyDown (not handled by number keys above) dismisses the overlay.
         // The event is NOT consumed — it passes through to the target app.
         if (type == kCGEventKeyDown && monitor.anyKeyDismissHandler) {
@@ -338,6 +347,12 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
         if (event.type == NSEventTypeKeyDown && [self handleNumberKeyWithKeyCode:keyCode]) {
             return YES;
+        }
+
+        // ESC (keyCode 53) during recording → cancel session.
+        if (event.type == NSEventTypeKeyDown && keyCode == 53 && self.escapeKeyHandler) {
+            self.escapeKeyHandler();
+            return YES; // consume
         }
 
         // Some macOS versions send modifier keys as keyDown/keyUp events. Keep
