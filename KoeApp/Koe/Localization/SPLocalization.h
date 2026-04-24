@@ -49,6 +49,14 @@ extern NSNotificationName const SPLocalizationLanguageDidChangeNotification;
 /// changes.
 + (void)invalidateCache;
 
+/// Returns every language code shipped in the app bundle (each .lproj
+/// folder containing Localizable.strings). E.g. @[@"en", @"zh-Hans", ...].
++ (NSArray<NSString *> *)availableLanguages;
+
+/// Returns a human-readable endonym for a language code (e.g. "en" →
+/// "English", "zh-Hans" → "简体中文"), suitable for a language picker.
++ (NSString *)displayNameForLanguage:(NSString *)code;
+
 @end
 
 NS_ASSUME_NONNULL_END

@@ -294,6 +294,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     NSLog(@"[Koe] Hold start detected");
     [self stopNumberKeyMonitoring];
     [self stopAnyKeyDismissMonitoring];
+    [self startEscapeKeyMonitoring];
     [self.overlayPanel hideTemplateButtons];
     self.showingError = NO;
     [self cancelPendingSessionEnd];
@@ -315,6 +316,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 - (void)hotkeyMonitorDidDetectHoldEnd {
     NSLog(@"[Koe] Hold end detected");
+    [self stopEscapeKeyMonitoring];
     [self.cuePlayer playStop];
 
     // Keep recording for 300ms after Fn release to capture trailing speech,
@@ -335,6 +337,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     NSLog(@"[Koe] Tap start detected");
     [self stopNumberKeyMonitoring];
     [self stopAnyKeyDismissMonitoring];
+    [self startEscapeKeyMonitoring];
     [self.overlayPanel hideTemplateButtons];
     self.showingError = NO;
     [self cancelPendingSessionEnd];
@@ -355,6 +358,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 - (void)hotkeyMonitorDidDetectTapEnd {
     NSLog(@"[Koe] Tap end detected");
+    [self stopEscapeKeyMonitoring];
     [self.cuePlayer playStop];
 
     // Keep recording for 300ms after tap-end to capture trailing speech,
@@ -628,7 +632,9 @@ static BOOL configFlagEnabled(const char *keyPath) {
         self.setupWizard.delegate = self;
         self.setupWizard.rustBridge = self.rustBridge;
     }
+    [NSApp activateIgnoringOtherApps:YES];
     [self.setupWizard showWindow:nil];
+    [self.setupWizard.window makeKeyAndOrderFront:nil];
 }
 
 - (void)statusBarDidSelectCheckForUpdates {
@@ -718,6 +724,35 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 - (void)stopAnyKeyDismissMonitoring {
     self.hotkeyMonitor.anyKeyDismissHandler = nil;
+}
+
+#pragma mark - ESC Cancel Monitoring
+
+- (void)startEscapeKeyMonitoring {
+    // Default enabled: only disable if explicitly set to "false" in config.
+    char *raw = sp_config_get("hotkey.escape_cancel_enabled");
+    BOOL disabled = (raw && strcmp(raw, "false") == 0);
+    if (raw) sp_core_free_string(raw);
+    if (disabled) {
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    self.hotkeyMonitor.escapeKeyHandler = ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        NSLog(@"[Koe] ESC pressed — cancelling session");
+        [strongSelf stopEscapeKeyMonitoring];
+        [strongSelf cancelPendingSessionEnd];
+        [strongSelf.audioCaptureManager stopCapture];
+        [strongSelf.rustBridge cancelSession];
+        [strongSelf.hotkeyMonitor resetToIdle];
+        [strongSelf.overlayPanel updateState:@"idle"];
+        [strongSelf.statusBarManager updateState:@"idle"];
+    };
+}
+
+- (void)stopEscapeKeyMonitoring {
+    self.hotkeyMonitor.escapeKeyHandler = nil;
 }
 
 @end

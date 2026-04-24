@@ -17,6 +17,8 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     ENABLE_HARDENED_RUNTIME: YES
     APP_UPDATE_FEED_URL: "https://raw.githubusercontent.com/missuo/koe/main/docs/update-feed.json"
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "Koe Dev"
 
 targetTemplates:
   KoeApp:

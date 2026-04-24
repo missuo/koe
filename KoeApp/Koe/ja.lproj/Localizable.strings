@@ -1,0 +1,138 @@
+/* Koe — 日本語ローカライゼーション */
+
+/* ─── ステータスバー ─── */
+"statusBar.status.ready" = "準備完了 — v%@ (%@)";
+"statusBar.status.listening" = "録音中...";
+"statusBar.status.connecting" = "接続中...";
+"statusBar.status.recognizing" = "認識中...";
+"statusBar.status.thinking" = "校正中...";
+"statusBar.status.pasting" = "貼り付け中...";
+"statusBar.status.error" = "エラー";
+"statusBar.status.working" = "処理中...";
+
+"statusBar.shortcut.format" = "ショートカット：%@";
+"statusBar.menu.setupWizard" = "設定ウィザード...";
+
+/* ─── 設定ウィザード ─── */
+"wizard.window.title" = "Koe 設定";
+"wizard.toolbar.asr" = "音声認識";
+"wizard.toolbar.llm" = "LLM";
+"wizard.toolbar.overlay" = "オーバーレイ";
+"wizard.toolbar.controls" = "操作";
+"wizard.toolbar.dictionary" = "辞書";
+"wizard.toolbar.prompt" = "プロンプト";
+"wizard.toolbar.templates" = "テンプレート";
+"wizard.toolbar.about" = "情報";
+
+"wizard.button.save" = "保存";
+"wizard.button.cancel" = "キャンセル";
+
+"wizard.hotkey.cardTitle" = "トリガーキー";
+"wizard.hotkey.triggerShortcut" = "トリガーショートカット";
+"wizard.hotkey.triggerMode" = "トリガーモード";
+"wizard.hotkey.escapeCancel" = "ESCでキャンセル";
+"wizard.hotkey.mode.hold" = "ホールド（押している間）";
+"wizard.hotkey.mode.toggle" = "トグル（タップで開始/停止）";
+"wizard.hotkey.recordButton" = "録画";
+"wizard.hotkey.resetButton" = "リセット";
+
+"wizard.feedback.cardTitle" = "効果音";
+"wizard.feedback.startSound" = "録音開始時";
+"wizard.feedback.stopSound" = "録音停止時";
+"wizard.feedback.errorSound" = "エラー発生時";
+
+"wizard.overlay.description" = "画面下部のライブ字幕オーバーレイを調整します。システムフォントの選択、サイズ調整、下部距離の設定、長文を数行に制限するかフル展開するかを設定できます。変更は実際のデスクトップ上で即座にプレビューされます。";
+"wizard.overlay.styleControls" = "スタイル設定";
+"wizard.overlay.cardTitle" = "オーバーレイ";
+"wizard.overlay.font" = "フォント";
+"wizard.overlay.fontSystemDefault" = "システムデフォルト";
+"wizard.overlay.textSize" = "文字サイズ";
+"wizard.overlay.distanceFromBottom" = "下端からの距離";
+"wizard.overlay.limitVisibleLines" = "表示行数を制限";
+"wizard.overlay.maxVisibleLines" = "最大行数";
+"wizard.overlay.defaults" = "デフォルト";
+"wizard.overlay.resetButton" = "デフォルトに戻す";
+
+/* ─── 音声認識ペイン ─── */
+"wizard.asr.description" = "音声認識に使用するプロバイダを選択します。";
+"wizard.asr.provider" = "プロバイダ";
+"wizard.asr.provider.doubaoime" = "Doubao IME（内蔵・無料）";
+"wizard.asr.provider.doubao" = "Doubao（ByteDance）";
+"wizard.asr.provider.qwen" = "Qwen（阿里云）";
+"wizard.asr.provider.mlx" = "MLX（Apple Silicon）";
+"wizard.asr.provider.sherpa" = "Sherpa-ONNX";
+"wizard.asr.provider.appleSpeech" = "Apple Speech（オンデバイス）";
+"wizard.asr.connection" = "接続";
+"wizard.asr.appKey" = "App Key";
+"wizard.asr.accessKey" = "Access Key";
+"wizard.asr.apiKey" = "API Key";
+"wizard.asr.appKeyDoubao" = "Volcengine App ID";
+"wizard.asr.accessKeyDoubao" = "Volcengine Access Token";
+"wizard.asr.apiKeyQwenPlaceholder" = "DashScope API Key（sk-xxx）";
+"wizard.asr.model" = "モデル";
+"wizard.asr.language" = "言語";
+"wizard.asr.test" = "テスト";
+"wizard.asr.download" = "ダウンロード";
+"wizard.asr.delete" = "削除";
+
+/* ─── LLMペイン ─── */
+"wizard.llm.description" = "テキスト校正用の LLM を設定します。無効化すると生の認識結果を直接使用します。";
+"wizard.llm.correction" = "LLM 校正";
+"wizard.llm.profiles" = "プロファイル";
+"wizard.llm.type" = "種類";
+"wizard.llm.name" = "名前";
+"wizard.llm.baseUrl" = "Base URL";
+"wizard.llm.apiKey" = "API Key";
+"wizard.llm.apiKeyPlaceholder" = "sk-...（不要な場合は空欄）";
+"wizard.llm.model" = "モデル";
+"wizard.llm.modelList" = "モデル一覧";
+"wizard.llm.chatPath" = "Chat パス";
+"wizard.llm.tokenParameter" = "Token パラメータ";
+"wizard.llm.tokenParameter.hint" = "GPT-4o 以前は max_tokens、GPT-5 や推論モデル（o1/o3）は max_completion_tokens を使用します。";
+"wizard.llm.testConnection" = "接続テスト";
+"wizard.llm.refresh" = "更新";
+"wizard.llm.choose" = "選択";
+"wizard.llm.hideModels" = "隠す";
+"wizard.llm.noModels" = "読み込まれたモデルがありません";
+"wizard.llm.add" = "追加";
+"wizard.llm.delete" = "削除";
+"wizard.llm.download" = "ダウンロード";
+"wizard.llm.myProfile" = "マイプロファイル";
+
+/* ─── 辞書ペイン ─── */
+"wizard.dict.title" = "辞書";
+"wizard.dict.description" = "ユーザー辞書 — 1行に1つの用語。これらの用語は LLM 校正時に優先されます。# で始まる行はコメントです。";
+
+/* ─── システムプロンプトペイン ─── */
+"wizard.prompt.title" = "システムプロンプト";
+"wizard.prompt.description" = "テキスト校正のために LLM に送るシステムプロンプト。編集して動作をカスタマイズできます。";
+
+/* ─── テンプレートペイン ─── */
+"wizard.templates.description" = "オーバーレイテンプレートを管理。並べ替え、表示制御、プロンプト編集がここでできます。";
+"wizard.templates.showButtons" = "オーバーレイにテンプレートボタンを表示";
+"wizard.templates.library" = "テンプレートライブラリ";
+"wizard.templates.editor" = "テンプレートエディタ";
+"wizard.templates.newTemplate" = "新規テンプレート";
+"wizard.templates.untitled" = "無題";
+"wizard.templates.templateName" = "テンプレート名";
+"wizard.templates.name" = "名前";
+"wizard.templates.prompt" = "プロンプト";
+"wizard.templates.visible" = "オーバーレイに表示";
+"wizard.templates.addTooltip" = "テンプレートを追加";
+"wizard.templates.removeTooltip" = "選択したテンプレートを削除";
+"wizard.templates.moveUpTooltip" = "選択したテンプレートを上へ";
+"wizard.templates.moveDownTooltip" = "選択したテンプレートを下へ";
+"wizard.templates.limitReached" = "テンプレートの上限に達しました";
+"wizard.templates.limitMessage" = "オーバーレイは数字キー 1-9 のみ対応のため、テンプレートは最大 9 個までです。";
+"wizard.templates.validation.shortcutRange" = "各テンプレートのショートカットは 1 から 9 の範囲内にしてください。";
+"wizard.templates.validation.shortcutUnique" = "各テンプレートのショートカットは一意である必要があります。";
+"wizard.templates.validation.prompt" = "各テンプレートには空でないプロンプトが必要です。";
+
+"wizard.about.github" = "GitHub リポジトリ";
+"wizard.about.docs" = "ドキュメント";
+"wizard.about.license" = "MIT ライセンス · Rust + Objective-C で作成";
+"wizard.about.interfaceLanguage" = "表示言語";
+"wizard.about.language.system" = "システムに従う";
+"wizard.about.language.english" = "English";
+"wizard.about.language.chinese" = "简体中文";
+"wizard.about.description" = "バックグラウンド優先の macOS 音声入力ツール。\nホットキーを押して話すと、校正されたテキストが現在のアプリに自動で貼り付けられます。";

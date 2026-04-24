@@ -56,4 +56,9 @@ typedef NS_ENUM(uint8_t, SPHotkeyMatchKind) {
 /// Used to dismiss the overlay when the user resumes typing after text insertion.
 @property (nonatomic, copy) void (^anyKeyDismissHandler)(void);
 
+/// Optional block called when ESC (keyCode 53) is pressed during an active recording session.
+/// The key event is NOT consumed — it passes through to the target app.
+/// Use this to cancel the current session without producing output.
+@property (nonatomic, copy) void (^escapeKeyHandler)(void);
+
 @end

@@ -89,6 +89,130 @@
 "settings.language.restartMessage" = "The interface language has been changed. Some elements may require restarting Koe to update.";
 "settings.language.restartButton" = "OK";
 
+/* ─── Setup Wizard ─── */
+"wizard.window.title" = "Koe Settings";
+"wizard.toolbar.asr" = "ASR";
+"wizard.toolbar.llm" = "LLM";
+"wizard.toolbar.overlay" = "Overlay";
+"wizard.toolbar.controls" = "Controls";
+"wizard.toolbar.dictionary" = "Dictionary";
+"wizard.toolbar.prompt" = "Prompt";
+"wizard.toolbar.templates" = "Templates";
+"wizard.toolbar.about" = "About";
+
+"wizard.button.save" = "Save";
+"wizard.button.cancel" = "Cancel";
+
+"wizard.hotkey.cardTitle" = "Trigger";
+"wizard.hotkey.triggerShortcut" = "Trigger Shortcut";
+"wizard.hotkey.triggerMode" = "Trigger Mode";
+"wizard.hotkey.escapeCancel" = "Cancel with ESC";
+"wizard.hotkey.mode.hold" = "Hold (Press & Hold)";
+"wizard.hotkey.mode.toggle" = "Toggle (Tap to Start/Stop)";
+"wizard.hotkey.recordButton" = "Record";
+"wizard.hotkey.resetButton" = "Reset";
+
+"wizard.feedback.cardTitle" = "Feedback Sounds";
+"wizard.feedback.startSound" = "Recording starts";
+"wizard.feedback.stopSound" = "Recording stops";
+"wizard.feedback.errorSound" = "Error occurs";
+
+"wizard.overlay.description" = "Adjust the bottom live transcript overlay. Choose a system font, tune text size, set the bottom distance, and decide whether long live text stays capped to a few lines or expands fully. Every change is previewed directly in the real desktop overlay position.";
+"wizard.overlay.styleControls" = "Style Controls";
+"wizard.overlay.cardTitle" = "Overlay";
+"wizard.overlay.font" = "Font";
+"wizard.overlay.fontSystemDefault" = "System Default";
+"wizard.overlay.textSize" = "Text Size";
+"wizard.overlay.distanceFromBottom" = "Distance from Bottom";
+"wizard.overlay.limitVisibleLines" = "Limit Visible Lines";
+"wizard.overlay.maxVisibleLines" = "Max Visible Lines";
+"wizard.overlay.defaults" = "Defaults";
+"wizard.overlay.resetButton" = "Reset to Default";
+
+/* ─── ASR Pane ─── */
+"wizard.asr.description" = "Choose the ASR provider used for transcription.";
+"wizard.asr.provider" = "Provider";
+"wizard.asr.provider.doubaoime" = "DoubaoIME (Built-in, Free)";
+"wizard.asr.provider.doubao" = "Doubao (ByteDance)";
+"wizard.asr.provider.qwen" = "Qwen (Alibaba Cloud)";
+"wizard.asr.provider.mlx" = "MLX (Apple Silicon)";
+"wizard.asr.provider.sherpa" = "Sherpa-ONNX";
+"wizard.asr.provider.appleSpeech" = "Apple Speech (On-Device)";
+"wizard.asr.connection" = "Connection";
+"wizard.asr.appKey" = "App Key";
+"wizard.asr.accessKey" = "Access Key";
+"wizard.asr.apiKey" = "API Key";
+"wizard.asr.appKeyDoubao" = "Volcengine App ID";
+"wizard.asr.accessKeyDoubao" = "Volcengine Access Token";
+"wizard.asr.apiKeyQwenPlaceholder" = "DashScope API Key (sk-xxx)";
+"wizard.asr.model" = "Model";
+"wizard.asr.language" = "Language";
+"wizard.asr.test" = "Test";
+"wizard.asr.download" = "Download";
+"wizard.asr.delete" = "Delete";
+
+/* ─── LLM Pane ─── */
+"wizard.llm.description" = "Configure LLM for post-correction. When disabled, raw ASR output is used directly.";
+"wizard.llm.correction" = "LLM Correction";
+"wizard.llm.profiles" = "Profiles";
+"wizard.llm.type" = "Type";
+"wizard.llm.name" = "Name";
+"wizard.llm.baseUrl" = "Base URL";
+"wizard.llm.apiKey" = "API Key";
+"wizard.llm.apiKeyPlaceholder" = "sk-... (leave empty if not required)";
+"wizard.llm.model" = "Model";
+"wizard.llm.modelList" = "Model List";
+"wizard.llm.chatPath" = "Chat Path";
+"wizard.llm.tokenParameter" = "Token Parameter";
+"wizard.llm.tokenParameter.hint" = "GPT-4o and older models use max_tokens. GPT-5 and reasoning models (o1/o3) use max_completion_tokens.";
+"wizard.llm.testConnection" = "Test Connection";
+"wizard.llm.refresh" = "Refresh";
+"wizard.llm.choose" = "Choose";
+"wizard.llm.hideModels" = "Hide";
+"wizard.llm.noModels" = "No models loaded";
+"wizard.llm.add" = "Add";
+"wizard.llm.delete" = "Delete";
+"wizard.llm.download" = "Download";
+"wizard.llm.myProfile" = "My profile";
+
+/* ─── Dictionary Pane ─── */
+"wizard.dict.title" = "Dictionary";
+"wizard.dict.description" = "User dictionary — one term per line. These terms are prioritized during LLM correction. Lines starting with # are comments.";
+
+/* ─── System Prompt Pane ─── */
+"wizard.prompt.title" = "System Prompt";
+"wizard.prompt.description" = "System prompt sent to the LLM for text correction. Edit to customize behavior.";
+
+/* ─── Templates Pane ─── */
+"wizard.templates.description" = "Manage overlay templates. Reorder them, control visibility, and edit each prompt here.";
+"wizard.templates.showButtons" = "Show template buttons in overlay";
+"wizard.templates.library" = "Template Library";
+"wizard.templates.editor" = "Template Editor";
+"wizard.templates.newTemplate" = "New Template";
+"wizard.templates.untitled" = "Untitled";
+"wizard.templates.templateName" = "Template name";
+"wizard.templates.name" = "Name";
+"wizard.templates.prompt" = "Prompt";
+"wizard.templates.visible" = "Visible in overlay";
+"wizard.templates.addTooltip" = "Add template";
+"wizard.templates.removeTooltip" = "Remove selected template";
+"wizard.templates.moveUpTooltip" = "Move selected template up";
+"wizard.templates.moveDownTooltip" = "Move selected template down";
+"wizard.templates.limitReached" = "Template limit reached";
+"wizard.templates.limitMessage" = "You can add up to 9 prompt templates because the overlay only supports number keys 1-9.";
+"wizard.templates.validation.shortcutRange" = "Each prompt template needs a shortcut between 1 and 9.";
+"wizard.templates.validation.shortcutUnique" = "Each prompt template shortcut must be unique.";
+"wizard.templates.validation.prompt" = "Each prompt template needs a non-empty prompt.";
+
+"wizard.about.github" = "GitHub Repository";
+"wizard.about.docs" = "Documentation";
+"wizard.about.license" = "MIT License · Made with Rust + Objective-C";
+"wizard.about.interfaceLanguage" = "Interface Language / 界面语言";
+"wizard.about.language.system" = "Follow System / 跟随系统";
+"wizard.about.language.english" = "English";
+"wizard.about.language.chinese" = "简体中文";
+"wizard.about.description" = "A background-first macOS voice input tool.\nPress a hotkey, speak, and the corrected text is pasted into whatever app you're using.";
+
 /* ─── Edit Menu ─── */
 "menu.edit" = "Edit";
 "menu.edit.undo" = "Undo";

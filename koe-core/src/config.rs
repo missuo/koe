@@ -469,6 +469,11 @@ pub struct HotkeySection {
     /// Trigger mode: "hold" (press-and-hold, default) or "toggle" (tap to start/stop).
     #[serde(default = "default_trigger_mode")]
     pub trigger_mode: String,
+
+    /// When enabled, pressing ESC during an active recording session cancels it.
+    /// Default: true
+    #[serde(default = "default_true")]
+    pub escape_cancel_enabled: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
