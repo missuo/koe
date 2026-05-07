@@ -38,5 +38,7 @@
 @property (nonatomic, strong) SPUpdateManager *updateManager;
 @property (nonatomic, strong) dispatch_source_t configWatcher;
 @property (nonatomic, strong) SPSetupWizardWindowController *setupWizard;
+@property (nonatomic, copy) NSString *sessionState;
+@property (nonatomic, assign) BOOL hasPendingConfigReload;
 
 @end
