@@ -1,25 +1,72 @@
 #import "SPAudioCaptureManager.h"
-#import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
+#import <CoreAudio/CoreAudio.h>
+#import <mach/mach_time.h>
 
 // ASR recommends 200ms frames for best performance with bigmodel
-static const NSUInteger kTargetSampleRate = 16000;
+static const double kTargetSampleRate = 16000.0;
 static const NSUInteger kFrameSamples = 3200; // 200ms at 16kHz
 
-// Maximum time to wait for AVAudioEngine.start() before giving up.
-// Prevents indefinite main-thread hang when CoreAudio's HAL proxy
-// blocks in StartAndWaitForState after a device route change.
-static const NSTimeInterval kEngineStartTimeoutSec = 3.0;
+// 3 buffers × 50ms each — enough to absorb scheduling jitter without latency
+static const int kNumBuffers = 3;
+static const UInt32 kBufferFrames = 800; // 50ms at 16kHz
 
 @interface SPAudioCaptureManager ()
 
-@property (nonatomic, strong) AVAudioEngine *audioEngine;
+@property (nonatomic, assign) AudioQueueRef audioQueue;
 @property (nonatomic, copy) SPAudioFrameCallback audioCallback;
 @property (nonatomic, readwrite) BOOL isCapturing;
 @property (nonatomic, strong) NSMutableData *accumBuffer;
 @property (nonatomic, assign) AudioDeviceID pendingDeviceID;
 
 @end
+
+// ---------------------------------------------------------------------------
+// AudioQueue callback — runs on an AudioQueue internal thread
+// ---------------------------------------------------------------------------
+
+static void queueInputCallback(void *userData,
+                               AudioQueueRef queue,
+                               AudioQueueBufferRef buffer,
+                               const AudioTimeStamp *startTime,
+                               UInt32 numPackets,
+                               const AudioStreamPacketDescription *packetDesc) {
+    SPAudioCaptureManager *manager = (__bridge SPAudioCaptureManager *)userData;
+    if (!manager.isCapturing || !manager.audioCallback || numPackets == 0) {
+        AudioQueueEnqueueBuffer(queue, buffer, 0, NULL);
+        return;
+    }
+
+    // Convert Float32 -> Int16 LE
+    float *floatSamples = (float *)buffer->mAudioData;
+    UInt32 frameCount = buffer->mAudioDataByteSize / sizeof(float);
+    NSUInteger byteCount = frameCount * sizeof(int16_t);
+    int16_t *pcm = (int16_t *)malloc(byteCount);
+
+    for (UInt32 i = 0; i < frameCount; i++) {
+        float s = floatSamples[i];
+        s = s > 1.0f ? 1.0f : (s < -1.0f ? -1.0f : s);
+        pcm[i] = (int16_t)(s * 32767.0f);
+    }
+
+    // Accumulate into 200ms frames
+    const NSUInteger frameByteLen = kFrameSamples * sizeof(int16_t);
+    @synchronized (manager.accumBuffer) {
+        [manager.accumBuffer appendBytes:pcm length:byteCount];
+        free(pcm);
+
+        while (manager.accumBuffer.length >= frameByteLen) {
+            uint64_t ts = mach_absolute_time();
+            manager.audioCallback(manager.accumBuffer.bytes, (uint32_t)frameByteLen, ts);
+            [manager.accumBuffer replaceBytesInRange:NSMakeRange(0, frameByteLen)
+                                          withBytes:NULL length:0];
+        }
+    }
+
+    AudioQueueEnqueueBuffer(queue, buffer, 0, NULL);
+}
+
+// ---------------------------------------------------------------------------
 
 @implementation SPAudioCaptureManager
 
@@ -28,8 +75,13 @@ static const NSTimeInterval kEngineStartTimeoutSec = 3.0;
     if (self) {
         _isCapturing = NO;
         _accumBuffer = [NSMutableData data];
+        _pendingDeviceID = kAudioObjectUnknown;
     }
     return self;
+}
+
+- (void)setInputDeviceID:(AudioDeviceID)deviceID {
+    self.pendingDeviceID = deviceID;
 }
 
 - (BOOL)startCaptureWithAudioCallback:(SPAudioFrameCallback)callback {
@@ -38,193 +90,103 @@ static const NSTimeInterval kEngineStartTimeoutSec = 3.0;
     self.audioCallback = callback;
     [self.accumBuffer setLength:0];
 
-    // Create a fresh engine each session so stale device state (e.g. after
-    // Bluetooth reconnect) never carries over from a previous capture.
-    self.audioEngine = [[AVAudioEngine alloc] init];
+    // Request 16kHz mono Float32 directly. AudioQueue handles resampling from
+    // the hardware's native rate internally and is input-only — it never binds
+    // to the output device. This avoids the aggregate-device / channel-layout
+    // error (-10877) that AVAudioEngine triggers when the input and output
+    // devices run at different sample rates (e.g. mic 44100 vs speaker 48000).
+    AudioStreamBasicDescription fmt = {
+        .mSampleRate       = kTargetSampleRate,
+        .mFormatID         = kAudioFormatLinearPCM,
+        .mFormatFlags      = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+        .mBitsPerChannel   = 32,
+        .mChannelsPerFrame = 1,
+        .mFramesPerPacket  = 1,
+        .mBytesPerFrame    = sizeof(float),
+        .mBytesPerPacket   = sizeof(float),
+    };
 
-    AVAudioInputNode *inputNode = self.audioEngine.inputNode;
+    AudioQueueRef queue = NULL;
+    OSStatus status = AudioQueueNewInput(&fmt, queueInputCallback,
+                                         (__bridge void *)self,
+                                         NULL, NULL, 0, &queue);
+    if (status != noErr) {
+        NSLog(@"[Koe] Failed to create audio queue: %d", (int)status);
+        return NO;
+    }
 
-    // Set input device if specified (must be before querying hardware format).
-    // If this fails (e.g. BT device route changed, error 'nope'/1852797029),
-    // abandon this engine entirely — the IO unit is in an inconsistent state
-    // and proceeding would cause startAndReturnError: to block indefinitely.
+    // Select input device if specified. AudioQueue uses device UID (CFStringRef),
+    // so convert from AudioDeviceID.
     if (self.pendingDeviceID != kAudioObjectUnknown) {
-        AudioDeviceID deviceID = self.pendingDeviceID;
-        OSStatus osStatus = AudioUnitSetProperty(inputNode.audioUnit,
-                                                  kAudioOutputUnitProperty_CurrentDevice,
-                                                  kAudioUnitScope_Global, 0,
-                                                  &deviceID, sizeof(deviceID));
-        if (osStatus != noErr) {
-            NSLog(@"[Koe] Failed to set input device (ID %u): OSStatus %d — "
-                  "falling back to a new engine with system default",
-                  (unsigned)deviceID, (int)osStatus);
-            self.audioEngine = [[AVAudioEngine alloc] init];
-            inputNode = self.audioEngine.inputNode;
-        } else {
-            NSLog(@"[Koe] Input device set to ID %u", (unsigned)deviceID);
-        }
-    }
-
-    // Use the hardware's native format for the tap — cannot request a different sample rate
-    AVAudioFormat *hardwareFormat = [inputNode outputFormatForBus:0];
-    NSLog(@"[Koe] Hardware audio format: %@", hardwareFormat);
-
-    // Guard against invalid inputNode state. After a Bluetooth device route
-    // change or a fresh mic permission grant, the node may report 0 channels
-    // or 0 sampleRate. Proceeding would cause audioEngine.start() to block
-    // or throw -10877 (kAudioUnitErr_InvalidElement).
-    if (hardwareFormat.channelCount == 0 || hardwareFormat.sampleRate <= 0) {
-        NSLog(@"[Koe] ERROR: inputNode format invalid (channels=%u sampleRate=%.0f) — "
-              "microphone may not be ready yet",
-              hardwareFormat.channelCount, hardwareFormat.sampleRate);
-        self.audioEngine = nil;
-        return NO;
-    }
-
-    // Target format: 16kHz, mono, Float32 for conversion
-    AVAudioFormat *targetFormat = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
-                                                                  sampleRate:kTargetSampleRate
-                                                                    channels:1
-                                                                 interleaved:NO];
-
-    // Create converter from hardware format to 16kHz mono
-    AVAudioConverter *converter = [[AVAudioConverter alloc] initFromFormat:hardwareFormat
-                                                                 toFormat:targetFormat];
-    if (!converter) {
-        NSLog(@"[Koe] ERROR: Failed to create audio converter from %@ to %@", hardwareFormat, targetFormat);
-        self.audioEngine = nil;
-        return NO;
-    }
-
-    const NSUInteger targetByteLength = kFrameSamples * sizeof(int16_t); // 6400 bytes per 200ms
-    double sampleRateRatio = kTargetSampleRate / hardwareFormat.sampleRate;
-
-    __weak typeof(self) weakSelf = self;
-
-    [inputNode installTapOnBus:0
-                    bufferSize:4096
-                        format:hardwareFormat
-                         block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
-        typeof(self) strongSelf = weakSelf;
-        if (!strongSelf || !strongSelf.audioCallback) return;
-
-        // Estimate output frame count
-        AVAudioFrameCount outputFrames = (AVAudioFrameCount)(buffer.frameLength * sampleRateRatio) + 1;
-        AVAudioPCMBuffer *convertedBuffer = [[AVAudioPCMBuffer alloc] initWithPCMFormat:targetFormat
-                                                                          frameCapacity:outputFrames];
-
-        NSError *convError = nil;
-        __block BOOL inputProvided = NO;
-        AVAudioConverterOutputStatus status = [converter convertToBuffer:convertedBuffer
-                                                                  error:&convError
-                                               withInputFromBlock:^AVAudioBuffer *(AVAudioFrameCount inNumberOfPackets, AVAudioConverterInputStatus *outStatus) {
-            if (inputProvided) {
-                *outStatus = AVAudioConverterInputStatus_NoDataNow;
-                return nil;
+        AudioObjectPropertyAddress uidAddr = {
+            kAudioDevicePropertyDeviceUID,
+            kAudioObjectPropertyScopeGlobal,
+            kAudioObjectPropertyElementMain
+        };
+        CFStringRef uid = NULL;
+        UInt32 uidSize = sizeof(CFStringRef);
+        OSStatus uidStatus = AudioObjectGetPropertyData(self.pendingDeviceID, &uidAddr,
+                                                        0, NULL, &uidSize, &uid);
+        if (uidStatus == noErr && uid) {
+            OSStatus setStatus = AudioQueueSetProperty(queue, kAudioQueueProperty_CurrentDevice,
+                                                       &uid, sizeof(CFStringRef));
+            if (setStatus != noErr) {
+                NSLog(@"[Koe] Failed to set input device (ID %u): %d — using system default",
+                      (unsigned)self.pendingDeviceID, (int)setStatus);
+            } else {
+                NSLog(@"[Koe] Input device set to ID %u", (unsigned)self.pendingDeviceID);
             }
-            inputProvided = YES;
-            *outStatus = AVAudioConverterInputStatus_HaveData;
-            return buffer;
-        }];
-
-        if (status == AVAudioConverterOutputStatus_Error) {
-            NSLog(@"[Koe] Audio conversion error: %@", convError);
-            return;
+            CFRelease(uid);
         }
+    }
 
-        if (convertedBuffer.frameLength == 0) return;
-
-        // Convert Float32 -> Int16 LE
-        float *floatData = convertedBuffer.floatChannelData[0];
-        AVAudioFrameCount frameCount = convertedBuffer.frameLength;
-        NSUInteger byteCount = frameCount * sizeof(int16_t);
-        int16_t *int16Data = (int16_t *)malloc(byteCount);
-
-        for (AVAudioFrameCount i = 0; i < frameCount; i++) {
-            float sample = floatData[i];
-            if (sample > 1.0f) sample = 1.0f;
-            if (sample < -1.0f) sample = -1.0f;
-            int16Data[i] = (int16_t)(sample * 32767.0f);
+    // Allocate and enqueue buffers
+    UInt32 bufferSize = kBufferFrames * sizeof(float);
+    for (int i = 0; i < kNumBuffers; i++) {
+        AudioQueueBufferRef buf;
+        status = AudioQueueAllocateBuffer(queue, bufferSize, &buf);
+        if (status != noErr) {
+            NSLog(@"[Koe] Failed to allocate audio queue buffer %d: %d", i, (int)status);
+            AudioQueueDispose(queue, true);
+            return NO;
         }
+        AudioQueueEnqueueBuffer(queue, buf, 0, NULL);
+    }
 
-        // Accumulate into 200ms frames
-        @synchronized (strongSelf.accumBuffer) {
-            [strongSelf.accumBuffer appendBytes:int16Data length:byteCount];
-            free(int16Data);
-
-            while (strongSelf.accumBuffer.length >= targetByteLength) {
-                uint64_t timestamp = mach_absolute_time();
-                strongSelf.audioCallback(strongSelf.accumBuffer.bytes, (uint32_t)targetByteLength, timestamp);
-                [strongSelf.accumBuffer replaceBytesInRange:NSMakeRange(0, targetByteLength) withBytes:NULL length:0];
-            }
-        }
-    }];
-
-    // Start the engine off the main thread with a timeout to prevent the
-    // main-thread hang reported in missuo/koe#77: after a Bluetooth device
-    // route change, HALC_ProxyIOContext::StartAndWaitForState can block
-    // indefinitely (error 35 / EAGAIN), freezing the entire app.
-    [self.audioEngine prepare];
-
-    __block BOOL startOK = NO;
-    __block NSError *startError = nil;
-    AVAudioEngine *engine = self.audioEngine;
-    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSError *bgError = nil;
-        startOK = [engine startAndReturnError:&bgError];
-        startError = bgError;
-        dispatch_semaphore_signal(sem);
-    });
-
-    long timedOut = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW,
-                                            (int64_t)(kEngineStartTimeoutSec * NSEC_PER_SEC)));
-    if (timedOut != 0) {
-        NSLog(@"[Koe] Audio engine start timed out after %.0fs — "
-              "aborting to prevent main-thread hang", kEngineStartTimeoutSec);
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
-            [engine stop];
-        });
-        self.audioEngine = nil;
+    status = AudioQueueStart(queue, NULL);
+    if (status != noErr) {
+        NSLog(@"[Koe] Audio queue start failed: %d", (int)status);
+        AudioQueueDispose(queue, true);
         return NO;
     }
 
-    if (!startOK) {
-        NSLog(@"[Koe] Audio engine start failed: %@", startError.localizedDescription ?: @"unknown error");
-        self.audioEngine = nil;
-        return NO;
-    }
-
+    self.audioQueue = queue;
     self.isCapturing = YES;
-    NSLog(@"[Koe] Audio capture started (hardware -> 16kHz mono, 200ms frames)");
+    NSLog(@"[Koe] Audio capture started (AudioQueue 16kHz mono Float32, 200ms frames)");
     return YES;
-}
-
-- (void)setInputDeviceID:(AudioDeviceID)deviceID {
-    self.pendingDeviceID = deviceID;
 }
 
 - (void)stopCapture {
     if (!self.isCapturing) return;
 
-    [self.audioEngine.inputNode removeTapOnBus:0];
-    [self.audioEngine stop];
+    self.isCapturing = NO;
 
-    // Flush remaining audio in the accumulation buffer — this prevents
-    // the last few words from being cut off when the user releases Fn
+    // Flush remaining audio — prevents the last words from being cut off
+    // when the user releases the hotkey
     @synchronized (self.accumBuffer) {
         if (self.accumBuffer.length > 0 && self.audioCallback) {
-            NSLog(@"[Koe] Flushing remaining %lu bytes of audio", (unsigned long)self.accumBuffer.length);
-            uint64_t timestamp = mach_absolute_time();
-            self.audioCallback(self.accumBuffer.bytes, (uint32_t)self.accumBuffer.length, timestamp);
+            NSLog(@"[Koe] Flushing remaining %lu bytes of audio",
+                  (unsigned long)self.accumBuffer.length);
+            uint64_t ts = mach_absolute_time();
+            self.audioCallback(self.accumBuffer.bytes, (uint32_t)self.accumBuffer.length, ts);
             [self.accumBuffer setLength:0];
         }
     }
 
+    AudioQueueStop(self.audioQueue, true);
+    AudioQueueDispose(self.audioQueue, true);
+    self.audioQueue = NULL;
     self.audioCallback = nil;
-    self.isCapturing = NO;
-    self.audioEngine = nil;
     NSLog(@"[Koe] Audio capture stopped");
 }
 
