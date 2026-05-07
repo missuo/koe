@@ -431,6 +431,39 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     [popup selectItem:[popup lastItem]];
 }
 
+// Pane background that follows the system appearance. Using layer.backgroundColor
+// with a static CGColor would freeze at the appearance active at creation time;
+// overriding updateLayer and resolving inside performAsCurrentDrawingAppearance:
+// ensures the colour is re-evaluated on every appearance change.
+@interface SPPaneBackgroundView : NSView
+@end
+
+@implementation SPPaneBackgroundView
+- (BOOL)wantsUpdateLayer { return YES; }
+- (void)updateLayer {
+    [self.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        self.layer.backgroundColor = NSColor.windowBackgroundColor.CGColor;
+    }];
+}
+@end
+
+// Elevated card surface (white in light mode, dark-elevated in dark mode) with
+// a separator-coloured border. Same dynamic-layer pattern as SPPaneBackgroundView.
+@interface SPCardView : NSView
+@end
+
+@implementation SPCardView
+- (BOOL)wantsUpdateLayer { return YES; }
+- (void)updateLayer {
+    self.layer.cornerRadius = 12.0;
+    self.layer.borderWidth = 1.0;
+    [self.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        self.layer.backgroundColor = NSColor.controlBackgroundColor.CGColor;
+        self.layer.borderColor = NSColor.separatorColor.CGColor;
+    }];
+}
+@end
+
 @interface SPTemplateRowView : NSTableRowView
 @end
 
@@ -1864,18 +1897,16 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
     NSTextField *libraryCaption = [NSTextField labelWithString:@"Templates"];
     libraryCaption.font = [NSFont systemFontOfSize:14 weight:NSFontWeightSemibold];
-    libraryCaption.textColor = [NSColor colorWithRed:0.114 green:0.114 blue:0.122 alpha:1.0];
+    libraryCaption.textColor = NSColor.labelColor;
     libraryCaption.frame = NSMakeRect(14, mainCardH - headerH + 9, 120, 18);
     [listCard addSubview:libraryCaption];
 
-    NSView *headerSeparator = [[NSView alloc] initWithFrame:NSMakeRect(0, mainCardH - headerH, listW, 1)];
-    headerSeparator.wantsLayer = YES;
-    headerSeparator.layer.backgroundColor = [NSColor colorWithRed:0.898 green:0.898 blue:0.918 alpha:1.0].CGColor;
+    NSBox *headerSeparator = [[NSBox alloc] initWithFrame:NSMakeRect(0, mainCardH - headerH, listW, 1)];
+    headerSeparator.boxType = NSBoxSeparator;
     [listCard addSubview:headerSeparator];
 
-    NSView *footerSeparator = [[NSView alloc] initWithFrame:NSMakeRect(0, footerH, listW, 1)];
-    footerSeparator.wantsLayer = YES;
-    footerSeparator.layer.backgroundColor = [NSColor colorWithRed:0.898 green:0.898 blue:0.918 alpha:1.0].CGColor;
+    NSBox *footerSeparator = [[NSBox alloc] initWithFrame:NSMakeRect(0, footerH, listW, 1)];
+    footerSeparator.boxType = NSBoxSeparator;
     [listCard addSubview:footerSeparator];
 
     self.templatePrimaryActionsControl = [self templateActionSegmentedControlWithSymbols:@[@"plus", @"minus"]
@@ -1898,7 +1929,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     scrollView.wantsLayer = YES;
     scrollView.layer.cornerRadius = 8.0;
     scrollView.layer.borderWidth = 1.0;
-    scrollView.layer.borderColor = [NSColor colorWithRed:0.922 green:0.929 blue:0.945 alpha:1.0].CGColor;
+    scrollView.layer.borderColor = NSColor.separatorColor.CGColor;
     scrollView.scrollerStyle = NSScrollerStyleOverlay;
     [listCard addSubview:scrollView];
 
@@ -1955,7 +1986,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     promptScroll.wantsLayer = YES;
     promptScroll.layer.cornerRadius = 8.0;
     promptScroll.layer.borderWidth = 1.0;
-    promptScroll.layer.borderColor = [NSColor colorWithRed:0.922 green:0.929 blue:0.945 alpha:1.0].CGColor;
+    promptScroll.layer.borderColor = NSColor.separatorColor.CGColor;
 
     self.templatePromptTextView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, editorW - 48, mainCardH - 146)];
     self.templatePromptTextView.minSize = NSMakeSize(0, mainCardH - 146);
@@ -2048,7 +2079,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
         titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
         titleLabel.alignment = NSTextAlignmentLeft;
         titleLabel.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
-        titleLabel.textColor = [NSColor colorWithRed:0.114 green:0.114 blue:0.122 alpha:1.0];
+        titleLabel.textColor = NSColor.labelColor;
         titleLabel.autoresizingMask = NSViewWidthSizable;
         titleLabel.frame = NSMakeRect(12, 7, tableColumn.width - 24, 20);
         cell.textField = titleLabel;
@@ -2069,7 +2100,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
         titleLabel.stringValue = name;
         titleLabel.frame = NSMakeRect(12, 7, tableColumn.width - 24, 20);
-        titleLabel.textColor = enabled ? [NSColor colorWithRed:0.114 green:0.114 blue:0.122 alpha:1.0] : [NSColor secondaryLabelColor];
+        titleLabel.textColor = enabled ? NSColor.labelColor : NSColor.secondaryLabelColor;
         titleLabel.alphaValue = enabled ? 1.0 : 0.6;
     }
     return cell;
@@ -2744,7 +2775,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 - (NSTextField *)settingsRowLabelWithString:(NSString *)text {
     NSTextField *label = [NSTextField labelWithString:text];
     label.font = [NSFont systemFontOfSize:13 weight:NSFontWeightRegular];
-    label.textColor = [NSColor colorWithRed:0.114 green:0.114 blue:0.122 alpha:1.0];
+    label.textColor = NSColor.labelColor;
     label.lineBreakMode = NSLineBreakByTruncatingTail;
     return label;
 }
@@ -2786,25 +2817,21 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 }
 
 - (void)applySettingsPaneBackgroundToView:(NSView *)pane {
-    pane.wantsLayer = YES;
-    pane.layer.backgroundColor = [NSColor colorWithRed:0.961 green:0.961 blue:0.969 alpha:1.0].CGColor;
+    SPPaneBackgroundView *bg = [[SPPaneBackgroundView alloc] initWithFrame:pane.bounds];
+    bg.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [pane addSubview:bg positioned:NSWindowBelow relativeTo:nil];
 }
 
 - (NSTextField *)sectionTitleLabel:(NSString *)title frame:(NSRect)frame {
     NSTextField *label = [NSTextField labelWithString:title.uppercaseString];
     label.frame = frame;
     label.font = [NSFont systemFontOfSize:12 weight:NSFontWeightSemibold];
-    label.textColor = [NSColor colorWithRed:0.525 green:0.525 blue:0.557 alpha:1.0];
+    label.textColor = NSColor.secondaryLabelColor;
     return label;
 }
 
 - (NSView *)surfaceCardViewWithFrame:(NSRect)frame {
-    NSView *card = [[NSView alloc] initWithFrame:frame];
-    card.wantsLayer = YES;
-    card.layer.backgroundColor = [NSColor whiteColor].CGColor;
-    card.layer.cornerRadius = 12.0;
-    card.layer.borderWidth = 1.0;
-    card.layer.borderColor = [NSColor colorWithRed:0.898 green:0.898 blue:0.918 alpha:1.0].CGColor;
+    SPCardView *card = [[SPCardView alloc] initWithFrame:frame];
     return card;
 }
 
@@ -2873,7 +2900,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     if (title.length > 0) {
         NSTextField *titleLabel = [NSTextField labelWithString:title.uppercaseString];
         titleLabel.font = [NSFont systemFontOfSize:12 weight:NSFontWeightSemibold];
-        titleLabel.textColor = [NSColor colorWithRed:0.525 green:0.525 blue:0.557 alpha:1.0];
+        titleLabel.textColor = NSColor.secondaryLabelColor;
         titleLabel.frame = NSMakeRect(cardPad, cardHeight, width - 2 * cardPad, 20);
         [container addSubview:titleLabel];
     }
@@ -2888,9 +2915,8 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
         [card addSubview:row];
 
         if (i < rows.count - 1) {
-            NSView *sep = [[NSView alloc] initWithFrame:NSMakeRect(cardPad, rowY, width - cardPad, 1)];
-            sep.wantsLayer = YES;
-            sep.layer.backgroundColor = [NSColor colorWithRed:0.898 green:0.898 blue:0.918 alpha:1.0].CGColor;
+            NSBox *sep = [[NSBox alloc] initWithFrame:NSMakeRect(cardPad, rowY, width - cardPad, 1)];
+            sep.boxType = NSBoxSeparator;
             [card addSubview:sep];
         }
     }
@@ -2905,7 +2931,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
     NSTextField *lbl = [NSTextField labelWithString:label];
     lbl.font = [NSFont systemFontOfSize:13 weight:NSFontWeightRegular];
-    lbl.textColor = [NSColor colorWithRed:0.114 green:0.114 blue:0.122 alpha:1.0];
+    lbl.textColor = NSColor.labelColor;
     lbl.frame = NSMakeRect(pad, (rowHeight - 20) / 2.0, 200, 20);
     [row addSubview:lbl];
 
