@@ -26,6 +26,7 @@ targetTemplates:
       - path: Koe
         excludes:
           - "*.entitlements"
+          - "**/*Tests.m"
     settings:
       base:
         INFOPLIST_FILE: Koe/Info.plist
@@ -120,3 +121,18 @@ targets:
           mkdir -p "${SRCROOT}/../target/release"
           ln -sf "${SRCROOT}/../target/${RUST_TARGET}/release/libkoe_core.a" "${SRCROOT}/../target/release/libkoe_core.a"
         basedOnDependencyAnalysis: false
+
+  KoeLogicTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Koe/AppDelegate/SPAppDelegateLogicTests.m
+      - path: Koe/Hotkey/SPHotkeyMonitor.m
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: nz.owo.koe.logic-tests
+        CLANG_ENABLE_OBJC_ARC: YES
+    frameworks:
+      - XCTest
+      - Foundation

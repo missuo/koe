@@ -1,4 +1,4 @@
-.PHONY: build build-lite build-rust build-xcode build-x86_64 generate clean run
+.PHONY: build build-lite build-rust build-xcode build-x86_64 generate clean run install-cli install-app
 
 ARCH := aarch64-apple-darwin
 XCODE_ARCH := arm64
@@ -22,9 +22,25 @@ build-xcode:
 	cd KoeApp && xcodebuild -project Koe.xcodeproj -scheme Koe -configuration Release ARCHS=$(XCODE_ARCH) build
 
 install-cli:
-	@APP_DIR=$$(xcodebuild -project KoeApp/Koe.xcodeproj -scheme Koe -configuration Release -showBuildSettings 2>/dev/null | grep ' BUILD_DIR' | head -1 | awk '{print $$3}')/Release/Koe.app/Contents/MacOS; \
+	@APP_ROOT=$$(xcodebuild -project KoeApp/Koe.xcodeproj -scheme Koe -configuration Release -showBuildSettings 2>/dev/null | grep ' TARGET_BUILD_DIR' | head -1 | awk '{print $$3}')/Koe.app; \
+	APP_DIR="$$APP_ROOT/Contents/MacOS"; \
 	cp target/$(ARCH)/release/koe "$$APP_DIR/koe-cli"; \
-	echo "Installed koe-cli into $$APP_DIR"
+	chmod +x "$$APP_DIR/koe-cli"; \
+	codesign --force --deep --sign - "$$APP_ROOT"; \
+	codesign --verify --deep --strict --verbose=2 "$$APP_ROOT"; \
+	echo "Installed koe-cli into $$APP_DIR and re-signed $$APP_ROOT"
+
+install-app:
+	@APP_ROOT=$$(xcodebuild -project KoeApp/Koe.xcodeproj -scheme Koe -configuration Release -showBuildSettings 2>/dev/null | grep ' TARGET_BUILD_DIR' | head -1 | awk '{print $$3}')/Koe.app; \
+	if [ ! -d "$$APP_ROOT" ]; then \
+		echo "Release app not found at $$APP_ROOT. Run 'make build' first."; \
+		exit 1; \
+	fi; \
+	codesign --verify --deep --strict --verbose=2 "$$APP_ROOT"; \
+	rm -rf "/Applications/Koe.app"; \
+	ditto "$$APP_ROOT" "/Applications/Koe.app"; \
+	codesign --verify --deep --strict --verbose=2 "/Applications/Koe.app"; \
+	echo "Installed /Applications/Koe.app"
 
 clean:
 	cargo clean
