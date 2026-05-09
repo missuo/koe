@@ -5,7 +5,8 @@ XCODE_ARCH := arm64
 
 build: generate build-rust build-xcode install-cli
 
-build-lite: generate
+build-lite:
+	cd KoeApp && xcodegen generate --spec project-lite.yml
 	cd KoeApp && xcodebuild -project Koe.xcodeproj -scheme Koe-lite -configuration Release ARCHS=arm64 build
 
 build-x86_64: generate
@@ -31,16 +32,22 @@ install-cli:
 	echo "Installed koe-cli into $$APP_DIR and re-signed $$APP_ROOT"
 
 install-app:
-	@APP_ROOT=$$(xcodebuild -project KoeApp/Koe.xcodeproj -scheme Koe -configuration Release -showBuildSettings 2>/dev/null | grep ' TARGET_BUILD_DIR' | head -1 | awk '{print $$3}')/Koe.app; \
+	@SCHEME=Koe; \
+	if ! xcodebuild -project KoeApp/Koe.xcodeproj -list 2>/dev/null | grep -qx '[[:space:]]*Koe'; then \
+		if xcodebuild -project KoeApp/Koe.xcodeproj -list 2>/dev/null | grep -qx '[[:space:]]*Koe-lite'; then \
+			SCHEME=Koe-lite; \
+		fi; \
+	fi; \
+	APP_ROOT=$$(xcodebuild -project KoeApp/Koe.xcodeproj -scheme "$$SCHEME" -configuration Release -showBuildSettings 2>/dev/null | grep ' TARGET_BUILD_DIR' | head -1 | awk '{print $$3}')/Koe.app; \
 	if [ ! -d "$$APP_ROOT" ]; then \
-		echo "Release app not found at $$APP_ROOT. Run 'make build' first."; \
+		echo "Release app not found at $$APP_ROOT. Run 'make build' or 'make build-lite' first."; \
 		exit 1; \
 	fi; \
 	codesign --verify --deep --strict --verbose=2 "$$APP_ROOT"; \
 	rm -rf "/Applications/Koe.app"; \
 	ditto "$$APP_ROOT" "/Applications/Koe.app"; \
 	codesign --verify --deep --strict --verbose=2 "/Applications/Koe.app"; \
-	echo "Installed /Applications/Koe.app"
+	echo "Installed /Applications/Koe.app from $$SCHEME"
 
 clean:
 	cargo clean
