@@ -27,7 +27,7 @@
 //!         AsrEvent::Interim(text) => aggregator.update_interim(&text),
 //!         AsrEvent::Definite(text) => aggregator.update_definite(&text),
 //!         AsrEvent::Final(text) => { aggregator.update_final(&text); break; }
-//!         AsrEvent::Closed => break,
+//!         AsrEvent::Closed(_) => break,
 //!         _ => {}
 //!     }
 //! }

@@ -48,7 +48,7 @@ extern "C" fn apple_speech_event_trampoline(
         2 => AsrEvent::Final(text_str),
         3 => AsrEvent::Error(text_str),
         4 => AsrEvent::Connected,
-        5 => AsrEvent::Closed,
+        5 => AsrEvent::Closed(None),
         _ => return,
     };
     if let Err(e) = tx.try_send(event) {

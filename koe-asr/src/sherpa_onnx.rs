@@ -291,5 +291,5 @@ fn worker_loop(
         }
     }
 
-    let _ = event_tx.blocking_send(AsrEvent::Closed);
+    let _ = event_tx.blocking_send(AsrEvent::Closed(None));
 }

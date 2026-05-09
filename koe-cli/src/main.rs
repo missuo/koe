@@ -366,7 +366,7 @@ async fn transcribe(
                 asr.close().await.ok();
                 return Err(format!("ASR error: {msg}"));
             }
-            AsrEvent::Closed => {
+            AsrEvent::Closed(_) => {
                 if show_interim {
                     eprintln!();
                 }

@@ -996,10 +996,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     qwenKeyLabel.hidden = YES;
     [pane addSubview:qwenKeyLabel];
 
-    // Test result label — positioned directly below the Test button with
-    // enough width/height for multi-line error messages.
+    // Test result label — positioned below credential fields with enough
+    // width/height for multi-line error messages.
     self.asrTestResultLabel = [NSTextField wrappingLabelWithString:@""];
-    CGFloat testResultY = NSMinY(self.asrTestButton.frame) - 44;
+    CGFloat testResultY = accessKeyY - 48;
     self.asrTestResultLabel.frame = NSMakeRect(fieldX,
                                                testResultY,
                                                paneWidth - fieldX - 24,

@@ -140,7 +140,10 @@ fn longest_overlap(tail: &str, head: &str) -> usize {
     let max = tail.len().min(head.len());
     let mut k = max;
     while k > 0 {
-        if head.is_char_boundary(k) && tail.is_char_boundary(tail.len() - k) && tail.as_bytes()[tail.len() - k..] == head.as_bytes()[..k] {
+        if head.is_char_boundary(k)
+            && tail.is_char_boundary(tail.len() - k)
+            && tail.as_bytes()[tail.len() - k..] == head.as_bytes()[..k]
+        {
             return k;
         }
         k -= 1;

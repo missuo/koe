@@ -95,7 +95,7 @@ fn test_asr_event_variants() {
         AsrEvent::Definite("confirmed".into()),
         AsrEvent::Final("done".into()),
         AsrEvent::Error("oops".into()),
-        AsrEvent::Closed,
+        AsrEvent::Closed(None),
     ];
     for event in &events {
         let _ = format!("{:?}", event);
@@ -176,7 +176,7 @@ async fn test_doubaoime_connect_and_send_silence() {
                 aggregator.update_final(&text);
                 break;
             }
-            Ok(AsrEvent::Closed) => {
+            Ok(AsrEvent::Closed(_)) => {
                 println!("CLOSED");
                 break;
             }

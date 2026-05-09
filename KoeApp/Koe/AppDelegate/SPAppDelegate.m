@@ -495,6 +495,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     [self.hotkeyMonitor resetToIdle];
     [self.statusBarManager updateState:@"error"];
     [self.overlayPanel updateState:@"error"];
+    [self.overlayPanel updateDisplayText:[self localizedErrorSummary:message]];
 
     // Send system notification with error details
     [self sendErrorNotification:message];
@@ -502,7 +503,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     // Brief error display, then back to idle.
     // Guard with session token so a new session isn't reset to idle.
     uint64_t token = self.rustBridge.currentSessionToken;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         if (token != self.rustBridge.currentSessionToken) return;
         self.showingError = NO;
@@ -510,6 +511,24 @@ static BOOL configFlagEnabled(const char *keyPath) {
         [self.overlayPanel updateState:@"idle"];
         [self applyDeferredConfigReloadIfNeeded];
     });
+}
+
+- (NSString *)localizedErrorSummary:(NSString *)message {
+    if (!message.length) return KoeLocalizedString(@"error.asr.unknown");
+    NSString *lower = message.lowercaseString;
+    if ([lower containsString:@"timed out"] || [lower containsString:@"timeout"]) {
+        return KoeLocalizedString(@"error.asr.timeout");
+    }
+    if ([lower containsString:@"starttask"] || [lower containsString:@"startsession"]) {
+        return KoeLocalizedString(@"error.asr.service");
+    }
+    if ([lower containsString:@"credential"] || [lower containsString:@"token"] || [lower containsString:@"auth"]) {
+        return KoeLocalizedString(@"error.asr.auth");
+    }
+    if ([lower containsString:@"microphone"] || [lower containsString:@"audio"]) {
+        return KoeLocalizedString(@"error.audio");
+    }
+    return KoeLocalizedString(@"error.asr.unknown");
 }
 
 - (void)sendWarningNotification:(NSString *)message {

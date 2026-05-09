@@ -442,12 +442,17 @@ impl AsrProvider for DoubaoWsProvider {
                         )));
                     }
                 },
-                Some(Ok(Message::Close(_))) => return Ok(AsrEvent::Closed),
+                Some(Ok(Message::Close(frame))) => {
+                    let reason = frame
+                        .as_ref()
+                        .map(|f| format!("code={}, reason={:?}", f.code, f.reason));
+                    return Ok(AsrEvent::Closed(reason));
+                }
                 Some(Ok(frame)) => {
                     log::debug!("[Doubao ASR] Skipping frame: {:?}", frame);
                 }
                 Some(Err(e)) => return Err(AsrError::Protocol(e.to_string())),
-                None => return Ok(AsrEvent::Closed),
+                None => return Ok(AsrEvent::Closed(Some("WebSocket stream ended".into()))),
             }
         }
     }

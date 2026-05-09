@@ -74,7 +74,7 @@ async fn main() -> Result<(), koe_asr::AsrError> {
                 aggregator.update_final(&text);
                 break;
             }
-            AsrEvent::Closed => break,
+            AsrEvent::Closed(_) => break,
             _ => {}
         }
     }
@@ -191,7 +191,7 @@ async fn transcribe(asr: &mut dyn AsrProvider, audio: &[u8]) -> Result<String, k
             AsrEvent::Interim(t) => aggregator.update_interim(&t),
             AsrEvent::Definite(t) => aggregator.update_definite(&t),
             AsrEvent::Final(t) => { aggregator.update_final(&t); break; }
-            AsrEvent::Closed => break,
+            AsrEvent::Closed(_) => break,
             _ => {}
         }
     }
