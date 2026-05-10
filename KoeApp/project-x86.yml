@@ -1,0 +1,96 @@
+name: Koe
+options:
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  defaultConfig: Release
+
+packages:
+  KoeAppleSpeech:
+    path: ../Packages/KoeAppleSpeech
+
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: nz.owo.koe
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ENABLE_HARDENED_RUNTIME: YES
+    APP_UPDATE_FEED_URL: "https://raw.githubusercontent.com/missuo/koe/main/docs/update-feed.json"
+
+targetTemplates:
+  KoeApp:
+    type: application
+    platform: macOS
+    sources:
+      - path: Koe
+        excludes:
+          - "*.entitlements"
+          - "**/*Tests.m"
+    settings:
+      base:
+        INFOPLIST_FILE: Koe/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Koe/Koe.entitlements
+        PRODUCT_NAME: Koe
+        HEADER_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(SRCROOT)/../koe-core/target"
+        LIBRARY_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(SRCROOT)/../target/release"
+        OTHER_LDFLAGS:
+          - "-lkoe_core"
+          - "-lc++"
+          - "-lSystem"
+          - "-lresolv"
+          - "-framework Security"
+          - "-framework CoreFoundation"
+          - "-framework UserNotifications"
+          - "-framework SystemConfiguration"
+        ENABLE_APP_SANDBOX: NO
+        CLANG_ENABLE_OBJC_ARC: YES
+    frameworks:
+      - AVFoundation
+      - AppKit
+      - ApplicationServices
+      - Carbon
+      - CoreAudio
+      - AudioToolbox
+      - ServiceManagement
+      - Speech
+      - UserNotifications
+      - sdk: libsqlite3.tbd
+
+targets:
+  Koe-x86:
+    templates:
+      - KoeApp
+    dependencies:
+      - package: KoeAppleSpeech
+        product: KoeAppleSpeech
+    preBuildScripts:
+      - name: Build Rust Library
+        script: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+          command -v cmake >/dev/null || { echo "error: cmake is required to build Rust dependency audiopus_sys. Install it with: brew install cmake" >&2; exit 1; }
+          cd "${SRCROOT}/.."
+          RUST_TARGET="x86_64-apple-darwin"
+          export CMAKE_POLICY_VERSION_MINIMUM=3.5
+          cargo build --manifest-path koe-core/Cargo.toml --release --target "$RUST_TARGET" --no-default-features --features "sherpa-onnx,apple-speech"
+          mkdir -p "${SRCROOT}/../target/release"
+          ln -sf "${SRCROOT}/../target/${RUST_TARGET}/release/libkoe_core.a" "${SRCROOT}/../target/release/libkoe_core.a"
+        basedOnDependencyAnalysis: false
+
+  KoeLogicTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Koe/AppDelegate/SPAppDelegateLogicTests.m
+      - path: Koe/Hotkey/SPHotkeyMonitor.m
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: nz.owo.koe.logic-tests
+        CLANG_ENABLE_OBJC_ARC: YES
+    frameworks:
+      - XCTest
+      - Foundation
