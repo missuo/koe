@@ -37,6 +37,9 @@ koe-core/target/
 .vscode/
 .idea/
 
+# Claude Code
+.claude/
+
 # Environment / secrets
 .env
 .env.*

@@ -314,6 +314,7 @@ async fn transcribe(
 
     let config = AsrConfig {
         custom_headers,
+        language: None,
         ..Default::default()
     };
 

@@ -127,20 +127,11 @@ async fn test_doubaoime_connect_and_send_silence() {
     );
 
     let config = AsrConfig {
-        url: String::new(),
-        app_key: String::new(),
-        access_key: String::new(),
-        resource_id: String::new(),
-        sample_rate_hz: 16000,
         connect_timeout_ms: 10000,
         final_wait_timeout_ms: 10000,
-        enable_ddc: false,
-        enable_itn: false,
         enable_punc: true,
-        enable_nonstream: false,
-        hotwords: Vec::new(),
-        language: Some("zh".to_string()),
         custom_headers: headers,
+        ..Default::default()
     };
 
     let mut provider = koe_asr::DoubaoImeProvider::new();

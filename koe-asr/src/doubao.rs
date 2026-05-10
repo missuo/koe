@@ -113,34 +113,98 @@ impl DoubaoWsProvider {
             "show_utterances": true
         });
 
-        if !config.hotwords.is_empty() {
-            let hotwords: Vec<serde_json::Value> = config
-                .hotwords
-                .iter()
-                .map(|w| serde_json::json!({"word": w}))
-                .collect();
-            let hotwords_json = serde_json::json!({"hotwords": hotwords});
-            let context_str = serde_json::to_string(&hotwords_json).unwrap_or_default();
-            request["corpus"] = serde_json::json!({
-                "context": context_str
-            });
-            log::info!(
-                "ASR hotwords: {} entries via corpus.context",
-                config.hotwords.len()
-            );
+        if let Some(ref variant) = config.output_zh_variant {
+            request["output_zh_variant"] = serde_json::Value::String(variant.clone());
+        }
+        if let Some(end_window) = config.end_window_size {
+            request["end_window_size"] = serde_json::json!(end_window);
+        }
+        if let Some(force_time) = config.force_to_speech_time {
+            request["force_to_speech_time"] = serde_json::json!(force_time);
+        }
+        if let Some(vad_dur) = config.vad_segment_duration {
+            request["vad_segment_duration"] = serde_json::json!(vad_dur);
+        }
+        if config.enable_accelerate_text {
+            request["enable_accelerate_text"] = serde_json::json!(true);
+            if let Some(score) = config.accelerate_score {
+                request["accelerate_score"] = serde_json::json!(score);
+            }
+        }
+
+        // Build corpus: hotwords and/or dialog context
+        let has_hotwords = !config.hotwords.is_empty();
+        let has_context = !config.context_messages.is_empty();
+        if has_hotwords || has_context {
+            let mut corpus = serde_json::Map::new();
+
+            // Hotwords go into corpus.context as a JSON string
+            if has_hotwords {
+                let hotwords: Vec<serde_json::Value> = config
+                    .hotwords
+                    .iter()
+                    .map(|w| serde_json::json!({"word": w}))
+                    .collect();
+                let hotwords_json = serde_json::json!({"hotwords": hotwords});
+                corpus.insert(
+                    "context".to_string(),
+                    serde_json::Value::String(
+                        serde_json::to_string(&hotwords_json).unwrap_or_default(),
+                    ),
+                );
+                log::info!(
+                    "ASR hotwords: {} entries via corpus.context",
+                    config.hotwords.len()
+                );
+            }
+
+            // Dialog context: overwrites corpus.context when present (hotwords
+            // can be embedded in the dialog_ctx if needed in future)
+            if has_context {
+                let context_data: Vec<serde_json::Value> = config
+                    .context_messages
+                    .iter()
+                    .map(|t| serde_json::json!({"text": t}))
+                    .collect();
+                let dialog_ctx = serde_json::json!({
+                    "context_type": "dialog_ctx",
+                    "context_data": context_data
+                });
+                corpus.insert(
+                    "context".to_string(),
+                    serde_json::Value::String(
+                        serde_json::to_string(&dialog_ctx).unwrap_or_default(),
+                    ),
+                );
+                log::info!(
+                    "ASR dialog context: {} messages",
+                    config.context_messages.len()
+                );
+            }
+
+            request["corpus"] = serde_json::Value::Object(corpus);
+        }
+
+        let mut audio = serde_json::json!({
+            "format": "pcm",
+            "codec": "raw",
+            "rate": config.sample_rate_hz,
+            "bits": 16,
+            "channel": 1
+        });
+
+        // Language parameter (only for bigmodel_nostream and bigmodel_async with enable_nonstream)
+        if let Some(ref lang) = config.language {
+            if !lang.is_empty() {
+                audio["language"] = serde_json::Value::String(lang.clone());
+            }
         }
 
         let payload_json = serde_json::json!({
             "user": {
                 "uid": "koe-asr"
             },
-            "audio": {
-                "format": "pcm",
-                "codec": "raw",
-                "rate": config.sample_rate_hz,
-                "bits": 16,
-                "channel": 1
-            },
+            "audio": audio,
             "request": request
         });
 
@@ -305,20 +369,34 @@ impl AsrProvider for DoubaoWsProvider {
 
         if config.custom_headers.is_empty() {
             let headers = request.headers_mut();
-            headers.insert(
-                "X-Api-App-Key",
-                config
-                    .app_key
-                    .parse()
-                    .map_err(|_| AsrError::Connection("invalid app_key".into()))?,
-            );
-            headers.insert(
-                "X-Api-Access-Key",
-                config
-                    .access_key
-                    .parse()
-                    .map_err(|_| AsrError::Connection("invalid access_key".into()))?,
-            );
+
+            if !config.api_key.is_empty() {
+                // New console auth: single X-Api-Key
+                headers.insert(
+                    "X-Api-Key",
+                    config
+                        .api_key
+                        .parse()
+                        .map_err(|_| AsrError::Connection("invalid api_key".into()))?,
+                );
+            } else {
+                // Legacy auth: X-Api-App-Key + X-Api-Access-Key
+                headers.insert(
+                    "X-Api-App-Key",
+                    config
+                        .app_key
+                        .parse()
+                        .map_err(|_| AsrError::Connection("invalid app_key".into()))?,
+                );
+                headers.insert(
+                    "X-Api-Access-Key",
+                    config
+                        .access_key
+                        .parse()
+                        .map_err(|_| AsrError::Connection("invalid access_key".into()))?,
+                );
+            }
+
             headers.insert(
                 "X-Api-Resource-Id",
                 config
@@ -331,6 +409,17 @@ impl AsrProvider for DoubaoWsProvider {
                 self.connect_id
                     .parse()
                     .map_err(|_| AsrError::Connection("invalid connect_id".into()))?,
+            );
+            headers.insert(
+                "X-Api-Request-Id",
+                self.connect_id
+                    .parse()
+                    .map_err(|_| AsrError::Connection("invalid request_id".into()))?,
+            );
+            headers.insert(
+                "X-Api-Sequence",
+                "-1".parse()
+                    .map_err(|_| AsrError::Connection("invalid sequence".into()))?,
             );
         } else {
             let headers = request.headers_mut();

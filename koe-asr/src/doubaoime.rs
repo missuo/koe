@@ -599,14 +599,14 @@ impl OpusEncoder {
 
 // ─── Session Config ────────────────────────────────────────────────
 
-fn build_session_config(device_id: &str) -> String {
-    let config = serde_json::json!({
+fn build_session_config(device_id: &str, config: &crate::AsrConfig) -> String {
+    let mut session = serde_json::json!({
         "audio_info": {
             "channel": 1,
             "format": "speech_opus",
             "sample_rate": SAMPLE_RATE
         },
-        "enable_punctuation": true,
+        "enable_punctuation": config.enable_punc,
         "enable_speech_rejection": false,
         "extra": {
             "app_name": "com.android.chrome",
@@ -617,7 +617,12 @@ fn build_session_config(device_id: &str) -> String {
             "input_mode": "tool"
         }
     });
-    serde_json::to_string(&config).unwrap_or_default()
+    if let Some(ref lang) = config.language {
+        if !lang.is_empty() {
+            session["language"] = serde_json::Value::String(lang.clone());
+        }
+    }
+    serde_json::to_string(&session).unwrap_or_default()
 }
 
 // ─── Provider ──────────────────────────────────────────────────────
@@ -643,6 +648,8 @@ pub struct DoubaoImeProvider {
     /// without the `confirmed_text` prefix). Used to detect segment resets
     /// when the API suddenly returns much shorter text.
     last_segment_text: String,
+    /// Stored config for session start parameters.
+    asr_config: Option<crate::AsrConfig>,
 }
 
 impl DoubaoImeProvider {
@@ -659,6 +666,7 @@ impl DoubaoImeProvider {
             session_finished: false,
             confirmed_text: String::new(),
             last_segment_text: String::new(),
+            asr_config: None,
         }
     }
 
@@ -755,6 +763,7 @@ impl Default for DoubaoImeProvider {
 #[async_trait::async_trait]
 impl AsrProvider for DoubaoImeProvider {
     async fn connect(&mut self, config: &AsrConfig) -> Result<()> {
+        self.asr_config = Some(config.clone());
         let connect_timeout = Duration::from_millis(config.connect_timeout_ms);
 
         // Determine credential path
@@ -869,7 +878,7 @@ impl AsrProvider for DoubaoImeProvider {
         log::info!("[DoubaoIME] TaskStarted");
 
         // StartSession
-        let session_config = build_session_config(&self.device_id);
+        let session_config = build_session_config(&self.device_id, self.asr_config.as_ref().unwrap());
         let start_session = proto::encode_asr_request(
             &self.token,
             "ASR",
