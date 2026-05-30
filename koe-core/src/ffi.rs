@@ -58,97 +58,115 @@ pub struct SPCallbacks {
 
 static CALLBACKS: Mutex<Option<SPCallbacks>> = Mutex::new(None);
 
+/// Build a C string for FFI, stripping any interior NUL bytes (which would
+/// otherwise cause CString::new to fail and silently drop the whole string).
+fn ffi_cstring(s: &str) -> CString {
+    match CString::new(s) {
+        Ok(c) => c,
+        Err(_) => CString::new(s.replace('\0', "")).unwrap_or_default(),
+    }
+}
+
 pub fn register_callbacks(callbacks: SPCallbacks) {
     let mut cb = CALLBACKS.lock().unwrap();
     *cb = Some(callbacks);
 }
 
 pub fn invoke_session_ready(token: u64) {
-    let cb = CALLBACKS.lock().unwrap();
-    if let Some(ref cbs) = *cb {
-        if let Some(f) = cbs.on_session_ready {
-            f(token);
-        }
+    let f = {
+        let cb = CALLBACKS.lock().unwrap();
+        cb.as_ref().and_then(|cbs| cbs.on_session_ready)
+    };
+    if let Some(f) = f {
+        f(token);
     }
 }
 
 pub fn invoke_session_error(token: u64, message: &str) {
-    let cb = CALLBACKS.lock().unwrap();
-    if let Some(ref cbs) = *cb {
-        if let Some(f) = cbs.on_session_error {
-            let c_msg = CString::new(message).unwrap_or_default();
-            f(token, c_msg.as_ptr());
-        }
+    let f = {
+        let cb = CALLBACKS.lock().unwrap();
+        cb.as_ref().and_then(|cbs| cbs.on_session_error)
+    };
+    if let Some(f) = f {
+        let c_msg = ffi_cstring(message);
+        f(token, c_msg.as_ptr());
     }
 }
 
 pub fn invoke_session_warning(token: u64, message: &str) {
-    let cb = CALLBACKS.lock().unwrap();
-    if let Some(ref cbs) = *cb {
-        if let Some(f) = cbs.on_session_warning {
-            let c_msg = CString::new(message).unwrap_or_default();
-            f(token, c_msg.as_ptr());
-        }
+    let f = {
+        let cb = CALLBACKS.lock().unwrap();
+        cb.as_ref().and_then(|cbs| cbs.on_session_warning)
+    };
+    if let Some(f) = f {
+        let c_msg = ffi_cstring(message);
+        f(token, c_msg.as_ptr());
     }
 }
 
 pub fn invoke_final_text_ready(token: u64, text: &str) {
-    let cb = CALLBACKS.lock().unwrap();
-    if let Some(ref cbs) = *cb {
-        if let Some(f) = cbs.on_final_text_ready {
-            let c_text = CString::new(text).unwrap_or_default();
-            f(token, c_text.as_ptr());
-        }
+    let f = {
+        let cb = CALLBACKS.lock().unwrap();
+        cb.as_ref().and_then(|cbs| cbs.on_final_text_ready)
+    };
+    if let Some(f) = f {
+        let c_text = ffi_cstring(text);
+        f(token, c_text.as_ptr());
     }
 }
 
 pub fn invoke_log_event(level: i32, message: &str) {
-    let cb = CALLBACKS.lock().unwrap();
-    if let Some(ref cbs) = *cb {
-        if let Some(f) = cbs.on_log_event {
-            let c_msg = CString::new(message).unwrap_or_default();
-            f(level as c_int, c_msg.as_ptr());
-        }
+    let f = {
+        let cb = CALLBACKS.lock().unwrap();
+        cb.as_ref().and_then(|cbs| cbs.on_log_event)
+    };
+    if let Some(f) = f {
+        let c_msg = ffi_cstring(message);
+        f(level as c_int, c_msg.as_ptr());
     }
 }
 
 pub fn invoke_state_changed(token: u64, state: &str) {
-    let cb = CALLBACKS.lock().unwrap();
-    if let Some(ref cbs) = *cb {
-        if let Some(f) = cbs.on_state_changed {
-            let c_state = CString::new(state).unwrap_or_default();
-            f(token, c_state.as_ptr());
-        }
+    let f = {
+        let cb = CALLBACKS.lock().unwrap();
+        cb.as_ref().and_then(|cbs| cbs.on_state_changed)
+    };
+    if let Some(f) = f {
+        let c_state = ffi_cstring(state);
+        f(token, c_state.as_ptr());
     }
 }
 
 pub fn invoke_interim_text(token: u64, text: &str) {
-    let cb = CALLBACKS.lock().unwrap();
-    if let Some(ref cbs) = *cb {
-        if let Some(f) = cbs.on_interim_text {
-            let c_text = CString::new(text).unwrap_or_default();
-            f(token, c_text.as_ptr());
-        }
+    let f = {
+        let cb = CALLBACKS.lock().unwrap();
+        cb.as_ref().and_then(|cbs| cbs.on_interim_text)
+    };
+    if let Some(f) = f {
+        let c_text = ffi_cstring(text);
+        f(token, c_text.as_ptr());
     }
 }
 
 pub fn invoke_asr_final_text(token: u64, text: &str) {
-    let cb = CALLBACKS.lock().unwrap();
-    if let Some(ref cbs) = *cb {
-        if let Some(f) = cbs.on_asr_final_text {
-            let c_text = CString::new(text).unwrap_or_default();
-            f(token, c_text.as_ptr());
-        }
+    let f = {
+        let cb = CALLBACKS.lock().unwrap();
+        cb.as_ref().and_then(|cbs| cbs.on_asr_final_text)
+    };
+    if let Some(f) = f {
+        let c_text = ffi_cstring(text);
+        f(token, c_text.as_ptr());
     }
 }
 
 pub fn invoke_rewrite_text_ready(token: u64, text: &str) {
-    let cb = CALLBACKS.lock().unwrap();
-    if let Some(ref cbs) = *cb {
-        if let Some(f) = cbs.on_rewrite_text_ready {
-            let c_text = CString::new(text).unwrap_or_default();
-            f(token, c_text.as_ptr());
-        }
+    let f = {
+        let cb = CALLBACKS.lock().unwrap();
+        cb.as_ref().and_then(|cbs| cbs.on_rewrite_text_ready)
+    };
+    if let Some(f) = f {
+        let c_text = ffi_cstring(text);
+        f(token, c_text.as_ptr());
     }
 }
 
