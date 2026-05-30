@@ -46,7 +46,12 @@ extern "C" fn mlx_event_trampoline(ctx: *mut c_void, event_type: i32, text: *con
         5 => AsrEvent::Closed(None),
         _ => return,
     };
-    let _ = tx.try_send(event);
+    if let Err(e) = tx.try_send(event) {
+        // Dropping a Final/Closed event here would strand wait_for_final() until
+        // its timeout, degrading a successful session into a slow, possibly
+        // truncated one. Surface it like the Apple Speech provider does.
+        log::warn!("MLX event dropped (channel full): {e}");
+    }
 }
 
 // ─── Provider ────────────────────────────────────────────────────────
