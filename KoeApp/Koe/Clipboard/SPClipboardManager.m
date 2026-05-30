@@ -14,6 +14,12 @@
 @implementation SPClipboardManager
 
 - (void)backup {
+    // Keep the earliest un-restored backup. Without this guard, a second
+    // recording that finalizes within the restore window would re-back-up the
+    // clipboard while it still holds Koe's own transcription, so the later
+    // restore would put that text back instead of the user's original content.
+    if (self.hasBackup) return;
+
     NSPasteboard *pb = [NSPasteboard generalPasteboard];
     self.backedUpChangeCount = pb.changeCount;
 
@@ -53,6 +59,11 @@
 
 - (void)cancelPendingRestore {
     self.pendingRestoreGeneration += 1;
+    // Abandoning the pending restore means this backup is no longer owed back
+    // to the clipboard (e.g. a rewrite/template result is meant to stay). Clear
+    // it so the next session backs up the current clipboard afresh.
+    self.backedUpItems = nil;
+    self.hasBackup = NO;
 }
 
 - (void)restoreIfUnchangedExpectedChangeCount:(NSInteger)expectedChangeCount generation:(NSUInteger)generation {
