@@ -27,8 +27,8 @@ use crate::session::{Session, SessionState};
 #[cfg(feature = "apple-speech")]
 use koe_asr::{AppleSpeechConfig, AppleSpeechProvider};
 use koe_asr::{
-    AsrConfig, AsrEvent, AsrProvider, DoubaoImeProvider, DoubaoWsProvider, QwenAsrProvider,
-    TranscriptAggregator,
+    AsrConfig, AsrEvent, AsrProvider, DoubaoImeProvider, DoubaoWsProvider, GlmAsrProvider,
+    QwenAsrProvider, TranscriptAggregator,
 };
 #[cfg(feature = "mlx")]
 use koe_asr::{MlxConfig, MlxProvider};
@@ -408,6 +408,34 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
                 context_messages: Vec::new(),
             };
             (config, Box::new(QwenAsrProvider::new()))
+        }
+        "glm" => {
+            let glm = &cfg.asr.glm;
+            let config = AsrConfig {
+                url: glm.url.clone(),
+                app_key: glm.model.clone(),
+                access_key: glm.api_key.clone(),
+                api_key: glm.api_key.clone(),
+                resource_id: String::new(),
+                sample_rate_hz: 16000,
+                connect_timeout_ms: glm.connect_timeout_ms,
+                final_wait_timeout_ms: glm.final_wait_timeout_ms,
+                enable_ddc: false,
+                enable_itn: false,
+                enable_punc: false,
+                enable_nonstream: false,
+                hotwords: Vec::new(),
+                language: glm.prompt.clone(),
+                custom_headers: std::collections::HashMap::new(),
+                end_window_size: None,
+                force_to_speech_time: None,
+                vad_segment_duration: None,
+                output_zh_variant: None,
+                enable_accelerate_text: false,
+                accelerate_score: None,
+                context_messages: Vec::new(),
+            };
+            (config, Box::new(GlmAsrProvider::new()))
         }
         #[cfg(feature = "mlx")]
         "mlx" => {
