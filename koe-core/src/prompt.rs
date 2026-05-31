@@ -92,66 +92,78 @@ fn build_default_user_prompt_template() -> String {
     include_str!("default_user_prompt.txt").trim().to_string()
 }
 
-/// Detect a degenerate LLM rewrite driven by the dictionary in the prompt.
+/// Detect a degenerate LLM rewrite that has dropped the user's words.
 ///
-/// Small local models (e.g. a 0.6B) fixate on the dictionary section instead
-/// of rewriting the ASR text, in two observed shapes:
+/// The post-ASR cleanup model (a small local LLM) sometimes fails to follow
+/// the rewrite instruction and instead emits garbage in three observed shapes,
+/// all of which erase what the user actually said:
 ///
-/// 1. **Dump** — the model echoes the candidate list back, so the output is a
-///    concatenation of dozens of dictionary entries the user never spoke,
-///    burying the actual transcription.
-/// 2. **Collapse** — the input contains a dictionary term (e.g. "ASR"); the
-///    model latches onto that one entry and emits *only* it, discarding all
-///    other spoken content.
+/// 1. **Dump** — the model echoes the prompt's dictionary back, so the output
+///    is a concatenation of dozens of dictionary entries the user never spoke.
+/// 2. **Collapse** — the model extracts one salient fragment (e.g. "ASR" or
+///    "PPT master") and emits only it, discarding the rest of the sentence.
+/// 3. **Severe truncation** — the output is a small fraction of the input even
+///    when it is not a verbatim fragment.
 ///
-/// Both erase the user's words, so we reject the output and let the caller
-/// fall back to the raw ASR text. This is the output-side sibling of the
-/// trim-aware empty guard, which catches blank *input*.
+/// On any of these we reject the output and let the caller fall back to the
+/// raw ASR text. This is the output-side sibling of the trim-aware empty
+/// guard, which catches blank *input*. Note the collapse/truncation checks are
+/// dictionary-independent — a stronger model lowers the odds of degeneration
+/// but never eliminates them, so this guard is the deterministic backstop.
 /// cbindgen:ignore
-pub fn looks_like_dictionary_artifact(
+pub fn looks_like_degenerate_rewrite(
     output: &str,
     asr_text: &str,
     dictionary_entries: &[String],
 ) -> bool {
-    if dictionary_entries.is_empty() {
-        return false;
-    }
-
     let output_lower = output.to_lowercase();
     let asr_lower = asr_text.to_lowercase();
 
     // --- Dump: many dictionary terms appear in the output that the user never
     // spoke. Terms the user actually said are excluded, so a normal rewrite
     // (which injects ~none) cannot reach the threshold.
-    let leaked = dictionary_entries
-        .iter()
-        .filter(|e| {
-            let el = e.to_lowercase();
-            output_lower.contains(&el) && !asr_lower.contains(&el)
-        })
-        .count();
-    // Absolute floor (so short, legitimately term-heavy rewrites pass) AND half
-    // the candidate list (so a large dictionary does not lower the bar).
-    let dump_threshold = (dictionary_entries.len() / 2).max(8);
-    if leaked >= dump_threshold {
+    if !dictionary_entries.is_empty() {
+        let leaked = dictionary_entries
+            .iter()
+            .filter(|e| {
+                let el = e.to_lowercase();
+                output_lower.contains(&el) && !asr_lower.contains(&el)
+            })
+            .count();
+        // Absolute floor (so short, legitimately term-heavy rewrites pass) AND
+        // half the candidate list (so a large dictionary doesn't lower the bar).
+        let dump_threshold = (dictionary_entries.len() / 2).max(8);
+        if leaked >= dump_threshold {
+            return true;
+        }
+    }
+
+    // Whitespace-stripped, lowercased forms so CJK/latin spacing and trailing
+    // sentence punctuation don't skew the length/substring comparison.
+    let strip = |s: &str| -> String {
+        s.chars().filter(|c| !c.is_whitespace()).collect()
+    };
+    let out_core = strip(&output_lower);
+    let out_core = out_core.trim_end_matches(['。', '.', '，', ',', '！', '!', '？', '?']);
+    let asr_core = strip(&asr_lower);
+    let out_chars = out_core.chars().count();
+    let asr_chars = asr_core.chars().count();
+    if out_chars == 0 {
+        return false;
+    }
+    let dropped = asr_chars.saturating_sub(out_chars);
+
+    // --- Collapse: the output is a verbatim fragment of the ASR text (the
+    // model extracted a span instead of rewriting) while dropping at least
+    // half the content. A genuine rewrite adds punctuation / fixes terms, so
+    // it is rarely a verbatim substring of the raw ASR — this is high-precision.
+    if asr_core.contains(out_core) && out_chars * 2 <= asr_chars && dropped >= 8 {
         return true;
     }
 
-    // --- Collapse: the whole output is just a single dictionary entry while
-    // the ASR text carried meaningfully more content. Strip trailing
-    // sentence punctuation the model may tack on, then compare exactly so we
-    // don't reject a user who genuinely only said one term.
-    let out_core = output_lower
-        .trim()
-        .trim_end_matches(['。', '.', '，', ',', '！', '!', '？', '?', ' ']);
-    let out_chars = out_core.chars().count();
-    let asr_chars = asr_lower.trim().chars().count();
-    if out_chars > 0
-        && asr_chars >= out_chars * 3
-        && dictionary_entries
-            .iter()
-            .any(|e| e.to_lowercase() == out_core)
-    {
+    // --- Severe truncation: even without a verbatim match, an output that is
+    // under a third of a non-trivial input has lost the user's content.
+    if out_chars * 3 <= asr_chars && asr_chars >= 18 && dropped >= 12 {
         return true;
     }
 
@@ -225,23 +237,32 @@ mod tests {
         // Real failure capture (session 831): the model echoed the whole
         // candidate list back instead of rewriting.
         let dump = "cc-connectAnthropicClaudecodecloudflaredShadowrocketKarabinerObsidianDoubaoIMECloudflareNextcloudDoubaoTailscalesing-boxDocmostHammerspoonGitHubSherpa-ONNXCursorTauriSonnetClaudeMinifluxForgejoOpenAIFastAPIDockerTelegramGeminiHaikuCodexLuckyXcodeRustlsOpusType4MeOKRWhisperASRPTTVercelQwenDeepSeekHevy";
-        assert!(looks_like_dictionary_artifact(dump, "测试一下", &dict()));
+        assert!(looks_like_degenerate_rewrite(dump, "测试一下", &dict()));
     }
 
     #[test]
-    fn detects_collapse_to_single_dictionary_term() {
+    fn detects_collapse_to_dictionary_term() {
         // Reported bug: a sentence containing "ASR" collapses to just "ASR".
         let asr = "当输入里头有 ASR 这三个字母的时候，输出其他的全部消失";
-        assert!(looks_like_dictionary_artifact("ASR", asr, &dict()));
+        assert!(looks_like_degenerate_rewrite("ASR", asr, &dict()));
         // Trailing punctuation the model may append must not defeat the guard.
-        assert!(looks_like_dictionary_artifact("ASR。", asr, &dict()));
+        assert!(looks_like_degenerate_rewrite("ASR。", asr, &dict()));
+    }
+
+    #[test]
+    fn detects_collapse_to_non_dictionary_fragment() {
+        // Reported bug: a sentence collapses to "PPT master", which is NOT a
+        // dictionary entry — the dictionary-membership check would miss it, so
+        // the verbatim-fragment + heavy-drop check must catch it.
+        let asr = "我刚才说的那个 PPT master 的功能其实挺好用的";
+        assert!(looks_like_degenerate_rewrite("PPT master", asr, &dict()));
     }
 
     #[test]
     fn passes_normal_rewrite() {
         // A genuine cleanup that keeps the user's content and a spoken term.
         let asr = "嗯那个我在用 Claude 写代码";
-        assert!(!looks_like_dictionary_artifact(
+        assert!(!looks_like_degenerate_rewrite(
             "我在用 Claude 写代码",
             asr,
             &dict()
@@ -249,9 +270,19 @@ mod tests {
     }
 
     #[test]
+    fn passes_short_utterance_kept_intact() {
+        // The real non-collapsing capture: "现在测试 PPT master。" stays full.
+        assert!(!looks_like_degenerate_rewrite(
+            "现在测试 PPT master。",
+            "现在测试 PPT master。",
+            &dict()
+        ));
+    }
+
+    #[test]
     fn passes_user_who_only_said_one_term() {
         // If the user genuinely just spoke "ASR", a short output is correct.
-        assert!(!looks_like_dictionary_artifact("ASR", "ASR", &dict()));
+        assert!(!looks_like_degenerate_rewrite("ASR", "ASR", &dict()));
     }
 
     #[test]
@@ -260,11 +291,13 @@ mod tests {
         // so none count as leaked and the output must survive.
         let asr = "我对比了 Docker、Tailscale、Cloudflare、Nextcloud、Forgejo、Miniflux";
         let out = "我对比了 Docker、Tailscale、Cloudflare、Nextcloud、Forgejo、Miniflux";
-        assert!(!looks_like_dictionary_artifact(out, asr, &dict()));
+        assert!(!looks_like_degenerate_rewrite(out, asr, &dict()));
     }
 
     #[test]
-    fn empty_dictionary_never_flags() {
-        assert!(!looks_like_dictionary_artifact("ASR", "a long spoken sentence here", &[]));
+    fn empty_dictionary_still_catches_collapse() {
+        // Collapse detection must not depend on the dictionary being present.
+        let asr = "我刚才说的那个 PPT master 的功能其实挺好用的";
+        assert!(looks_like_degenerate_rewrite("PPT master", asr, &[]));
     }
 }

@@ -882,13 +882,13 @@ pub unsafe extern "C" fn sp_core_rewrite_with_template(
 
         match llm.correct(&request).await {
             Ok(result) => {
-                if prompt::looks_like_dictionary_artifact(
+                if prompt::looks_like_degenerate_rewrite(
                     &result,
                     &request.asr_text,
                     &request.dictionary_entries,
                 ) {
                     log::warn!(
-                        "rewrite: template '{}' output looks like a dictionary artifact ({} chars); falling back to ASR text",
+                        "rewrite: template '{}' output looks degenerate ({} chars); falling back to ASR text",
                         template.name,
                         result.len()
                     );
@@ -1267,14 +1267,15 @@ async fn run_session(
         match llm.correct(&request).await {
             Ok(corrected) => {
                 mark_llm_connection_touched(&llm_warmup_state);
-                if prompt::looks_like_dictionary_artifact(
+                if prompt::looks_like_degenerate_rewrite(
                     &corrected,
                     &request.asr_text,
                     &request.dictionary_entries,
                 ) {
                     log::warn!(
-                        "[{session_id}] LLM output looks like a dictionary artifact ({} chars); falling back to raw ASR text",
-                        corrected.len()
+                        "[{session_id}] LLM output looks degenerate ({} chars from {} chars ASR); falling back to raw ASR text",
+                        corrected.len(),
+                        request.asr_text.len()
                     );
                     asr_text
                 } else {
