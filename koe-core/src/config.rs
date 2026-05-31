@@ -44,7 +44,7 @@ pub struct PromptTemplate {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AsrSection {
-    /// Which ASR provider to use: "doubaoime" (default), "doubao", "qwen", "mlx", "sherpa-onnx", "apple-speech"
+    /// Which ASR provider to use: "doubaoime" (default), "doubao", "qwen", "glm", "mlx", "sherpa-onnx", "apple-speech"
     #[serde(default = "default_asr_provider")]
     pub provider: String,
 
@@ -71,6 +71,10 @@ pub struct AsrSection {
     /// Apple Speech local ASR configuration (macOS 26+)
     #[serde(rename = "apple-speech", default)]
     pub apple_speech: AppleSpeechAsrConfig,
+
+    /// GLM (Zhipu) ASR configuration
+    #[serde(default)]
+    pub glm: GlmAsrConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -245,6 +249,36 @@ impl Default for AppleSpeechAsrConfig {
 
 fn default_apple_speech_locale() -> String {
     "zh_CN".to_string()
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct GlmAsrConfig {
+    #[serde(default = "default_glm_url")]
+    pub url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_glm_model")]
+    pub model: String,
+    /// ASR hint / prompt for guiding recognition
+    #[serde(default)]
+    pub prompt: Option<String>,
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout_ms: u64,
+    #[serde(default = "default_final_wait_timeout")]
+    pub final_wait_timeout_ms: u64,
+}
+
+impl Default for GlmAsrConfig {
+    fn default() -> Self {
+        Self {
+            url: default_glm_url(),
+            api_key: String::new(),
+            model: default_glm_model(),
+            prompt: None,
+            connect_timeout_ms: default_connect_timeout(),
+            final_wait_timeout_ms: default_final_wait_timeout(),
+        }
+    }
 }
 
 // ─── Other Sections (unchanged) ─────────────────────────────────────
@@ -739,6 +773,12 @@ fn default_sherpa_onnx_hotwords_score() -> f32 {
 }
 fn default_sherpa_onnx_endpoint_silence() -> f32 {
     1.2
+}
+fn default_glm_url() -> String {
+    "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions".into()
+}
+fn default_glm_model() -> String {
+    "glm-asr-2512".into()
 }
 fn deserialize_option_u32_lenient<'de, D>(deserializer: D) -> std::result::Result<Option<u32>, D::Error>
 where
@@ -1560,7 +1600,7 @@ const DEFAULT_CONFIG_YAML: &str = r#"# Koe - Voice Input Tool Configuration
 # ~/.koe/config.yaml
 
 asr:
-  # ASR provider: "doubaoime" (default, free), "doubao", "qwen", "apple-speech", "mlx", "sherpa-onnx"
+  # ASR provider: "doubaoime" (default, free), "doubao", "qwen", "glm", "apple-speech", "mlx", "sherpa-onnx"
   provider: "doubaoime"
 
   # DoubaoIME (豆包输入法) free ASR — no API key required, auto device registration
@@ -1602,6 +1642,12 @@ asr:
     final_wait_timeout_ms: 5000
     # headers:           # custom HTTP headers for WebSocket connection
     #   X-Custom-Header: "value"
+
+  # GLM (Zhipu/智谱) ASR — HTTP POST + SSE streaming
+  glm:
+    url: "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions"
+    api_key: ""          # 从 https://bigmodel.cn/usercenter/proj-mgmt/apikeys 获取
+    model: "glm-asr-2512"  # glm-asr-2512 | glm-asr-1
 
   # Apple Speech local ASR (macOS 26+, zero-config, no model download)
   apple-speech:
