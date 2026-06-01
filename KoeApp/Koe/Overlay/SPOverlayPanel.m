@@ -1901,7 +1901,6 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
     CGFloat textViewportHeight = lineHeight;
     BOOL usesScrollingTranscriptLayout = [self shouldUseScrollingTranscriptLayout];
     BOOL shouldStabilizeWidth = animated && self.sessionMaxWidth > 0;
-    BOOL shouldStabilizeHeight = animated && usesScrollingTranscriptLayout && self.sessionMaxHeight > 0;
 
     if (displayText.length > 0) {
         pillW = fmin(MAX(desiredW, iconSpace + 120.0), absoluteMaxW);
@@ -1928,14 +1927,14 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
         pillH = fmax([self basePillHeight], ceil(textViewportHeight) + [self textVerticalPadding]);
     }
 
-    // 3. Stabilization: only keep height monotonic when line limiting is enabled.
-    if (shouldStabilizeHeight) {
-        pillH = fmax(pillH, self.sessionMaxHeight);
-    }
-    
+    // 3. Stabilize width monotonically to avoid horizontal jitter, but let the
+    //    pill height track the current transcript height. A monotonic height
+    //    floor kept the pill at its tallest for the whole session, so when the
+    //    live transcript shrank (e.g. the ASR revised its hypothesis down) the
+    //    extra height rendered as blank rows above the text.
     if (animated) {
         self.sessionMaxWidth = pillW;
-        self.sessionMaxHeight = usesScrollingTranscriptLayout ? pillH : 0;
+        self.sessionMaxHeight = 0;
     }
 
     // 4. Update internal layout width to prevent wrapping mid-animation
