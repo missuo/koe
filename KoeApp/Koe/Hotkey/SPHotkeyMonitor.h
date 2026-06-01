@@ -56,4 +56,9 @@ typedef NS_ENUM(uint8_t, SPHotkeyMatchKind) {
 /// Used to dismiss the overlay when the user resumes typing after text insertion.
 @property (nonatomic, copy) void (^anyKeyDismissHandler)(void);
 
+/// Optional block called when Return/Enter is pressed.
+/// Return YES to consume the key event. It is only invoked when the active
+/// CGEventTap can suppress the event globally.
+@property (nonatomic, copy) BOOL (^enterKeyHandler)(void);
+
 @end

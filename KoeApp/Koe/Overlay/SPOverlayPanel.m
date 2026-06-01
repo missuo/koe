@@ -427,6 +427,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
 @interface SPHoverEffectView : NSVisualEffectView
 @property (nonatomic, copy) void (^hoverChangedHandler)(BOOL hovering);
+@property (nonatomic, copy) void (^clickHandler)(void);
 @end
 
 @implementation SPHoverEffectView {
@@ -460,6 +461,14 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     if (self.hoverChangedHandler) {
         self.hoverChangedHandler(NO);
     }
+}
+
+- (void)mouseDown:(NSEvent *)event {
+    if (self.clickHandler) {
+        self.clickHandler();
+        return;
+    }
+    [super mouseDown:event];
 }
 
 @end
@@ -875,6 +884,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 @property (nonatomic, strong) NSTimer *diffAnimationTimer;
 @property (nonatomic, assign) NSInteger diffAnimationStep;
 @property (nonatomic, copy) NSString *diffFinalText;
+@property (nonatomic, assign) BOOL rawAsrFallbackClickEnabled;
 
 @end
 
@@ -1165,6 +1175,9 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     effectView.hoverChangedHandler = ^(BOOL hovering) {
         [weakSelf setMainPanelHovered:hovering];
     };
+    effectView.clickHandler = ^{
+        [weakSelf handleMainPanelClick];
+    };
 
     // Light glow shadow (visible on dark backgrounds)
     effectView.layer.shadowColor   = SPOverlayShadowColor().CGColor;
@@ -1188,6 +1201,13 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
 - (void)setMainPanelInteractive:(BOOL)interactive {
     self.panel.ignoresMouseEvents = !interactive;
+}
+
+- (void)handleMainPanelClick {
+    if (!self.rawAsrFallbackClickEnabled) return;
+    if ([self.delegate respondsToSelector:@selector(overlayPanelDidRequestRawAsrFallback:)]) {
+        [self.delegate overlayPanelDidRequestRawAsrFallback:self];
+    }
 }
 
 - (BOOL)isHoveringOverlay {
@@ -1235,6 +1255,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 - (void)dismissToIdle {
     [self cancelDiffAnimation];
     [self clearLingerTimer];
+    [self setRawAsrFallbackClickEnabled:NO];
     self.sessionMaxWidth = 0;
     self.sessionMaxHeight = 0;
     self.currentState = @"idle";
@@ -1279,6 +1300,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         [self cancelDiffAnimation];
     }
     [self clearLingerTimer];
+    [self setRawAsrFallbackClickEnabled:NO];
     [self setMainPanelInteractive:NO];
     self.mainPanelHovered = NO;
     self.templateBarHovered = NO;
@@ -1366,6 +1388,11 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     self.contentView.interimText = text;
     [self resizeAndCenterAnimated:YES];
     [self.contentView setNeedsDisplay:YES];
+}
+
+- (void)setRawAsrFallbackClickEnabled:(BOOL)enabled {
+    _rawAsrFallbackClickEnabled = enabled;
+    [self setMainPanelInteractive:enabled];
 }
 
 - (void)cancelDiffAnimation {
@@ -1586,15 +1613,22 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
 }
 
 - (void)lingerAndDismiss {
+    [self lingerAndDismissWithDuration:0];
+}
+
+- (void)lingerAndDismissWithDuration:(NSTimeInterval)duration {
     [self clearLingerTimer];
     // Keep the main panel click-through during linger — it should not block
     // clicks on the app underneath. Template buttons (separate panel) handle
     // their own mouse events independently.
     [self setMainPanelInteractive:NO];
 
-    NSString *displayText = self.contentView.interimText ?: self.contentView.statusText ?: @"";
-    NSUInteger charCount = displayText.length;
-    NSTimeInterval linger = fmin(fmax(charCount * 0.015, kMinLingerDuration), kMaxLingerDuration);
+    NSTimeInterval linger = duration;
+    if (linger <= 0) {
+        NSString *displayText = self.contentView.interimText ?: self.contentView.statusText ?: @"";
+        NSUInteger charCount = displayText.length;
+        linger = fmin(fmax(charCount * 0.015, kMinLingerDuration), kMaxLingerDuration);
+    }
     self.remainingLingerDuration = linger;
     [self scheduleDismissAfter:linger];
 }
@@ -1629,6 +1663,10 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
 }
 
 - (void)showTemplateButtons:(NSArray<NSDictionary *> *)templates {
+    [self showTemplateButtons:templates lingerDuration:kTemplateLingerDuration];
+}
+
+- (void)showTemplateButtons:(NSArray<NSDictionary *> *)templates lingerDuration:(NSTimeInterval)lingerDuration {
     if (templates.count == 0) return;
     self.templateButtons = templates;
     self.templateShortcutNumbers = [self resolvedShortcutNumbersForTemplates:templates];
@@ -1763,10 +1801,11 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
     };
 
     // Keep the template bar around a bit longer, and pause auto-dismiss while hovered.
+    NSTimeInterval resolvedLingerDuration = lingerDuration > 0 ? lingerDuration : kTemplateLingerDuration;
     [self clearLingerTimer];
-    self.remainingLingerDuration = kTemplateLingerDuration;
+    self.remainingLingerDuration = resolvedLingerDuration;
     if (![self isHoveringOverlay]) {
-        [self scheduleDismissAfter:kTemplateLingerDuration];
+        [self scheduleDismissAfter:resolvedLingerDuration];
     }
 }
 
@@ -1985,6 +2024,7 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
 - (void)hide {
     [self hideTemplateButtons];
     [self stopAnimation];
+    [self setRawAsrFallbackClickEnabled:NO];
     [self setMainPanelInteractive:NO];
 
     if (!self.panel.isVisible || self.panel.alphaValue <= 0.01) {

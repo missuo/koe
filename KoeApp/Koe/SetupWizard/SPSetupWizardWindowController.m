@@ -84,6 +84,31 @@ static BOOL configSet(NSString *keyPath, NSString *value) {
     return sp_config_set(keyPath.UTF8String, (value ?: @"").UTF8String) == 0;
 }
 
+static BOOL configBoolValue(NSString *keyPath, BOOL defaultValue) {
+    NSString *rawValue = configGet(keyPath) ?: @"";
+    NSString *value = [[rawValue
+        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+    if (value.length == 0) {
+        return defaultValue;
+    }
+
+    if ([value isEqualToString:@"1"] ||
+        [value isEqualToString:@"true"] ||
+        [value isEqualToString:@"yes"] ||
+        [value isEqualToString:@"on"]) {
+        return YES;
+    }
+
+    if ([value isEqualToString:@"0"] ||
+        [value isEqualToString:@"false"] ||
+        [value isEqualToString:@"no"] ||
+        [value isEqualToString:@"off"]) {
+        return NO;
+    }
+
+    return defaultValue;
+}
+
 static NSInteger clampedOverlayFontSizeValue(NSInteger value) {
     return MAX(kOverlayFontSizeMin, MIN(kOverlayFontSizeMax, value));
 }
@@ -486,7 +511,8 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property (nonatomic, strong) NSPopUpButton *appleSpeechLocalePopup;
 
 // LLM fields
-@property (nonatomic, strong) NSButton *llmEnabledCheckbox;
+@property (nonatomic, strong) NSSwitch *llmEnabledCheckbox;
+@property (nonatomic, strong) NSSwitch *llmAutoPasteProcessedTextSwitch;
 @property (nonatomic, strong) NSTableView *llmProfileTableView;
 @property (nonatomic, strong) NSScrollView *llmProfileTableScroll;
 @property (nonatomic, strong) NSButton *llmAddProfileButton;
@@ -955,7 +981,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
     CGFloat paneWidth = 600;
     CGFloat contentX = 24.0;
     CGFloat contentW = paneWidth - 48.0;
-    CGFloat contentHeight = 580;
+    CGFloat contentHeight = 632;
 
     // Sidebar (profile list) geometry
     CGFloat sidebarX = 24.0;
@@ -989,6 +1015,13 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                                                         toggle:self.llmEnabledCheckbox];
     [pane addSubview:llmEnabledCard];
     y = NSMinY(llmEnabledCard.frame) - 24.0;
+
+    self.llmAutoPasteProcessedTextSwitch = [self settingsSwitchWithAction:NULL];
+    NSView *autoPasteCard = [self settingsToggleCardWithFrame:NSMakeRect(contentX, y - 48.0, contentW, 48.0)
+                                                        title:@"Auto-paste processed text"
+                                                       toggle:self.llmAutoPasteProcessedTextSwitch];
+    [pane addSubview:autoPasteCard];
+    y = NSMinY(autoPasteCard.frame) - 24.0;
 
     NSTextField *sectionTitle = [self sectionTitleLabel:@"Profiles"
                                                   frame:NSMakeRect(contentX, floor(y - 20.0), contentW, 20.0)];
@@ -2170,20 +2203,9 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
         ? templateData[@"system_prompt_path"]
         : nil;
 
-    // If this template references an external file, preserve that relationship.
-    // Write changes back to the file rather than silently converting to inline.
+    // If this template references an external file, preserve the relationship
+    // and defer the actual write until commitFileBasedTemplates during save.
     if (inlinePrompt.length == 0 && promptPath.length > 0) {
-        if (![editedPrompt isEqualToString:(originalPrompt ?: @"")]) {
-            NSString *resolvedPath = promptPath.isAbsolutePath
-                ? promptPath
-                : [configDirPath() stringByAppendingPathComponent:promptPath];
-            NSError *writeError = nil;
-            [editedPrompt writeToFile:resolvedPath atomically:YES encoding:NSUTF8StringEncoding error:&writeError];
-            if (writeError) {
-                NSLog(@"[Koe] Failed to write template file %@: %@", resolvedPath, writeError.localizedDescription);
-            }
-            templateData[kTemplateOriginalPromptKey] = editedPrompt;
-        }
         [templateData removeObjectForKey:@"system_prompt"];
         self.templateEditorDirty = NO;
         return;
@@ -3780,6 +3802,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     } else if ([identifier isEqualToString:kToolbarLLM]) {
         NSString *enabled = configGet(@"llm.enabled");
         self.llmEnabledCheckbox.state = ([enabled isEqualToString:@"false"]) ? NSControlStateValueOff : NSControlStateValueOn;
+        self.llmAutoPasteProcessedTextSwitch.state = configBoolValue(@"llm.auto_paste_processed_text", YES) ? NSControlStateValueOn : NSControlStateValueOff;
 
         [self loadLlmProfilesFromCore];
         self.llmTestResultLabel.stringValue = @"";
@@ -3969,6 +3992,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType, const char 
     if (self.llmEnabledCheckbox) {
         NSString *enabledStr = (self.llmEnabledCheckbox.state == NSControlStateValueOn) ? @"true" : @"false";
         saveOk &= configSet(@"llm.enabled", enabledStr);
+        NSString *autoPasteProcessedText = (self.llmAutoPasteProcessedTextSwitch.state == NSControlStateValueOn) ? @"true" : @"false";
+        saveOk &= configSet(@"llm.auto_paste_processed_text", autoPasteProcessedText);
 
         [self syncActiveLlmProfileFromFields];
         NSDictionary *payload = @{

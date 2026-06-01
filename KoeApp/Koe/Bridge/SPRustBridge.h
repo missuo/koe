@@ -43,6 +43,9 @@ typedef NS_ENUM(NSInteger, SPSessionModeObjC) {
 /// Cancel the current session (no text output).
 - (void)cancelSession;
 
+/// Request that the current session skip LLM correction and use raw ASR text.
+- (BOOL)acceptAsrResult;
+
 /// Reload configuration.
 - (void)reloadConfig;
 

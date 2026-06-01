@@ -7,6 +7,8 @@
 - (void)overlayPanel:(id)panel didSelectTemplateAtIndex:(NSInteger)templateIndex;
 /// Called when the overlay dismisses itself (e.g. linger timer expired).
 - (void)overlayPanelDidDismiss:(id)panel;
+/// Called when the user clicks the subtitle bubble to use raw ASR text.
+- (void)overlayPanelDidRequestRawAsrFallback:(id)panel;
 @end
 
 /// Floating status pill displayed at bottom-center of screen, above the Dock.
@@ -25,8 +27,14 @@
 /// Update display text shown during non-recording phases.
 - (void)updateDisplayText:(NSString *)text;
 
+/// Enable clicking the main subtitle bubble to accept the raw ASR result.
+- (void)setRawAsrFallbackClickEnabled:(BOOL)enabled;
+
 /// Dismiss the overlay after a dynamic linger period based on text length.
 - (void)lingerAndDismiss;
+/// Dismiss the overlay after a caller-specified linger duration (seconds).
+/// Pass a non-positive value to fall back to the dynamic default behavior.
+- (void)lingerAndDismissWithDuration:(NSTimeInterval)duration;
 
 /// Dismiss the overlay immediately (with exit animation, no linger delay).
 - (void)dismissToIdle;
@@ -48,6 +56,9 @@
 /// Show template selection buttons. Templates is array of dicts with "name" and "shortcut" keys.
 /// Optional "source_index" is preserved and returned to the delegate on selection.
 - (void)showTemplateButtons:(NSArray<NSDictionary *> *)templates;
+/// Show template buttons with a caller-specified linger duration (seconds).
+/// Pass a non-positive value to use the default template linger duration.
+- (void)showTemplateButtons:(NSArray<NSDictionary *> *)templates lingerDuration:(NSTimeInterval)lingerDuration;
 
 /// Hide template buttons and return to normal display.
 - (void)hideTemplateButtons;

@@ -37,29 +37,48 @@ impl TranscriptAggregator {
     /// hide previously-finalized sentences. Merge them with the same
     /// overlap-trimming logic used for final segments.
     pub fn live_preview(&self) -> String {
-        if self.final_text.is_empty() {
+        let committed_text = if !self.final_text.is_empty() {
+            self.final_text.as_str()
+        } else if !self.definite_text.is_empty() {
+            self.definite_text.as_str()
+        } else {
+            ""
+        };
+
+        if committed_text.is_empty() {
             return self.interim_text.clone();
         }
         if self.interim_text.is_empty() {
-            return self.final_text.clone();
+            return committed_text.to_string();
         }
-        if self.interim_text.starts_with(&self.final_text) {
+        if self.interim_text.starts_with(committed_text) {
             return self.interim_text.clone();
         }
-        if self.final_text.starts_with(&self.interim_text) {
-            return self.final_text.clone();
+        if committed_text.starts_with(&self.interim_text) {
+            return committed_text.to_string();
         }
-        let overlap = longest_overlap(&self.final_text, &self.interim_text);
-        let mut out = self.final_text.clone();
+        let overlap = longest_overlap(committed_text, &self.interim_text);
+        let mut out = committed_text.to_string();
         out.push_str(&self.interim_text[overlap..]);
         out
     }
 
     /// Update with a definite result from two-pass recognition.
+    ///
+    /// A definite result is stable enough for live preview purposes even if it
+    /// is not the session's terminal `Final`. Merge it into the committed text
+    /// stream so later confirmed segments are not hidden behind an earlier
+    /// final segment.
     pub fn update_definite(&mut self, text: &str) {
         if !text.is_empty() {
             self.has_definite = true;
-            self.definite_text = text.to_string();
+            if self.has_final {
+                merge_committed_text(&mut self.final_text, text);
+                self.definite_text = self.final_text.clone();
+            } else {
+                self.definite_text = text.to_string();
+                self.interim_text.clear();
+            }
             log::info!("definite segment confirmed: {} chars", text.len());
         }
     }
@@ -72,24 +91,17 @@ impl TranscriptAggregator {
     /// the new content or replay earlier content. Neither pure replace nor
     /// pure append is correct — we merge by prefix / suffix-overlap instead.
     pub fn update_final(&mut self, text: &str) {
+        let had_final = self.has_final;
         self.has_final = true;
         if text.is_empty() {
             return;
         }
-        if self.final_text.is_empty() {
-            self.final_text = text.to_string();
-        } else if text.starts_with(&self.final_text) {
-            // New final is a refreshed full transcript of the same utterance.
-            self.final_text = text.to_string();
-        } else if self.final_text.starts_with(text) {
-            // Stale replay of earlier content — ignore.
-            return;
+        if had_final {
+            merge_committed_text(&mut self.final_text, text);
         } else {
-            // New segment: strip the longest overlap between the existing tail
-            // and the incoming head so we don't duplicate boundary characters.
-            let overlap = longest_overlap(&self.final_text, text);
-            self.final_text.push_str(&text[overlap..]);
+            self.final_text = text.to_string();
         }
+        self.definite_text = self.final_text.clone();
         // The segment this interim was tracking is now finalized; clear it so
         // the next segment's live preview starts clean.
         self.interim_text.clear();
@@ -135,12 +147,32 @@ impl Default for TranscriptAggregator {
     }
 }
 
+fn merge_committed_text(committed: &mut String, text: &str) {
+    if committed.is_empty() {
+        *committed = text.to_string();
+    } else if text.starts_with(committed.as_str()) {
+        // New result is a refreshed full transcript of the same utterance.
+        *committed = text.to_string();
+    } else if committed.starts_with(text) {
+        // Stale replay of earlier content — ignore.
+        return;
+    } else {
+        // New segment: strip the longest overlap between the existing tail
+        // and the incoming head so we don't duplicate boundary characters.
+        let overlap = longest_overlap(committed, text);
+        committed.push_str(&text[overlap..]);
+    }
+}
+
 /// Longest k such that `tail.ends_with(&head[..k])`, aligned to char boundaries.
 fn longest_overlap(tail: &str, head: &str) -> usize {
     let max = tail.len().min(head.len());
     let mut k = max;
     while k > 0 {
-        if head.is_char_boundary(k) && tail.is_char_boundary(tail.len() - k) && tail.as_bytes()[tail.len() - k..] == head.as_bytes()[..k] {
+        if head.is_char_boundary(k)
+            && tail.is_char_boundary(tail.len() - k)
+            && tail.as_bytes()[tail.len() - k..] == head.as_bytes()[..k]
+        {
             return k;
         }
         k -= 1;

@@ -2,6 +2,10 @@
 #import <Cocoa/Cocoa.h>
 #import <Carbon/Carbon.h>
 #import <objc/runtime.h>
+#import <stdarg.h>
+#import <stdlib.h>
+#import <string.h>
+#import <strings.h>
 
 typedef NS_ENUM(NSInteger, SPHotkeyState) {
     SPHotkeyStateIdle,
@@ -34,6 +38,11 @@ typedef NS_ENUM(NSInteger, SPHotkeyState) {
 - (BOOL)isRecordingState;
 - (BOOL)handleNumberKeyWithKeyCode:(NSInteger)keyCode;
 - (BOOL)consumeSuppressedNumberKeyForKeyCode:(NSInteger)keyCode isKeyUp:(BOOL)isKeyUp;
+- (BOOL)handleEnterKeyWithKeyCode:(NSInteger)keyCode;
+- (BOOL)installEventTap;
+- (void)installNSEventMonitors;
+- (void)removeEventTap;
+- (void)removeNSEventMonitors;
 - (void)handleTriggerDown;
 - (void)handleTriggerUp;
 
@@ -54,12 +63,36 @@ static NSInteger numberForKeyCode(NSInteger keyCode) {
     }
 }
 
+static BOOL isReturnKeyCode(NSInteger keyCode) {
+    return keyCode == 36 || keyCode == 76; // Return or keypad Enter
+}
+
 static const NSUInteger SPHotkeyRelevantModifierMask =
     NSEventModifierFlagCommand |
     NSEventModifierFlagOption |
     NSEventModifierFlagControl |
     NSEventModifierFlagShift |
     NSEventModifierFlagFunction;
+
+static BOOL SPHotkeyVerboseLoggingEnabled(void) {
+    static BOOL enabled = NO;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        const char *value = getenv("KOE_HOTKEY_DEBUG");
+        enabled = value && (strcmp(value, "1") == 0 || strcasecmp(value, "true") == 0);
+    });
+    return enabled;
+}
+
+static void SPHotkeyLog(NSString *format, ...) NS_FORMAT_FUNCTION(1, 2);
+static void SPHotkeyLog(NSString *format, ...) {
+    if (!SPHotkeyVerboseLoggingEnabled()) return;
+
+    va_list args;
+    va_start(args, format);
+    NSLogv(format, args);
+    va_end(args);
+}
 
 // C callback for CGEventTap
 static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
@@ -97,6 +130,10 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
             return event;
         }
 
+        if (type == kCGEventKeyDown && [monitor handleEnterKeyWithKeyCode:keyCode]) {
+            return NULL;
+        }
+
         // Forward number keys 1-9 if handler is set.
         // When handled, suppress both keyDown and keyUp so the typed digit
         // does not leak into the user's target app.
@@ -123,7 +160,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
              (type == kCGEventKeyUp && suppressedTriggerKey));
 
         if (handlesModifierOnlyTrigger || handlesKeyDownMatchedTrigger) {
-            NSLog(@"[Koe] Key event: type=%d keyCode=%ld", type, (long)keyCode);
+            SPHotkeyLog(@"[Koe] Key event: type=%d keyCode=%ld", type, (long)keyCode);
             BOOL isDown = (type == kCGEventKeyDown);
             if (isDown != monitor.triggerDown) {
                 monitor.triggerDown = isDown;
@@ -175,32 +212,33 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 }
 
 - (void)start {
-    if (self.globalMonitorRef) return;
+    if (self.running) return;
     self.running = YES;
 
-    __weak typeof(self) weakSelf = self;
+    // Prefer CGEventTap as the single hotkey input path. The previous
+    // implementation installed NSEvent monitors first and then added a tap,
+    // which made every global key event traverse two Obj-C paths and doubled
+    // the state-machine work while the app was idle.
+    if ([self installEventTap]) {
+        NSLog(@"[Koe] Hotkey monitor started via CGEventTap (trigger=%ld/%ld flag=0x%lx kind=%u threshold=%.0fms consume=%@)",
+              (long)self.targetKeyCode,
+              (long)self.altKeyCode,
+              (unsigned long)self.targetModifierFlag,
+              self.targetMatchKind,
+              self.holdThresholdMs,
+              self.canConsumeGlobalKeyEvents ? @"YES" : @"NO");
+    } else {
+        [self installNSEventMonitors];
+        NSLog(@"[Koe] Hotkey monitor started via NSEvent fallback (trigger=%ld/%ld flag=0x%lx kind=%u threshold=%.0fms)",
+              (long)self.targetKeyCode,
+              (long)self.altKeyCode,
+              (unsigned long)self.targetModifierFlag,
+              self.targetMatchKind,
+              self.holdThresholdMs);
+    }
+}
 
-    // Use both global + local NSEvent monitors for maximum coverage.
-    // Global monitor catches events when other apps are focused.
-    // Local monitor catches events when our app (menu bar) is focused.
-    self.globalMonitorRef = [NSEvent addGlobalMonitorForEventsMatchingMask:(NSEventMaskFlagsChanged | NSEventMaskKeyDown | NSEventMaskKeyUp)
-                                                                  handler:^(NSEvent *event) {
-        [weakSelf handleNSEvent:event];
-    }];
-
-    self.localMonitorRef = [NSEvent addLocalMonitorForEventsMatchingMask:(NSEventMaskFlagsChanged | NSEventMaskKeyDown | NSEventMaskKeyUp)
-                                                                handler:^NSEvent *(NSEvent *event) {
-        return [weakSelf handleNSEvent:event] ? nil : event;
-    }];
-
-    NSLog(@"[Koe] Hotkey monitor started via NSEvent monitors (trigger=%ld/%ld flag=0x%lx kind=%u threshold=%.0fms)",
-          (long)self.targetKeyCode,
-          (long)self.altKeyCode,
-          (unsigned long)self.targetModifierFlag,
-          self.targetMatchKind,
-          self.holdThresholdMs);
-
-    // Also try CGEventTap as additional source.
+- (BOOL)installEventTap {
     // Prefer active taps that can swallow handled number shortcuts so they do
     // not leak into the user's focused app. Some systems reject one tap
     // location but allow another, so try both before degrading to listen-only.
@@ -235,12 +273,26 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         CGEventTapEnable(self.eventTap, true);
         self.canConsumeGlobalKeyEvents = (attempts[i].options == kCGEventTapOptionDefault);
         NSLog(@"%@", attempts[i].logMessage);
-        break;
+        return YES;
     }
 
-    if (!self.eventTap) {
-        NSLog(@"[Koe] CGEventTap unavailable (ok, NSEvent monitors active)");
-    }
+    NSLog(@"[Koe] CGEventTap unavailable, using NSEvent monitors");
+    return NO;
+}
+
+- (void)installNSEventMonitors {
+    if (self.globalMonitorRef || self.localMonitorRef) return;
+
+    __weak typeof(self) weakSelf = self;
+    self.globalMonitorRef = [NSEvent addGlobalMonitorForEventsMatchingMask:(NSEventMaskFlagsChanged | NSEventMaskKeyDown | NSEventMaskKeyUp)
+                                                                  handler:^(NSEvent *event) {
+        [weakSelf handleNSEvent:event];
+    }];
+
+    self.localMonitorRef = [NSEvent addLocalMonitorForEventsMatchingMask:(NSEventMaskFlagsChanged | NSEventMaskKeyDown | NSEventMaskKeyUp)
+                                                                handler:^NSEvent *(NSEvent *event) {
+        return [weakSelf handleNSEvent:event] ? nil : event;
+    }];
 }
 
 - (void)setSuspended:(BOOL)suspended {
@@ -305,13 +357,30 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     return YES;
 }
 
+- (BOOL)handleEnterKeyWithKeyCode:(NSInteger)keyCode {
+    if (!self.enterKeyHandler || !self.canConsumeGlobalKeyEvents || !isReturnKeyCode(keyCode)) {
+        return NO;
+    }
+
+    BOOL (^handler)(void) = self.enterKeyHandler;
+    __block BOOL handled = NO;
+    if ([NSThread isMainThread]) {
+        handled = handler();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            handled = handler();
+        });
+    }
+    return handled;
+}
+
 - (BOOL)handleNSEvent:(NSEvent *)event {
     if (!self.running || self.suspended) return NO;
 
     if (event.type == NSEventTypeFlagsChanged) {
         NSUInteger flags = event.modifierFlags;
         NSInteger keyCode = event.keyCode;
-        NSLog(@"[Koe] NSEvent FlagsChanged: keyCode=%ld flags=0x%lx", (long)keyCode, (unsigned long)flags);
+        SPHotkeyLog(@"[Koe] NSEvent FlagsChanged: keyCode=%ld flags=0x%lx", (long)keyCode, (unsigned long)flags);
 
         if ([self isModifierOnlyMatchKind:self.targetMatchKind]) {
             BOOL keyNow = (flags & self.targetModifierFlag) != 0;
@@ -353,7 +422,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
         if (shouldHandleTriggerKeyEvent) {
             BOOL isDown = (event.type == NSEventTypeKeyDown);
-            NSLog(@"[Koe] NSEvent Key%@: keyCode=%ld", isDown ? @"Down" : @"Up", (long)keyCode);
+            SPHotkeyLog(@"[Koe] NSEvent Key%@: keyCode=%ld", isDown ? @"Down" : @"Up", (long)keyCode);
             if (isDown != self.triggerDown) {
                 self.triggerDown = isDown;
                 if (isDown) {
@@ -367,11 +436,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     return NO;
 }
 
-- (void)stop {
-    // Set running=NO first so that any in-flight callbacks or dispatched
-    // blocks see the flag before we tear down the monitors.
-    self.running = NO;
-
+- (void)removeNSEventMonitors {
     if (self.globalMonitorRef) {
         [NSEvent removeMonitor:self.globalMonitorRef];
         self.globalMonitorRef = nil;
@@ -380,6 +445,9 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         [NSEvent removeMonitor:self.localMonitorRef];
         self.localMonitorRef = nil;
     }
+}
+
+- (void)removeEventTap {
     if (self.eventTap) {
         CGEventTapEnable(self.eventTap, false);
         if (self.runLoopSource) {
@@ -390,6 +458,15 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         CFRelease(self.eventTap);
         self.eventTap = NULL;
     }
+}
+
+- (void)stop {
+    // Set running=NO first so that any in-flight callbacks or dispatched
+    // blocks see the flag before we tear down the monitors.
+    self.running = NO;
+
+    [self removeNSEventMonitors];
+    [self removeEventTap];
 
     [self cancelHoldTimer];
     self.state = SPHotkeyStateIdle;
@@ -403,8 +480,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     CGEventFlags flags = CGEventGetFlags(event);
     NSInteger keyCode = (NSInteger)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
 
-    // Log every flags-changed event for debugging
-    NSLog(@"[Koe] FlagsChanged: keyCode=%ld flags=0x%llx", (long)keyCode, (unsigned long long)flags);
+    SPHotkeyLog(@"[Koe] FlagsChanged: keyCode=%ld flags=0x%llx", (long)keyCode, (unsigned long long)flags);
 
     // Target key detection:
     // 1. Check if keyCode matches the configured trigger key
@@ -437,7 +513,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
 - (void)handleTriggerDown {
     if (!self.running) return;
-    NSLog(@"[Koe] Trigger DOWN (state=%ld)", (long)self.state);
+    SPHotkeyLog(@"[Koe] Trigger DOWN (state=%ld)", (long)self.state);
     switch (self.state) {
         case SPHotkeyStateIdle:
             self.state = SPHotkeyStatePending;
@@ -456,7 +532,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
 - (void)handleTriggerUp {
     if (!self.running) return;
-    NSLog(@"[Koe] Trigger UP (state=%ld)", (long)self.state);
+    SPHotkeyLog(@"[Koe] Trigger UP (state=%ld)", (long)self.state);
     switch (self.state) {
         case SPHotkeyStatePending:
             [self cancelHoldTimer];

@@ -199,6 +199,10 @@ static void bridge_on_rewrite_text_ready(uint64_t token, const char *text) {
     sp_core_session_cancel();
 }
 
+- (BOOL)acceptAsrResult {
+    return sp_core_accept_asr_result() == 0;
+}
+
 - (void)reloadConfig {
     sp_core_reload_config();
 }
