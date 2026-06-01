@@ -97,3 +97,9 @@
 "menu.edit.copy" = "拷贝";
 "menu.edit.paste" = "粘贴";
 "menu.edit.selectAll" = "全选";
+
+"error.asr.timeout" = "语音识别连接超时";
+"error.asr.service" = "语音识别服务出错";
+"error.asr.auth" = "语音识别认证失败";
+"error.audio" = "麦克风无法使用";
+"error.asr.unknown" = "语音识别出错";

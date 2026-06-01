@@ -1,0 +1,245 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test Rust core
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: host-tests
+
+      - name: Test Rust core
+        run: cargo test --manifest-path koe-core/Cargo.toml
+
+  build-arm64:
+    name: Build macOS arm64
+    needs: test
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-apple-darwin
+
+      - name: Install dependencies
+        run: brew install xcodegen cmake
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: KoeApp/build-ci/arm64/SourcePackages
+          key: spm-arm64-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Packages/**/Package.swift', 'Packages/**/Package.resolved') }}
+          restore-keys: |
+            spm-arm64-${{ runner.os }}-${{ runner.arch }}-
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Build CLI
+        run: cargo build --package koe-cli --release --target aarch64-apple-darwin
+
+      - name: Generate full Xcode project
+        run: xcodegen generate --spec project.yml
+        working-directory: KoeApp
+
+      - name: Build full app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project Koe.xcodeproj \
+            -scheme Koe \
+            -configuration Release \
+            -derivedDataPath build-ci/arm64 \
+            -clonedSourcePackagesDirPath build-ci/arm64/SourcePackages \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            build
+        working-directory: KoeApp
+
+      - name: Package full app
+        run: |
+          set -euo pipefail
+          APP_PATH="KoeApp/build-ci/arm64/Build/Products/Release/Koe.app"
+          CLI_PATH="target/aarch64-apple-darwin/release/koe"
+          test -d "$APP_PATH"
+          test -x "$CLI_PATH"
+          cp "$CLI_PATH" "$APP_PATH/Contents/MacOS/koe-cli"
+          chmod +x "$APP_PATH/Contents/MacOS/koe-cli"
+          codesign --force --deep --sign - "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" Koe-macOS-arm64.zip
+      - name: Generate lite Xcode project
+        run: xcodegen generate --spec project-lite.yml
+        working-directory: KoeApp
+
+      - name: Build lite app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project Koe.xcodeproj \
+            -scheme Koe-lite \
+            -configuration Release \
+            -derivedDataPath build-ci/arm64-lite \
+            -clonedSourcePackagesDirPath build-ci/arm64/SourcePackages \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            build
+        working-directory: KoeApp
+
+      - name: Package lite app
+        run: |
+          set -euo pipefail
+          APP_PATH="KoeApp/build-ci/arm64-lite/Build/Products/Release/Koe.app"
+          CLI_PATH="target/aarch64-apple-darwin/release/koe"
+          test -d "$APP_PATH"
+          test -x "$CLI_PATH"
+          cp "$CLI_PATH" "$APP_PATH/Contents/MacOS/koe-cli"
+          chmod +x "$APP_PATH/Contents/MacOS/koe-cli"
+          codesign --force --deep --sign - "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" Koe-macOS-arm64-lite.zip
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Koe-macOS-arm64
+          path: Koe-macOS-arm64.zip
+          if-no-files-found: error
+
+      - name: Upload lite build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Koe-macOS-arm64-lite
+          path: Koe-macOS-arm64-lite.zip
+          if-no-files-found: error
+
+  build-x86_64:
+    name: Build macOS x86_64
+    needs: test
+    runs-on: macos-26-intel
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: x86_64-apple-darwin
+
+      - name: Install dependencies
+        run: brew install xcodegen cmake
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: KoeApp/build-ci/x86_64/SourcePackages
+          key: spm-x86_64-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Packages/**/Package.swift', 'Packages/**/Package.resolved') }}
+          restore-keys: |
+            spm-x86_64-${{ runner.os }}-${{ runner.arch }}-
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project-x86.yml
+        working-directory: KoeApp
+
+      - name: Build CLI
+        run: cargo build --package koe-cli --release --target x86_64-apple-darwin
+
+      - name: Build app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project Koe.xcodeproj \
+            -scheme Koe-x86 \
+            -configuration Release \
+            -derivedDataPath build-ci/x86_64 \
+            -clonedSourcePackagesDirPath build-ci/x86_64/SourcePackages \
+            ARCHS=x86_64 \
+            ONLY_ACTIVE_ARCH=NO \
+            build
+        working-directory: KoeApp
+
+      - name: Package app
+        run: |
+          set -euo pipefail
+          APP_PATH="KoeApp/build-ci/x86_64/Build/Products/Release/Koe.app"
+          CLI_PATH="target/x86_64-apple-darwin/release/koe"
+          test -d "$APP_PATH"
+          test -x "$CLI_PATH"
+          cp "$CLI_PATH" "$APP_PATH/Contents/MacOS/koe-cli"
+          chmod +x "$APP_PATH/Contents/MacOS/koe-cli"
+          codesign --force --deep --sign - "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" Koe-macOS-x86_64.zip
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Koe-macOS-x86_64
+          path: Koe-macOS-x86_64.zip
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs:
+      - build-arm64
+      - build-x86_64
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

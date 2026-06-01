@@ -27,7 +27,7 @@
 //!         AsrEvent::Interim(text) => aggregator.update_interim(&text),
 //!         AsrEvent::Definite(text) => aggregator.update_definite(&text),
 //!         AsrEvent::Final(text) => { aggregator.update_final(&text); break; }
-//!         AsrEvent::Closed => break,
+//!         AsrEvent::Closed(_) => break,
 //!         _ => {}
 //!     }
 //! }
@@ -45,6 +45,7 @@ pub mod doubao;
 pub mod doubaoime;
 pub mod error;
 pub mod event;
+pub mod glm;
 #[cfg(feature = "mlx")]
 pub mod mlx;
 pub mod provider;
@@ -60,6 +61,7 @@ pub use doubao::DoubaoWsProvider;
 pub use doubaoime::DoubaoImeProvider;
 pub use error::AsrError;
 pub use event::AsrEvent;
+pub use glm::GlmAsrProvider;
 #[cfg(feature = "mlx")]
 pub use mlx::{MlxConfig, MlxProvider};
 pub use provider::AsrProvider;

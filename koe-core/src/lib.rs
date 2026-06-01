@@ -27,8 +27,8 @@ use crate::session::{Session, SessionState};
 #[cfg(feature = "apple-speech")]
 use koe_asr::{AppleSpeechConfig, AppleSpeechProvider};
 use koe_asr::{
-    AsrConfig, AsrEvent, AsrProvider, DoubaoImeProvider, DoubaoWsProvider, QwenAsrProvider,
-    TranscriptAggregator,
+    AsrConfig, AsrEvent, AsrProvider, DoubaoImeProvider, DoubaoWsProvider, GlmAsrProvider,
+    QwenAsrProvider, TranscriptAggregator,
 };
 #[cfg(feature = "mlx")]
 use koe_asr::{MlxConfig, MlxProvider};
@@ -364,6 +364,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
                 url: String::new(),
                 app_key: String::new(),
                 access_key: String::new(),
+                api_key: String::new(),
                 resource_id: String::new(),
                 sample_rate_hz: 16000,
                 connect_timeout_ms: ime.connect_timeout_ms,
@@ -373,8 +374,15 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
                 enable_punc: true,
                 enable_nonstream: false,
                 hotwords: Vec::new(),
-                language: Some("zh".to_string()),
+                language: None,
                 custom_headers,
+                end_window_size: None,
+                force_to_speech_time: None,
+                vad_segment_duration: None,
+                output_zh_variant: None,
+                enable_accelerate_text: false,
+                accelerate_score: None,
+                context_messages: Vec::new(),
             };
             (config, Box::new(DoubaoImeProvider::new()))
         }
@@ -384,6 +392,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
                 url: qwen.url.clone(),
                 app_key: qwen.model.clone(),
                 access_key: qwen.api_key.clone(),
+                api_key: String::new(),
                 resource_id: String::new(),
                 sample_rate_hz: 16000,
                 connect_timeout_ms: qwen.connect_timeout_ms,
@@ -395,8 +404,43 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
                 hotwords: Vec::new(),
                 language: Some(qwen.language.clone()),
                 custom_headers: qwen.headers.clone(),
+                end_window_size: None,
+                force_to_speech_time: None,
+                vad_segment_duration: None,
+                output_zh_variant: None,
+                enable_accelerate_text: false,
+                accelerate_score: None,
+                context_messages: Vec::new(),
             };
             (config, Box::new(QwenAsrProvider::new()))
+        }
+        "glm" => {
+            let glm = &cfg.asr.glm;
+            let config = AsrConfig {
+                url: glm.url.clone(),
+                app_key: glm.model.clone(),
+                access_key: glm.api_key.clone(),
+                api_key: glm.api_key.clone(),
+                resource_id: String::new(),
+                sample_rate_hz: 16000,
+                connect_timeout_ms: glm.connect_timeout_ms,
+                final_wait_timeout_ms: glm.final_wait_timeout_ms,
+                enable_ddc: false,
+                enable_itn: false,
+                enable_punc: false,
+                enable_nonstream: false,
+                hotwords: Vec::new(),
+                language: glm.prompt.clone(),
+                custom_headers: std::collections::HashMap::new(),
+                end_window_size: None,
+                force_to_speech_time: None,
+                vad_segment_duration: None,
+                output_zh_variant: None,
+                enable_accelerate_text: false,
+                accelerate_score: None,
+                context_messages: Vec::new(),
+            };
+            (config, Box::new(GlmAsrProvider::new()))
         }
         #[cfg(feature = "mlx")]
         "mlx" => {
@@ -445,6 +489,7 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
                 url: doubao.url.clone(),
                 app_key: doubao.app_key.clone(),
                 access_key: doubao.access_key.clone(),
+                api_key: doubao.api_key.clone(),
                 resource_id: doubao.resource_id.clone(),
                 sample_rate_hz: 16000,
                 connect_timeout_ms: doubao.connect_timeout_ms,
@@ -454,8 +499,15 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
                 enable_punc: doubao.enable_punc,
                 enable_nonstream: doubao.enable_nonstream,
                 hotwords: core.dictionary.clone(),
-                language: Some("zh".to_string()),
+                language: doubao.language.clone(),
                 custom_headers: doubao.headers.clone(),
+                end_window_size: doubao.end_window_size,
+                force_to_speech_time: doubao.force_to_speech_time,
+                vad_segment_duration: doubao.vad_segment_duration,
+                output_zh_variant: doubao.output_zh_variant.clone(),
+                enable_accelerate_text: doubao.enable_accelerate_text,
+                accelerate_score: doubao.accelerate_score,
+                context_messages: Vec::new(),
             };
             (config, Box::new(DoubaoWsProvider::new()))
         }
@@ -939,6 +991,7 @@ async fn run_session(
     let mut aggregator = TranscriptAggregator::new();
     let mut asr_done = false;
     let mut asr_error: Option<String> = None;
+    let mut finish_sent = false;
 
     // Stream audio frames until the channel is closed (session_end drops the sender)
     loop {
@@ -955,7 +1008,15 @@ async fn run_session(
                     None => {
                         // Channel closed: session ended
                         log::info!("[{session_id}] audio stream ended, sending finish");
-                        let _ = asr.finish_input().await;
+                        match asr.finish_input().await {
+                            Ok(()) => {
+                                finish_sent = true;
+                            }
+                            Err(e) => {
+                                log::error!("[{session_id}] ASR finish_input failed: {e}");
+                                asr_error = Some(format!("ASR finish failed: {e}"));
+                            }
+                        }
                         break;
                     }
                 }
@@ -976,7 +1037,10 @@ async fn run_session(
                         aggregator.update_final(&text);
                         invoke_interim_text(session_token, &aggregator.live_preview());
                     }
-                    Ok(AsrEvent::Closed) => {
+                    Ok(AsrEvent::Closed(reason)) => {
+                        let error = format_unexpected_asr_close_error(reason.as_deref());
+                        log::error!("[{session_id}] {error}");
+                        asr_error = Some(error);
                         asr_done = true;
                         break;
                     }
@@ -994,6 +1058,10 @@ async fn run_session(
                 }
             }
         }
+    }
+
+    if finish_sent {
+        log::debug!("[{session_id}] ASR finish signal sent");
     }
 
     // --- Check if cancelled ---
@@ -1261,7 +1329,12 @@ async fn wait_for_final(
                 aggregator.update_definite(&text);
                 invoke_interim_text(session_token, &aggregator.live_preview());
             }
-            Ok(AsrEvent::Closed) => return None,
+            Ok(AsrEvent::Closed(reason)) => {
+                if let Some(reason) = reason {
+                    log::info!("ASR connection closed after finish: {reason}");
+                }
+                return None;
+            }
             Ok(AsrEvent::Error(msg)) => {
                 log::error!("ASR error in wait_for_final: {msg}");
                 return Some(msg);
@@ -1272,6 +1345,13 @@ async fn wait_for_final(
                 return Some(format!("ASR error: {e}"));
             }
         }
+    }
+}
+
+fn format_unexpected_asr_close_error(reason: Option<&str>) -> String {
+    match reason.filter(|r| !r.trim().is_empty()) {
+        Some(reason) => format!("ASR connection closed unexpectedly by server: {reason}"),
+        None => "ASR connection closed unexpectedly by server".to_string(),
     }
 }
 
@@ -1484,6 +1564,28 @@ pub unsafe extern "C" fn sp_config_get(key_path: *const c_char) -> *mut c_char {
         Ok(value) => CString::new(value).unwrap_or_default().into_raw(),
         Err(e) => {
             log::error!("sp_config_get({key}): {e}");
+            CString::new("").unwrap().into_raw()
+        }
+    }
+}
+
+/// Get a config value by dot-separated key path, returned as JSON.
+/// Unlike [`sp_config_get`], this preserves non-scalar values (maps, sequences).
+/// Returns a heap-allocated C string that must be freed with sp_core_free_string().
+/// Returns an empty string if the key is not found.
+///
+/// # Safety
+/// `key_path` must be a valid null-terminated C string.
+#[no_mangle]
+pub unsafe extern "C" fn sp_config_get_json(key_path: *const c_char) -> *mut c_char {
+    let key = match unsafe { cstr_to_str(key_path) } {
+        Some(s) => s,
+        None => return CString::new("").unwrap().into_raw(),
+    };
+    match config::config_get_json(key) {
+        Ok(value) => CString::new(value).unwrap_or_default().into_raw(),
+        Err(e) => {
+            log::error!("sp_config_get_json({key}): {e}");
             CString::new("").unwrap().into_raw()
         }
     }
@@ -2110,7 +2212,9 @@ mod tests {
             Ok(())
         }
         async fn next_event(&mut self) -> koe_asr::error::Result<AsrEvent> {
-            self.events.pop_front().unwrap_or(Ok(AsrEvent::Closed))
+            self.events
+                .pop_front()
+                .unwrap_or(Ok(AsrEvent::Closed(None)))
         }
         async fn close(&mut self) -> koe_asr::error::Result<()> {
             Ok(())
@@ -2133,7 +2237,7 @@ mod tests {
 
     #[tokio::test]
     async fn wait_for_final_returns_none_on_closed() {
-        let mut mock = MockAsrProvider::new(vec![Ok(AsrEvent::Closed)]);
+        let mut mock = MockAsrProvider::new(vec![Ok(AsrEvent::Closed(None))]);
         let mut agg = TranscriptAggregator::new();
         let result = wait_for_final(0, &mut mock, &mut agg).await;
         assert!(result.is_none());
@@ -2209,6 +2313,14 @@ mod tests {
     #[test]
     fn no_error_no_text_does_not_fail() {
         assert!(!should_fail_session(&None, ""));
+    }
+
+    #[test]
+    fn unexpected_asr_close_error_includes_provider_reason() {
+        let error =
+            format_unexpected_asr_close_error(Some("code=1008, reason=\"quota exhausted\""));
+        assert!(error.contains("code=1008"));
+        assert!(error.contains("quota exhausted"));
     }
 
     #[test]

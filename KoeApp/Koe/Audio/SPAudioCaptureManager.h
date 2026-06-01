@@ -6,7 +6,6 @@
 /// length: byte length of the buffer
 /// timestamp: host time in nanoseconds
 typedef void (^SPAudioFrameCallback)(const void *buffer, uint32_t length, uint64_t timestamp);
-typedef void (^SPAudioCaptureStartCompletion)(BOOL started);
 
 @interface SPAudioCaptureManager : NSObject
 
@@ -19,11 +18,6 @@ typedef void (^SPAudioCaptureStartCompletion)(BOOL started);
 /// Audio format: 16kHz, mono, PCM Int16 LE, ~200ms per frame (3200 samples).
 /// Returns YES on success, NO if capture could not be started.
 - (BOOL)startCaptureWithAudioCallback:(SPAudioFrameCallback)callback;
-
-/// Start audio capture without blocking the caller.
-/// Completion is delivered on the main queue.
-- (void)startCaptureWithAudioCallback:(SPAudioFrameCallback)callback
-                           completion:(SPAudioCaptureStartCompletion)completion;
 
 /// Stop audio capture.
 - (void)stopCapture;

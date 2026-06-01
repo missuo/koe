@@ -44,7 +44,7 @@ pub struct PromptTemplate {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AsrSection {
-    /// Which ASR provider to use: "doubaoime" (default), "doubao", "qwen", "mlx", "sherpa-onnx", "apple-speech"
+    /// Which ASR provider to use: "doubaoime" (default), "doubao", "qwen", "glm", "mlx", "sherpa-onnx", "apple-speech"
     #[serde(default = "default_asr_provider")]
     pub provider: String,
 
@@ -71,6 +71,10 @@ pub struct AsrSection {
     /// Apple Speech local ASR configuration (macOS 26+)
     #[serde(rename = "apple-speech", default)]
     pub apple_speech: AppleSpeechAsrConfig,
+
+    /// GLM (Zhipu) ASR configuration
+    #[serde(default)]
+    pub glm: GlmAsrConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -131,6 +135,9 @@ impl Default for DoubaoImeAsrConfig {
 pub struct DoubaoAsrConfig {
     #[serde(default = "default_asr_url")]
     pub url: String,
+    /// X-Api-Key for new console auth (takes precedence over app_key + access_key)
+    #[serde(default)]
+    pub api_key: String,
     #[serde(default)]
     pub app_key: String,
     #[serde(default)]
@@ -149,6 +156,27 @@ pub struct DoubaoAsrConfig {
     pub enable_punc: bool,
     #[serde(default = "default_true")]
     pub enable_nonstream: bool,
+    /// Language code (e.g. "zh-CN", "en-US", "ja-JP"). Empty = auto (中英文 + 方言)
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Forced endpoint time in ms (min 200, server default 800)
+    #[serde(default, deserialize_with = "deserialize_option_u32_lenient")]
+    pub end_window_size: Option<u32>,
+    /// Audio must exceed this duration (ms) before endpoint detection kicks in
+    #[serde(default, deserialize_with = "deserialize_option_u32_lenient")]
+    pub force_to_speech_time: Option<u32>,
+    /// Max silence for semantic segmentation (ms, default 3000)
+    #[serde(default, deserialize_with = "deserialize_option_u32_lenient")]
+    pub vad_segment_duration: Option<u32>,
+    /// Output traditional Chinese: "traditional", "tw", or "hk"
+    #[serde(default, deserialize_with = "deserialize_option_string_lenient")]
+    pub output_zh_variant: Option<String>,
+    /// Enable first-character return acceleration
+    #[serde(default)]
+    pub enable_accelerate_text: bool,
+    /// Acceleration score (0-20, higher = faster first char)
+    #[serde(default, deserialize_with = "deserialize_option_u32_lenient")]
+    pub accelerate_score: Option<u32>,
     /// Custom HTTP headers for WebSocket connection
     #[serde(default)]
     pub headers: std::collections::HashMap<String, String>,
@@ -221,6 +249,36 @@ impl Default for AppleSpeechAsrConfig {
 
 fn default_apple_speech_locale() -> String {
     "zh_CN".to_string()
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct GlmAsrConfig {
+    #[serde(default = "default_glm_url")]
+    pub url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_glm_model")]
+    pub model: String,
+    /// ASR hint / prompt for guiding recognition
+    #[serde(default)]
+    pub prompt: Option<String>,
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout_ms: u64,
+    #[serde(default = "default_final_wait_timeout")]
+    pub final_wait_timeout_ms: u64,
+}
+
+impl Default for GlmAsrConfig {
+    fn default() -> Self {
+        Self {
+            url: default_glm_url(),
+            api_key: String::new(),
+            model: default_glm_model(),
+            prompt: None,
+            connect_timeout_ms: default_connect_timeout(),
+            final_wait_timeout_ms: default_final_wait_timeout(),
+        }
+    }
 }
 
 // ─── Other Sections (unchanged) ─────────────────────────────────────
@@ -718,6 +776,40 @@ fn default_sherpa_onnx_hotwords_score() -> f32 {
 fn default_sherpa_onnx_endpoint_silence() -> f32 {
     1.2
 }
+fn default_glm_url() -> String {
+    "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions".into()
+}
+fn default_glm_model() -> String {
+    "glm-asr-2512".into()
+}
+fn deserialize_option_u32_lenient<'de, D>(deserializer: D) -> std::result::Result<Option<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let val = serde_yaml::Value::deserialize(deserializer)?;
+    match val {
+        serde_yaml::Value::Null => Ok(None),
+        serde_yaml::Value::Number(n) => Ok(n.as_u64().map(|v| v as u32)),
+        serde_yaml::Value::String(s) if s.trim().is_empty() => Ok(None),
+        serde_yaml::Value::String(s) => s
+            .trim()
+            .parse::<u32>()
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+        _ => Ok(None),
+    }
+}
+
+fn deserialize_option_string_lenient<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let val = Option::<String>::deserialize(deserializer)?;
+    Ok(val.filter(|s| !s.trim().is_empty()))
+}
+
 fn default_asr_url() -> String {
     "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async".into()
 }
@@ -1043,6 +1135,7 @@ fn substitute_env_vars(input: &str) -> String {
 
 /// V1 ASR fields that indicate the old flat format.
 const V1_ASR_KEYS: &[&str] = &[
+    "api_key",
     "app_key",
     "access_key",
     "url",
@@ -1370,6 +1463,29 @@ pub fn config_get(key_path: &str) -> Result<String> {
     Ok(s)
 }
 
+/// Get a config value by dot-separated key path as JSON.
+/// Unlike [`config_get`], this preserves non-scalar values (maps, sequences).
+/// Returns an empty string if the key is not found.
+pub fn config_get_json(key_path: &str) -> Result<String> {
+    let path = config_path();
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| KoeError::Config(format!("read {}: {e}", path.display())))?;
+    let root: serde_yaml::Value = serde_yaml::from_str(&raw)
+        .map_err(|e| KoeError::Config(format!("parse {}: {e}", path.display())))?;
+
+    let mut current = &root;
+    for part in key_path.split('.') {
+        let key = serde_yaml::Value::String(part.to_string());
+        match current.as_mapping().and_then(|m| m.get(&key)) {
+            Some(v) => current = v,
+            None => return Ok(String::new()),
+        }
+    }
+
+    serde_json::to_string(current)
+        .map_err(|e| KoeError::Config(format!("encode {key_path} to JSON: {e}")))
+}
+
 /// Write serialized YAML to config.yaml atomically.
 pub fn atomic_write_config(data: &str) -> Result<()> {
     atomic_write_file(&config_path(), data)
@@ -1486,7 +1602,7 @@ const DEFAULT_CONFIG_YAML: &str = r#"# Koe - Voice Input Tool Configuration
 # ~/.koe/config.yaml
 
 asr:
-  # ASR provider: "doubaoime" (default, free), "doubao", "qwen", "apple-speech", "mlx", "sherpa-onnx"
+  # ASR provider: "doubaoime" (default, free), "doubao", "qwen", "glm", "apple-speech", "mlx", "sherpa-onnx"
   provider: "doubaoime"
 
   # DoubaoIME (豆包输入法) free ASR — no API key required, auto device registration
@@ -1498,8 +1614,9 @@ asr:
   # Doubao (豆包) Streaming ASR 2.0 (优化版双向流式)
   doubao:
     url: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
-    app_key: ""          # X-Api-App-Key (火山引擎 App ID)
-    access_key: ""       # X-Api-Access-Key (火山引擎 Access Token)
+    api_key: ""          # X-Api-Key (新版控制台, 优先使用)
+    app_key: ""          # X-Api-App-Key (旧版控制台 App ID)
+    access_key: ""       # X-Api-Access-Key (旧版控制台 Access Token)
     resource_id: "volc.seedasr.sauc.duration"
     connect_timeout_ms: 3000
     final_wait_timeout_ms: 5000
@@ -1507,6 +1624,13 @@ asr:
     enable_itn: true     # 文本规范化 (数字、日期等)
     enable_punc: true    # 自动标点
     enable_nonstream: true  # 二遍识别 (流式+非流式, 提升准确率)
+    # language: ""       # 语言代码: zh-CN, en-US, ja-JP 等, 空=自动(中英文+方言)
+    # end_window_size: 800       # 强制判停时间(ms), 最小200
+    # force_to_speech_time: 1000 # 音频超过该时长才判停(ms)
+    # vad_segment_duration: 3000 # 语义切句最大静音阈值(ms)
+    # output_zh_variant: ""      # 繁体输出: traditional/tw/hk
+    # enable_accelerate_text: false  # 首字返回加速
+    # accelerate_score: 0        # 加速程度 0-20
     # headers:           # custom HTTP headers for WebSocket connection
     #   X-Custom-Header: "value"
 
@@ -1520,6 +1644,12 @@ asr:
     final_wait_timeout_ms: 5000
     # headers:           # custom HTTP headers for WebSocket connection
     #   X-Custom-Header: "value"
+
+  # GLM (Zhipu/智谱) ASR — HTTP POST + SSE streaming
+  glm:
+    url: "https://open.bigmodel.cn/api/paas/v4/audio/transcriptions"
+    api_key: ""          # 从 https://bigmodel.cn/usercenter/proj-mgmt/apikeys 获取
+    model: "glm-asr-2512"  # glm-asr-2512 | glm-asr-1
 
   # Apple Speech local ASR (macOS 26+, zero-config, no model download)
   apple-speech:

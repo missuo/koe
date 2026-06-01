@@ -152,7 +152,7 @@ impl QwenAsrProvider {
             }
             "session.finished" => {
                 log::info!("[Qwen ASR] Session finished");
-                events.push(AsrEvent::Closed);
+                events.push(AsrEvent::Closed(None));
             }
             "error" => {
                 let error_msg = raw_json
@@ -285,9 +285,11 @@ impl AsrProvider for QwenAsrProvider {
             match event {
                 AsrEvent::Connected => break,
                 AsrEvent::Error(msg) => return Err(AsrError::Protocol(msg)),
-                AsrEvent::Closed => {
+                AsrEvent::Closed(reason) => {
                     return Err(AsrError::Connection(
-                        "connection closed before session.updated".into(),
+                        reason
+                            .map(|r| format!("connection closed before session.updated: {r}"))
+                            .unwrap_or_else(|| "connection closed before session.updated".into()),
                     ))
                 }
                 AsrEvent::Interim(_) | AsrEvent::Definite(_) | AsrEvent::Final(_) => {
@@ -340,7 +342,12 @@ impl AsrProvider for QwenAsrProvider {
                     }
                     log::debug!("[Qwen ASR] Skipping text frame with no parseable events");
                 }
-                Some(Ok(Message::Close(_))) => return Ok(AsrEvent::Closed),
+                Some(Ok(Message::Close(frame))) => {
+                    let reason = frame
+                        .as_ref()
+                        .map(|f| format!("code={}, reason={:?}", f.code, f.reason));
+                    return Ok(AsrEvent::Closed(reason));
+                }
                 Some(Ok(Message::Binary(data))) => {
                     log::debug!("[Qwen ASR] Skipping binary frame ({} bytes)", data.len());
                 }
@@ -348,7 +355,7 @@ impl AsrProvider for QwenAsrProvider {
                     log::debug!("[Qwen ASR] Skipping frame: {:?}", frame);
                 }
                 Some(Err(e)) => return Err(AsrError::Protocol(e.to_string())),
-                None => return Ok(AsrEvent::Closed),
+                None => return Ok(AsrEvent::Closed(Some("WebSocket stream ended".into()))),
             }
         }
     }

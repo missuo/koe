@@ -97,3 +97,9 @@
 "menu.edit.copy" = "Copy";
 "menu.edit.paste" = "Paste";
 "menu.edit.selectAll" = "Select All";
+
+"error.asr.timeout" = "ASR connection timed out";
+"error.asr.service" = "ASR service error";
+"error.asr.auth" = "ASR authentication failed";
+"error.audio" = "Microphone unavailable";
+"error.asr.unknown" = "ASR error";

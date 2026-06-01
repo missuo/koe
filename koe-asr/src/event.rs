@@ -12,6 +12,6 @@ pub enum AsrEvent {
     Final(String),
     /// Server-side error message.
     Error(String),
-    /// Connection closed.
-    Closed,
+    /// Connection closed, optionally with provider-specific close details.
+    Closed(Option<String>),
 }

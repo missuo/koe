@@ -1,6 +1,7 @@
 #import "SPHotkeyMonitor.h"
 #import <Cocoa/Cocoa.h>
 #import <Carbon/Carbon.h>
+#import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #import <stdarg.h>
 #import <stdlib.h>
@@ -29,6 +30,7 @@ typedef NS_ENUM(NSInteger, SPHotkeyState) {
 @property (nonatomic, assign, readwrite) BOOL canConsumeGlobalKeyEvents;
 @property (nonatomic, strong) NSMutableSet<NSNumber *> *suppressedNumberKeyCodes;
 @property (nonatomic, strong) NSMutableSet<NSNumber *> *suppressedHotkeyKeyCodes;
+@property (nonatomic, strong) dispatch_block_t pendingModifierReleaseBlock;
 
 - (void)handleFlagsChangedEvent:(CGEventRef)event;
 - (BOOL)handleNSEvent:(NSEvent *)event;
@@ -43,6 +45,9 @@ typedef NS_ENUM(NSInteger, SPHotkeyState) {
 - (void)installNSEventMonitors;
 - (void)removeEventTap;
 - (void)removeNSEventMonitors;
+- (NSUInteger)currentModifierFlags;
+- (void)cancelPendingModifierRelease;
+- (void)scheduleModifierRelease;
 - (void)handleTriggerDown;
 - (void)handleTriggerUp;
 
@@ -73,6 +78,7 @@ static const NSUInteger SPHotkeyRelevantModifierMask =
     NSEventModifierFlagControl |
     NSEventModifierFlagShift |
     NSEventModifierFlagFunction;
+static const CFTimeInterval SPModifierOnlyReleaseDebounceSeconds = 0.35;
 
 static BOOL SPHotkeyVerboseLoggingEnabled(void) {
     static BOOL enabled = NO;
@@ -302,6 +308,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         // suspended, so triggerDown and state may be out of sync with reality.
         // Without this, stale state can cause phantom key-up/down firings.
         [self cancelHoldTimer];
+        [self cancelPendingModifierRelease];
         self.triggerDown = NO;
         self.state = SPHotkeyStateIdle;
     }
@@ -374,6 +381,10 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     return handled;
 }
 
+- (NSUInteger)currentModifierFlags {
+    return [NSEvent modifierFlags] & SPHotkeyRelevantModifierMask;
+}
+
 - (BOOL)handleNSEvent:(NSEvent *)event {
     if (!self.running || self.suspended) return NO;
 
@@ -383,15 +394,16 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         SPHotkeyLog(@"[Koe] NSEvent FlagsChanged: keyCode=%ld flags=0x%lx", (long)keyCode, (unsigned long)flags);
 
         if ([self isModifierOnlyMatchKind:self.targetMatchKind]) {
-            BOOL keyNow = (flags & self.targetModifierFlag) != 0;
-            BOOL isReleaseFallback = self.triggerDown && !keyNow;
-            if (![self isTargetKeyCode:keyCode] && !isReleaseFallback) {
+            if (![self isTargetKeyCode:keyCode]) {
                 return NO;
             }
+            BOOL keyNow = (flags & self.targetModifierFlag) != 0;
             if (keyNow != self.triggerDown) {
                 self.triggerDown = keyNow;
                 if (keyNow) {
                     [self handleTriggerDown];
+                } else if ([self isModifierOnlyMatchKind:self.targetMatchKind]) {
+                    [self scheduleModifierRelease];
                 } else {
                     [self handleTriggerUp];
                 }
@@ -421,12 +433,19 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         }
 
         if (shouldHandleTriggerKeyEvent) {
-            BOOL isDown = (event.type == NSEventTypeKeyDown);
+            BOOL isDown;
+            if ([self isModifierOnlyMatchKind:self.targetMatchKind]) {
+                isDown = (flags & self.targetModifierFlag) != 0;
+            } else {
+                isDown = (event.type == NSEventTypeKeyDown);
+            }
             SPHotkeyLog(@"[Koe] NSEvent Key%@: keyCode=%ld", isDown ? @"Down" : @"Up", (long)keyCode);
             if (isDown != self.triggerDown) {
                 self.triggerDown = isDown;
                 if (isDown) {
                     [self handleTriggerDown];
+                } else if ([self isModifierOnlyMatchKind:self.targetMatchKind]) {
+                    [self scheduleModifierRelease];
                 } else {
                     [self handleTriggerUp];
                 }
@@ -469,6 +488,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     [self removeEventTap];
 
     [self cancelHoldTimer];
+    [self cancelPendingModifierRelease];
     self.state = SPHotkeyStateIdle;
     self.canConsumeGlobalKeyEvents = NO;
     [self.suppressedNumberKeyCodes removeAllObjects];
@@ -506,13 +526,38 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         });
     } else {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self handleTriggerUp];
+            [self scheduleModifierRelease];
         });
     }
 }
 
+- (void)cancelPendingModifierRelease {
+    if (self.pendingModifierReleaseBlock) {
+        dispatch_block_cancel(self.pendingModifierReleaseBlock);
+        self.pendingModifierReleaseBlock = nil;
+    }
+}
+
+- (void)scheduleModifierRelease {
+    [self cancelPendingModifierRelease];
+    dispatch_block_t block = dispatch_block_create(0, ^{
+        self.pendingModifierReleaseBlock = nil;
+        if (([self currentModifierFlags] & self.targetModifierFlag) != 0) {
+            self.triggerDown = YES;
+            return;
+        }
+        self.triggerDown = NO;
+        [self handleTriggerUp];
+    });
+    self.pendingModifierReleaseBlock = block;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(SPModifierOnlyReleaseDebounceSeconds * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(),
+                   block);
+}
+
 - (void)handleTriggerDown {
     if (!self.running) return;
+    [self cancelPendingModifierRelease];
     SPHotkeyLog(@"[Koe] Trigger DOWN (state=%ld)", (long)self.state);
     switch (self.state) {
         case SPHotkeyStateIdle:
@@ -576,14 +621,16 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 }
 
 - (void)holdTimerFired {
-    if (self.state == SPHotkeyStatePending) {
-        self.state = SPHotkeyStateRecordingHold;
-        [self.delegate hotkeyMonitorDidDetectHoldStart];
-    }
+    if (self.state != SPHotkeyStatePending) return;
+    if (self.triggerMode == 1) return;
+
+    self.state = SPHotkeyStateRecordingHold;
+    [self.delegate hotkeyMonitorDidDetectHoldStart];
 }
 
 - (void)resetToIdle {
     [self cancelHoldTimer];
+    [self cancelPendingModifierRelease];
     self.triggerDown = NO;
     self.state = SPHotkeyStateIdle;
     [self.suppressedNumberKeyCodes removeAllObjects];

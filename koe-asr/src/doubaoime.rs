@@ -554,6 +554,7 @@ async fn ensure_credentials(credential_path: &Path) -> Result<DeviceCredentials>
                 log::warn!("[DoubaoIME] Token refresh failed, falling back to cached token: {err}");
                 Ok(creds)
             } else {
+                log::error!("[DoubaoIME] Token fetch failed and no cached token available: {err}");
                 Err(err)
             }
         }
@@ -598,14 +599,18 @@ impl OpusEncoder {
 
 // ─── Session Config ────────────────────────────────────────────────
 
-fn build_session_config(device_id: &str) -> String {
-    let config = serde_json::json!({
+fn build_session_config(device_id: &str, config: &crate::AsrConfig) -> String {
+    // DoubaoIME's IME endpoint does not honor a `language` field — the official
+    // Doubao Android IME doesn't send one, and probing shows the server accepts
+    // any value (including garbage) without effect. So we only emit the fields
+    // the server actually uses.
+    let session = serde_json::json!({
         "audio_info": {
             "channel": 1,
             "format": "speech_opus",
             "sample_rate": SAMPLE_RATE
         },
-        "enable_punctuation": true,
+        "enable_punctuation": config.enable_punc,
         "enable_speech_rejection": false,
         "extra": {
             "app_name": "com.android.chrome",
@@ -616,7 +621,7 @@ fn build_session_config(device_id: &str) -> String {
             "input_mode": "tool"
         }
     });
-    serde_json::to_string(&config).unwrap_or_default()
+    serde_json::to_string(&session).unwrap_or_default()
 }
 
 // ─── Provider ──────────────────────────────────────────────────────
@@ -642,6 +647,8 @@ pub struct DoubaoImeProvider {
     /// without the `confirmed_text` prefix). Used to detect segment resets
     /// when the API suddenly returns much shorter text.
     last_segment_text: String,
+    /// Stored config for session start parameters.
+    asr_config: Option<crate::AsrConfig>,
 }
 
 impl DoubaoImeProvider {
@@ -658,6 +665,7 @@ impl DoubaoImeProvider {
             session_finished: false,
             confirmed_text: String::new(),
             last_segment_text: String::new(),
+            asr_config: None,
         }
     }
 
@@ -681,15 +689,32 @@ impl DoubaoImeProvider {
                 Some(Ok(Message::Binary(data))) => {
                     return proto::decode_asr_response(&data);
                 }
-                Some(Ok(Message::Close(_))) => {
-                    return Err(AsrError::Connection("connection closed".into()));
+                Some(Ok(Message::Close(frame))) => {
+                    let reason = frame
+                        .as_ref()
+                        .map(|f| format!(" (code={}, reason={:?})", f.code, f.reason))
+                        .unwrap_or_default();
+                    log::error!(
+                        "[DoubaoIME] WebSocket closed unexpectedly during handshake{reason}"
+                    );
+                    return Err(AsrError::Connection(format!("connection closed{reason}")));
                 }
                 Some(Ok(_)) => {
                     // Skip non-binary frames
                     continue;
                 }
-                Some(Err(e)) => return Err(AsrError::Protocol(e.to_string())),
-                None => return Err(AsrError::Connection("connection closed".into())),
+                Some(Err(e)) => {
+                    log::error!("[DoubaoIME] WebSocket error during handshake: {e}");
+                    return Err(AsrError::Protocol(format!(
+                        "WebSocket error during handshake: {e}"
+                    )));
+                }
+                None => {
+                    log::error!("[DoubaoIME] WebSocket stream ended unexpectedly during handshake");
+                    return Err(AsrError::Connection(
+                        "connection closed during handshake".into(),
+                    ));
+                }
             }
         }
     }
@@ -737,6 +762,7 @@ impl Default for DoubaoImeProvider {
 #[async_trait::async_trait]
 impl AsrProvider for DoubaoImeProvider {
     async fn connect(&mut self, config: &AsrConfig) -> Result<()> {
+        self.asr_config = Some(config.clone());
         let connect_timeout = Duration::from_millis(config.connect_timeout_ms);
 
         // Determine credential path
@@ -802,13 +828,24 @@ impl AsrProvider for DoubaoImeProvider {
             );
         }
 
+        let ws_base_url = ws_url.split('?').next().unwrap_or(&ws_url);
         let (ws_stream, _response) = timeout(connect_timeout, async {
-            connect_async(request)
-                .await
-                .map_err(|e| AsrError::Connection(e.to_string()))
+            connect_async(request).await.map_err(|e| {
+                AsrError::Connection(format!("WebSocket connect to {ws_base_url}: {e}"))
+            })
         })
         .await
-        .map_err(|_| AsrError::Connection("connection timed out".into()))??;
+        .map_err(|_| {
+            log::error!(
+                "[DoubaoIME] WebSocket connection timed out after {}ms (url={})",
+                connect_timeout.as_millis(),
+                ws_base_url
+            );
+            AsrError::Connection(format!(
+                "connection timed out after {}ms",
+                connect_timeout.as_millis()
+            ))
+        })??;
 
         self.ws = Some(ws_stream);
         log::info!("[DoubaoIME] WebSocket connected");
@@ -827,15 +864,20 @@ impl AsrProvider for DoubaoImeProvider {
 
         let resp = self.recv_response().await?;
         if resp.message_type == "TaskFailed" {
-            return Err(AsrError::Connection(format!(
-                "StartTask failed: {}",
+            log::error!(
+                "[DoubaoIME] StartTask failed: status_code={}, message={:?}",
+                resp.status_code,
                 resp.status_message
+            );
+            return Err(AsrError::Connection(format!(
+                "StartTask failed (code={}): {}",
+                resp.status_code, resp.status_message
             )));
         }
         log::info!("[DoubaoIME] TaskStarted");
 
         // StartSession
-        let session_config = build_session_config(&self.device_id);
+        let session_config = build_session_config(&self.device_id, self.asr_config.as_ref().unwrap());
         let start_session = proto::encode_asr_request(
             &self.token,
             "ASR",
@@ -849,9 +891,14 @@ impl AsrProvider for DoubaoImeProvider {
 
         let resp = self.recv_response().await?;
         if resp.message_type == "SessionFailed" {
-            return Err(AsrError::Connection(format!(
-                "StartSession failed: {}",
+            log::error!(
+                "[DoubaoIME] StartSession failed: status_code={}, message={:?}",
+                resp.status_code,
                 resp.status_message
+            );
+            return Err(AsrError::Connection(format!(
+                "StartSession failed (code={}): {}",
+                resp.status_code, resp.status_message
             )));
         }
         log::info!("[DoubaoIME] SessionStarted");
@@ -914,7 +961,7 @@ impl AsrProvider for DoubaoImeProvider {
 
     async fn next_event(&mut self) -> Result<AsrEvent> {
         if self.session_finished {
-            return Ok(AsrEvent::Closed);
+            return Ok(AsrEvent::Closed(None));
         }
 
         let ws = self
@@ -948,11 +995,20 @@ impl AsrProvider for DoubaoImeProvider {
                     }
                     "TaskFailed" | "SessionFailed" => {
                         self.session_finished = true;
-                        return Ok(AsrEvent::Error(resp.status_message));
+                        log::error!(
+                            "[DoubaoIME] {} during session: status_code={}, message={:?}",
+                            resp.message_type,
+                            resp.status_code,
+                            resp.status_message
+                        );
+                        return Ok(AsrEvent::Error(format!(
+                            "{} (code={}): {}",
+                            resp.message_type, resp.status_code, resp.status_message
+                        )));
                     }
                     "SessionFinished" => {
                         self.session_finished = true;
-                        return Ok(AsrEvent::Closed);
+                        return Ok(AsrEvent::Closed(None));
                     }
                     _ => {}
                 }
@@ -1069,15 +1125,25 @@ impl AsrProvider for DoubaoImeProvider {
                 // Interim
                 Ok(AsrEvent::Interim(full))
             }
-            Some(Ok(Message::Close(_))) => {
+            Some(Ok(Message::Close(frame))) => {
                 self.session_finished = true;
-                Ok(AsrEvent::Closed)
+                let reason = frame
+                    .as_ref()
+                    .map(|f| format!("code={}, reason={:?}", f.code, f.reason));
+                log::error!("[DoubaoIME] WebSocket closed during streaming: {reason:?}");
+                Ok(AsrEvent::Closed(reason))
             }
             Some(Ok(_)) => Ok(AsrEvent::Connected), // skip non-binary frames
-            Some(Err(e)) => Err(AsrError::Protocol(e.to_string())),
+            Some(Err(e)) => {
+                log::error!("[DoubaoIME] WebSocket error during streaming: {e}");
+                Err(AsrError::Protocol(format!(
+                    "WebSocket error during streaming: {e}"
+                )))
+            }
             None => {
                 self.session_finished = true;
-                Ok(AsrEvent::Closed)
+                log::error!("[DoubaoIME] WebSocket stream ended during streaming");
+                Ok(AsrEvent::Closed(Some("WebSocket stream ended".into())))
             }
         }
     }

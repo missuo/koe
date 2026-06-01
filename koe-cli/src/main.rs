@@ -314,6 +314,7 @@ async fn transcribe(
 
     let config = AsrConfig {
         custom_headers,
+        language: None,
         ..Default::default()
     };
 
@@ -366,7 +367,7 @@ async fn transcribe(
                 asr.close().await.ok();
                 return Err(format!("ASR error: {msg}"));
             }
-            AsrEvent::Closed => {
+            AsrEvent::Closed(_) => {
                 if show_interim {
                     eprintln!();
                 }
