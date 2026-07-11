@@ -2,6 +2,14 @@
 
 All notable user-facing changes to Koe are documented here.
 
+## Unreleased
+
+### Changed
+
+- Start prepared microphone hardware on the initial trigger-down and retain a
+  short hold-mode pre-roll, reducing Bluetooth headset activation delay without
+  keeping the microphone active while Koe is idle.
+
 ## 1.0.14 - 2026-04-09
 
 ### Added

@@ -251,7 +251,12 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
 - (void)setSuspended:(BOOL)suspended {
     _suspended = suspended;
-    if (!suspended) {
+    if (suspended && self.state == SPHotkeyStatePending) {
+        [self cancelHoldTimer];
+        self.triggerDown = NO;
+        self.state = SPHotkeyStateIdle;
+        [self.delegate hotkeyMonitorDidCancelTrigger];
+    } else if (!suspended) {
         // Reset state machine on unsuspend — key events were missed while
         // suspended, so triggerDown and state may be out of sync with reality.
         // Without this, stale state can cause phantom key-up/down firings.
@@ -410,12 +415,16 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         self.eventTap = NULL;
     }
 
+    BOOL hadPendingTrigger = self.state == SPHotkeyStatePending;
     [self cancelHoldTimer];
     [self cancelPendingModifierRelease];
     self.state = SPHotkeyStateIdle;
     self.canConsumeGlobalKeyEvents = NO;
     [self.suppressedNumberKeyCodes removeAllObjects];
     [self.suppressedHotkeyKeyCodes removeAllObjects];
+    if (hadPendingTrigger) {
+        [self.delegate hotkeyMonitorDidCancelTrigger];
+    }
     NSLog(@"[Koe] Hotkey monitor stopped");
 }
 
@@ -464,6 +473,16 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
 - (void)scheduleModifierRelease {
     [self cancelPendingModifierRelease];
+
+    // A pending gesture has not started a session yet. Resolve its physical
+    // key-up immediately so the 180ms hold timer cannot turn a short press into
+    // a recording during the longer modifier-release debounce window.
+    if (self.state == SPHotkeyStatePending) {
+        self.triggerDown = NO;
+        [self handleTriggerUp];
+        return;
+    }
+
     dispatch_block_t block = dispatch_block_create(0, ^{
         self.pendingModifierReleaseBlock = nil;
         if (([self currentModifierFlags] & self.targetModifierFlag) != 0) {
@@ -487,6 +506,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         case SPHotkeyStateIdle:
             self.state = SPHotkeyStatePending;
             [self startHoldTimer];
+            [self.delegate hotkeyMonitorDidBeginTrigger];
             break;
 
         case SPHotkeyStateRecordingToggle:
@@ -512,6 +532,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
             } else {
                 // Hold mode: short press is ignored
                 self.state = SPHotkeyStateIdle;
+                [self.delegate hotkeyMonitorDidCancelTrigger];
             }
             break;
 
@@ -553,12 +574,16 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 }
 
 - (void)resetToIdle {
+    BOOL hadPendingTrigger = self.state == SPHotkeyStatePending;
     [self cancelHoldTimer];
     [self cancelPendingModifierRelease];
     self.triggerDown = NO;
     self.state = SPHotkeyStateIdle;
     [self.suppressedNumberKeyCodes removeAllObjects];
     [self.suppressedHotkeyKeyCodes removeAllObjects];
+    if (hadPendingTrigger) {
+        [self.delegate hotkeyMonitorDidCancelTrigger];
+    }
 }
 
 @end

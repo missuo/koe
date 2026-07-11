@@ -2,6 +2,11 @@
 
 /// Delegate protocol for hotkey events
 @protocol SPHotkeyMonitorDelegate <NSObject>
+/// Fired immediately on trigger-down, before tap/hold classification.
+- (void)hotkeyMonitorDidBeginTrigger;
+/// Fired when an unconfirmed trigger is discarded (for example, a short tap
+/// while configured for hold mode).
+- (void)hotkeyMonitorDidCancelTrigger;
 - (void)hotkeyMonitorDidDetectHoldStart;
 - (void)hotkeyMonitorDidDetectHoldEnd;
 - (void)hotkeyMonitorDidDetectTapStart;

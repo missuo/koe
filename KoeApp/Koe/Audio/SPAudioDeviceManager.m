@@ -215,12 +215,12 @@ static OSStatus deviceListChangedCallback(AudioObjectID inObjectID,
 }
 
 - (void)startListening {
-    AudioObjectPropertyAddress address = {
+    AudioObjectPropertyAddress devicesAddress = {
         .mSelector = kAudioHardwarePropertyDevices,
         .mScope = kAudioObjectPropertyScopeGlobal,
         .mElement = kAudioObjectPropertyElementMain
     };
-    OSStatus status = AudioObjectAddPropertyListener(kAudioObjectSystemObject, &address,
+    OSStatus status = AudioObjectAddPropertyListener(kAudioObjectSystemObject, &devicesAddress,
                                                       deviceListChangedCallback,
                                                       (__bridge void *)self);
     if (status != noErr) {
@@ -228,15 +228,35 @@ static OSStatus deviceListChangedCallback(AudioObjectID inObjectID,
     } else {
         NSLog(@"[Koe] Audio device change listener registered");
     }
+
+    AudioObjectPropertyAddress defaultInputAddress = {
+        .mSelector = kAudioHardwarePropertyDefaultInputDevice,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain
+    };
+    status = AudioObjectAddPropertyListener(kAudioObjectSystemObject, &defaultInputAddress,
+                                             deviceListChangedCallback,
+                                             (__bridge void *)self);
+    if (status != noErr) {
+        NSLog(@"[Koe] Failed to register default input change listener: %d", (int)status);
+    }
 }
 
 - (void)stopListening {
-    AudioObjectPropertyAddress address = {
+    AudioObjectPropertyAddress devicesAddress = {
         .mSelector = kAudioHardwarePropertyDevices,
         .mScope = kAudioObjectPropertyScopeGlobal,
         .mElement = kAudioObjectPropertyElementMain
     };
-    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &address,
+    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &devicesAddress,
+                                       deviceListChangedCallback,
+                                       (__bridge void *)self);
+    AudioObjectPropertyAddress defaultInputAddress = {
+        .mSelector = kAudioHardwarePropertyDefaultInputDevice,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain
+    };
+    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &defaultInputAddress,
                                        deviceListChangedCallback,
                                        (__bridge void *)self);
 }
