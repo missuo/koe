@@ -877,7 +877,8 @@ impl AsrProvider for DoubaoImeProvider {
         log::info!("[DoubaoIME] TaskStarted");
 
         // StartSession
-        let session_config = build_session_config(&self.device_id, self.asr_config.as_ref().unwrap());
+        let session_config =
+            build_session_config(&self.device_id, self.asr_config.as_ref().unwrap());
         let start_session = proto::encode_asr_request(
             &self.token,
             "ASR",

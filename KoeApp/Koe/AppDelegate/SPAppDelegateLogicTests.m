@@ -50,9 +50,19 @@ static BOOL sessionStateAllowsConfigReloadForTest(NSString *state) {
 @property (nonatomic, assign) NSInteger holdEndCount;
 @property (nonatomic, assign) NSInteger tapStartCount;
 @property (nonatomic, assign) NSInteger tapEndCount;
+@property (nonatomic, assign) NSInteger triggerBeginCount;
+@property (nonatomic, assign) NSInteger triggerCancelCount;
 @end
 
 @implementation SPHotkeyMonitorTestDelegate
+
+- (void)hotkeyMonitorDidBeginTrigger {
+    self.triggerBeginCount += 1;
+}
+
+- (void)hotkeyMonitorDidCancelTrigger {
+    self.triggerCancelCount += 1;
+}
 
 - (void)hotkeyMonitorDidDetectHoldStart {
     self.holdStartCount += 1;
@@ -102,6 +112,48 @@ static void SPInstallCurrentModifierFlagsStub(void) {
 @end
 
 @implementation SPAppDelegateLogicTests
+
+- (void)testTriggerDownBeginsAudioBeforeHoldClassification {
+    SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
+    SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
+    [monitor setRunning:YES];
+    monitor.triggerMode = 0;
+
+    [monitor handleTriggerDown];
+
+    XCTAssertEqual(delegate.triggerBeginCount, 1);
+    XCTAssertEqual(delegate.holdStartCount, 0);
+}
+
+- (void)testIgnoredShortHoldGestureCancelsEarlyAudio {
+    SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
+    SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
+    [monitor setRunning:YES];
+    monitor.triggerMode = 0;
+
+    [monitor handleTriggerDown];
+    [monitor handleTriggerUp];
+
+    XCTAssertEqual(delegate.triggerBeginCount, 1);
+    XCTAssertEqual(delegate.triggerCancelCount, 1);
+    XCTAssertEqual(delegate.holdStartCount, 0);
+}
+
+- (void)testModifierShortReleaseCancelsBeforeHoldTimerFires {
+    SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
+    SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
+    [monitor setRunning:YES];
+    monitor.triggerMode = 0;
+
+    [monitor setTriggerDown:YES];
+    [monitor handleTriggerDown];
+    [monitor setTriggerDown:NO];
+    [monitor scheduleModifierRelease];
+    [monitor holdTimerFired];
+
+    XCTAssertEqual(delegate.triggerCancelCount, 1);
+    XCTAssertEqual(delegate.holdStartCount, 0);
+}
 
 - (void)testDefersReloadDuringActiveSession {
     SPAppDelegateSessionStateTestProxy *proxy = [SPAppDelegateSessionStateTestProxy new];

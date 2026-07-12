@@ -25,6 +25,11 @@
 @property (nonatomic, assign) BOOL showingError;
 @property (nonatomic, copy) NSString *lastAsrText;
 @property (nonatomic, strong) id numberKeyMonitor;
+@property (nonatomic, assign) BOOL audioPreparationEnabled;
+@property (nonatomic, assign) BOOL preCaptureInterruptedPendingSessionEnd;
+@property (nonatomic, assign) BOOL loggedFirstRecognitionForActivation;
+@property (nonatomic, assign) NSUInteger recognitionMetricActivationSequence;
+@property (nonatomic, assign) uint64_t recognitionMetricSessionToken;
 @end
 
 static BOOL sessionStateAllowsConfigReload(NSString *state) {
@@ -44,6 +49,12 @@ static BOOL configFlagEnabled(const char *keyPath) {
     BOOL enabled = strcmp(rawValue, "true") == 0;
     sp_core_free_string(rawValue);
     return enabled;
+}
+
+- (BOOL)prepareAudioQueueForResolvedDevice {
+    if (!self.audioPreparationEnabled) return NO;
+    [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
+    return [self.audioCaptureManager prepare];
 }
 
 - (BOOL)shouldShowPromptTemplateButtons {
@@ -217,6 +228,13 @@ static BOOL configFlagEnabled(const char *keyPath) {
                                                   settingsURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"]];
         }
 
+        // Build the queue after TCC confirms microphone access, but do not
+        // start hardware yet. The trigger-down path starts this prepared queue.
+        self.audioPreparationEnabled = YES;
+        if (![self prepareAudioQueueForResolvedDevice]) {
+            NSLog(@"[Koe] Initial audio queue preparation failed; trigger-down will retry");
+        }
+
         // Start hotkey monitor (let it try CGEventTap directly — the probe may give false negatives)
         self.hotkeyMonitor = [[SPHotkeyMonitor alloc] initWithDelegate:self];
 
@@ -236,7 +254,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     NSLog(@"[Koe] Application terminating...");
     self.quitting = YES;
     [self cancelPendingSessionEnd];
-    [self.audioCaptureManager stopCapture];
+    [self.audioCaptureManager shutdown];
     // Safety net: restore device mute even if capture state was already cleared.
     // Device mute is a persistent system property — leaving it on after quit is bad.
     [self.audioCaptureManager restoreMutedSystemOutputIfNeeded];
@@ -324,14 +342,41 @@ static BOOL configFlagEnabled(const char *keyPath) {
     }
 }
 
+- (void)hotkeyMonitorDidBeginTrigger {
+    // This callback occurs on the initial key-down, before the 180ms hold/tap
+    // decision. Starting the already-prepared queue here makes the microphone
+    // privacy indicator and Bluetooth route activation begin immediately.
+    if (self.pendingSessionEndBlock) {
+        [self cancelPendingSessionEnd];
+        self.preCaptureInterruptedPendingSessionEnd = YES;
+    }
+    [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
+    if (![self.audioCaptureManager beginPreCapture]) {
+        NSLog(@"[Koe] Trigger-down audio pre-capture failed; confirmed session will retry");
+    }
+}
+
+- (void)hotkeyMonitorDidCancelTrigger {
+    [self.audioCaptureManager cancelPreCapture];
+    if (self.preCaptureInterruptedPendingSessionEnd) {
+        self.preCaptureInterruptedPendingSessionEnd = NO;
+        [self.audioCaptureManager stopCapture];
+        [self.rustBridge endSession];
+    }
+}
+
 - (void)hotkeyMonitorDidDetectHoldStart {
     NSLog(@"[Koe] Hold start detected");
+    [self.audioCaptureManager logActivationMilestone:@"hold decision"];
     [self stopNumberKeyMonitoring];
     [self stopAnyKeyDismissMonitoring];
     [self.overlayPanel hideTemplateButtons];
     self.showingError = NO;
     [self cancelPendingSessionEnd];
-    [self.audioCaptureManager stopCapture];
+    self.preCaptureInterruptedPendingSessionEnd = NO;
+    if (self.audioCaptureManager.isCapturing && !self.audioCaptureManager.isPreCapturing) {
+        [self.audioCaptureManager stopCapture];
+    }
 
     self.recordingStartTime = [NSDate date];
     self.sessionState = @"recording_hold";
@@ -345,7 +390,10 @@ static BOOL configFlagEnabled(const char *keyPath) {
         [self handleAudioCaptureError:@"Failed to start session"];
         return;
     }
-    [self startAudioCaptureWithRetry];
+    self.loggedFirstRecognitionForActivation = NO;
+    self.recognitionMetricActivationSequence = self.audioCaptureManager.activationSequence;
+    self.recognitionMetricSessionToken = self.rustBridge.currentSessionToken;
+    [self startAudioCaptureWithRetryIncludingPreRoll:YES];
 }
 
 - (void)hotkeyMonitorDidDetectHoldEnd {
@@ -356,6 +404,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     // then stop mic and end session.  Use a cancellable block so a rapid
     // re-press can prevent the stale endSession from killing the new session.
     [self cancelPendingSessionEnd];
+    self.preCaptureInterruptedPendingSessionEnd = NO;
     dispatch_block_t block = dispatch_block_create(0, ^{
         self.pendingSessionEndBlock = nil;
         [self.audioCaptureManager stopCapture];
@@ -368,12 +417,16 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 - (void)hotkeyMonitorDidDetectTapStart {
     NSLog(@"[Koe] Tap start detected");
+    [self.audioCaptureManager logActivationMilestone:@"tap decision"];
     [self stopNumberKeyMonitoring];
     [self stopAnyKeyDismissMonitoring];
     [self.overlayPanel hideTemplateButtons];
     self.showingError = NO;
     [self cancelPendingSessionEnd];
-    [self.audioCaptureManager stopCapture];
+    self.preCaptureInterruptedPendingSessionEnd = NO;
+    if (self.audioCaptureManager.isCapturing && !self.audioCaptureManager.isPreCapturing) {
+        [self.audioCaptureManager stopCapture];
+    }
 
     self.recordingStartTime = [NSDate date];
     self.sessionState = @"recording_toggle";
@@ -386,7 +439,10 @@ static BOOL configFlagEnabled(const char *keyPath) {
         [self handleAudioCaptureError:@"Failed to start session"];
         return;
     }
-    [self startAudioCaptureWithRetry];
+    self.loggedFirstRecognitionForActivation = NO;
+    self.recognitionMetricActivationSequence = self.audioCaptureManager.activationSequence;
+    self.recognitionMetricSessionToken = self.rustBridge.currentSessionToken;
+    [self startAudioCaptureWithRetryIncludingPreRoll:NO];
 }
 
 - (void)hotkeyMonitorDidDetectTapEnd {
@@ -408,13 +464,13 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 #pragma mark - Audio Capture Start with Retry
 
-- (void)startAudioCaptureWithRetry {
+- (void)startAudioCaptureWithRetryIncludingPreRoll:(BOOL)includePreRoll {
     struct SPFeedbackConfig feedbackConfig = sp_core_get_feedback_config();
     self.audioCaptureManager.muteOutputEnabled = feedbackConfig.mute_system_output;
     [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
     BOOL started = [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
         [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
-    }];
+    } includePreRoll:includePreRoll];
     if (started) return;
 
     // After a device route change or fresh permission grant the audio
@@ -431,7 +487,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
         [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
         BOOL retryStarted = [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
             [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
-        }];
+        } includePreRoll:includePreRoll];
         if (!retryStarted) {
             [self handleAudioCaptureError:@"Failed to start audio capture"];
         } else {
@@ -444,6 +500,10 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 - (void)rustBridgeDidBecomeReady {
     NSLog(@"[Koe] Session ready (ASR connected)");
+    if (self.rustBridge.currentSessionToken == self.recognitionMetricSessionToken) {
+        [self.audioCaptureManager logActivationMilestone:@"ASR ready"
+                                   forActivationSequence:self.recognitionMetricActivationSequence];
+    }
 }
 
 - (void)rustBridgeDidReceiveFinalText:(NSString *)text {
@@ -583,11 +643,23 @@ static BOOL configFlagEnabled(const char *keyPath) {
 }
 
 - (void)rustBridgeDidReceiveInterimText:(NSString *)text {
+    if (!self.loggedFirstRecognitionForActivation && text.length > 0 &&
+        self.rustBridge.currentSessionToken == self.recognitionMetricSessionToken) {
+        self.loggedFirstRecognitionForActivation = YES;
+        [self.audioCaptureManager logActivationMilestone:@"first recognition result"
+                                   forActivationSequence:self.recognitionMetricActivationSequence];
+    }
     [self.overlayPanel updateInterimText:text];
 }
 
 - (void)rustBridgeDidReceiveAsrFinalText:(NSString *)text {
     NSLog(@"[Koe] ASR final text: %lu chars", (unsigned long)text.length);
+    if (!self.loggedFirstRecognitionForActivation && text.length > 0 &&
+        self.rustBridge.currentSessionToken == self.recognitionMetricSessionToken) {
+        self.loggedFirstRecognitionForActivation = YES;
+        [self.audioCaptureManager logActivationMilestone:@"first recognition result"
+                                   forActivationSequence:self.recognitionMetricActivationSequence];
+    }
     self.lastAsrText = text;
     [self.overlayPanel updateDisplayText:text];
 }
@@ -619,6 +691,8 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 - (void)handleAudioCaptureError:(NSString *)reason {
     NSLog(@"[Koe] Audio capture error: %@", reason);
+    [self.audioCaptureManager cancelPreCapture];
+    [self.audioCaptureManager stopCapture];
     self.sessionState = @"error";
     self.showingError = YES;
     [self.cuePlayer playError];
@@ -642,13 +716,25 @@ static BOOL configFlagEnabled(const char *keyPath) {
 #pragma mark - SPAudioDeviceManagerDelegate
 
 - (void)audioDeviceManagerDeviceListDidChange {
-    if (!self.audioCaptureManager.isCapturing) return;
+    if (!self.audioPreparationEnabled) return;
 
     // If the selected device disappeared mid-recording, stop gracefully
     if (![self.audioDeviceManager isSelectedDeviceAvailable]) {
         NSLog(@"[Koe] Selected audio device disappeared during recording");
-        [self.audioCaptureManager stopCapture];
-        [self handleAudioCaptureError:@"Audio device disconnected"];
+        BOOL wasCapturing = self.audioCaptureManager.isCapturing;
+        [self.audioCaptureManager shutdown];
+
+        if (wasCapturing) {
+            [self handleAudioCaptureError:@"Audio device disconnected"];
+        } else {
+            [self prepareAudioQueueForResolvedDevice];
+        }
+    } else if (!self.audioCaptureManager.isAudioQueueRunning) {
+        // Device-list and default-route changes can invalidate even an
+        // inactive AudioQueue. Rebuild so Bluetooth reconnects never retain a
+        // stale device and system-default selection resolves on next start.
+        [self.audioCaptureManager shutdown];
+        [self prepareAudioQueueForResolvedDevice];
     }
 }
 
@@ -680,7 +766,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     // Cancel any scheduled CGEventPost paste/undo blocks so they cannot leak
     // synthetic key events into whichever app gains focus after Koe quits.
     [self.pasteManager cancel];
-    [self.audioCaptureManager stopCapture];
+    [self.audioCaptureManager shutdown];
     [self.rustBridge cancelSession];
     [self.hotkeyMonitor stop];
     [NSApp terminate:nil];
@@ -688,6 +774,10 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 - (void)statusBarDidSelectAudioDeviceWithUID:(NSString *)uid {
     NSLog(@"[Koe] Audio input device changed: %@", uid ?: @"System Default");
+    if (self.audioCaptureManager.isCapturing) return;
+
+    [self.audioCaptureManager shutdown];
+    [self prepareAudioQueueForResolvedDevice];
 }
 
 - (void)statusBarDidSelectSetupWizard {
