@@ -237,6 +237,9 @@ static BOOL configFlagEnabled(const char *keyPath) {
     self.quitting = YES;
     [self cancelPendingSessionEnd];
     [self.audioCaptureManager stopCapture];
+    // Safety net: restore device mute even if capture state was already cleared.
+    // Device mute is a persistent system property — leaving it on after quit is bad.
+    [self.audioCaptureManager restoreMutedSystemOutputIfNeeded];
     if (self.configWatcher) {
         dispatch_source_cancel(self.configWatcher);
         self.configWatcher = nil;
@@ -406,6 +409,8 @@ static BOOL configFlagEnabled(const char *keyPath) {
 #pragma mark - Audio Capture Start with Retry
 
 - (void)startAudioCaptureWithRetry {
+    struct SPFeedbackConfig feedbackConfig = sp_core_get_feedback_config();
+    self.audioCaptureManager.muteOutputEnabled = feedbackConfig.mute_system_output;
     [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
     BOOL started = [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
         [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];
@@ -421,6 +426,8 @@ static BOOL configFlagEnabled(const char *keyPath) {
         if (token != self.rustBridge.currentSessionToken) return;
         if (self.quitting) return;
 
+        struct SPFeedbackConfig retryFeedback = sp_core_get_feedback_config();
+        self.audioCaptureManager.muteOutputEnabled = retryFeedback.mute_system_output;
         [self.audioCaptureManager setInputDeviceID:[self.audioDeviceManager resolvedDeviceID]];
         BOOL retryStarted = [self.audioCaptureManager startCaptureWithAudioCallback:^(const void *buffer, uint32_t length, uint64_t timestamp) {
             [self.rustBridge pushAudioFrame:buffer length:length timestamp:timestamp];

@@ -845,12 +845,14 @@ pub extern "C" fn sp_core_get_feedback_config() -> SPFeedbackConfig {
             start_sound: core.config.feedback.start_sound,
             stop_sound: core.config.feedback.stop_sound,
             error_sound: core.config.feedback.error_sound,
+            mute_system_output: core.config.feedback.mute_system_output,
         }
     } else {
         SPFeedbackConfig {
             start_sound: false,
             stop_sound: false,
             error_sound: false,
+            mute_system_output: false,
         }
     }
 }

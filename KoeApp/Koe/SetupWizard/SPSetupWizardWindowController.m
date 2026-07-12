@@ -717,6 +717,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property(nonatomic, strong) NSSwitch *startSoundCheckbox;
 @property(nonatomic, strong) NSSwitch *stopSoundCheckbox;
 @property(nonatomic, strong) NSSwitch *errorSoundCheckbox;
+@property(nonatomic, strong) NSSwitch *muteSystemOutputCheckbox;
 
 // Overlay
 @property(nonatomic, strong) NSPopUpButton *overlayFontFamilyPopup;
@@ -1986,10 +1987,23 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                      ]
                     width:cardWidth];
 
+  // ── Recording ──
+  self.muteSystemOutputCheckbox = [self settingsSwitchWithAction:NULL];
+  NSView *recordingCard =
+      [self cardWithTitle:@"Recording"
+                     rows:@[
+                       [self cardRowWithLabel:@"Mute system audio while recording"
+                                      control:self.muteSystemOutputCheckbox],
+                     ]
+                    width:cardWidth];
+
   // ── Layout ──
   CGFloat triggerH = triggerCard.frame.size.height;
   CGFloat feedbackH = feedbackCard.frame.size.height;
-  CGFloat contentHeight = topPad + triggerH + cardSpacing + feedbackH + 56;
+  CGFloat recordingH = recordingCard.frame.size.height;
+  CGFloat contentHeight =
+      topPad + triggerH + cardSpacing + feedbackH + cardSpacing + recordingH +
+      56;
 
   NSView *pane =
       [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
@@ -2013,6 +2027,14 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                                  ? feedbackCard.subviews[1]
                                  : feedbackCard.subviews[0];
   [self layoutCardRowControls:feedbackCardBody width:cardWidth];
+
+  y -= cardSpacing + recordingH;
+  recordingCard.frame = NSMakeRect(24, y, cardWidth, recordingH);
+  [pane addSubview:recordingCard];
+  NSView *recordingCardBody = recordingCard.subviews.count > 1
+                                  ? recordingCard.subviews[1]
+                                  : recordingCard.subviews[0];
+  [self layoutCardRowControls:recordingCardBody width:cardWidth];
 
   [self addButtonsToPane:pane atY:16 width:paneWidth];
 
@@ -4952,6 +4974,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     NSString *startSound = configGet(@"feedback.start_sound");
     NSString *stopSound = configGet(@"feedback.stop_sound");
     NSString *errorSound = configGet(@"feedback.error_sound");
+    NSString *muteSystemOutput = configGet(@"feedback.mute_system_output");
     self.startSoundCheckbox.state = [startSound isEqualToString:@"true"]
                                         ? NSControlStateValueOn
                                         : NSControlStateValueOff;
@@ -4961,6 +4984,9 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     self.errorSoundCheckbox.state = [errorSound isEqualToString:@"true"]
                                         ? NSControlStateValueOn
                                         : NSControlStateValueOff;
+    self.muteSystemOutputCheckbox.state =
+        [muteSystemOutput isEqualToString:@"true"] ? NSControlStateValueOn
+                                                   : NSControlStateValueOff;
   } else if ([identifier isEqualToString:kToolbarDictionary]) {
     NSString *dictPath = [dir stringByAppendingPathComponent:kDictionaryFile];
     NSString *dictContent =
@@ -5242,6 +5268,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     saveOk &= configSet(@"feedback.start_sound", startSound);
     saveOk &= configSet(@"feedback.stop_sound", stopSound);
     saveOk &= configSet(@"feedback.error_sound", errorSound);
+  }
+  if (self.muteSystemOutputCheckbox) {
+    NSString *muteSystemOutput =
+        (self.muteSystemOutputCheckbox.state == NSControlStateValueOn)
+            ? @"true"
+            : @"false";
+    saveOk &= configSet(@"feedback.mute_system_output", muteSystemOutput);
   }
   if (self.templatesEnabledSwitch) {
     NSString *templatesEnabled =

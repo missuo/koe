@@ -103,6 +103,7 @@ static void queueInputCallback(void *userData,
         _isCapturing = NO;
         _accumBuffer = [NSMutableData data];
         _pendingDeviceID = kAudioObjectUnknown;
+        _muteOutputEnabled = NO;
         _didMuteOutput = NO;
         _mutedOutputDevice = kAudioObjectUnknown;
     }
@@ -191,34 +192,42 @@ static void queueInputCallback(void *userData,
 
     self.audioQueue = queue;
     self.isCapturing = YES;
-    [self muteSystemOutput];
+    if (self.muteOutputEnabled) {
+        [self muteSystemOutput];
+    }
     NSLog(@"[Koe] Audio capture started (AudioQueue 16kHz mono Float32, 200ms frames)");
     return YES;
 }
 
 - (void)stopCapture {
-    if (!self.isCapturing) return;
+    if (self.isCapturing) {
+        self.isCapturing = NO;
 
-    self.isCapturing = NO;
-
-    // Flush remaining audio — prevents the last words from being cut off
-    // when the user releases the hotkey
-    @synchronized (self.accumBuffer) {
-        if (self.accumBuffer.length > 0 && self.audioCallback) {
-            NSLog(@"[Koe] Flushing remaining %lu bytes of audio",
-                  (unsigned long)self.accumBuffer.length);
-            uint64_t ts = mach_absolute_time();
-            self.audioCallback(self.accumBuffer.bytes, (uint32_t)self.accumBuffer.length, ts);
-            [self.accumBuffer setLength:0];
+        // Flush remaining audio — prevents the last words from being cut off
+        // when the user releases the hotkey
+        @synchronized (self.accumBuffer) {
+            if (self.accumBuffer.length > 0 && self.audioCallback) {
+                NSLog(@"[Koe] Flushing remaining %lu bytes of audio",
+                      (unsigned long)self.accumBuffer.length);
+                uint64_t ts = mach_absolute_time();
+                self.audioCallback(self.accumBuffer.bytes, (uint32_t)self.accumBuffer.length, ts);
+                [self.accumBuffer setLength:0];
+            }
         }
+
+        AudioQueueStop(self.audioQueue, true);
+        AudioQueueDispose(self.audioQueue, true);
+        self.audioQueue = NULL;
+        self.audioCallback = nil;
+        NSLog(@"[Koe] Audio capture stopped");
     }
 
-    AudioQueueStop(self.audioQueue, true);
-    AudioQueueDispose(self.audioQueue, true);
-    self.audioQueue = NULL;
-    self.audioCallback = nil;
+    // Always attempt restore so quit/crash-cleanup paths cannot leave output muted.
     [self restoreSystemOutput];
-    NSLog(@"[Koe] Audio capture stopped");
+}
+
+- (void)restoreMutedSystemOutputIfNeeded {
+    [self restoreSystemOutput];
 }
 
 #pragma mark - System Output Muting

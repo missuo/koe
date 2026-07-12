@@ -159,6 +159,7 @@ pub struct SPFeedbackConfig {
     pub start_sound: bool,
     pub stop_sound: bool,
     pub error_sound: bool,
+    pub mute_system_output: bool,
 }
 
 /// Hotkey configuration exposed to the Obj-C layer
