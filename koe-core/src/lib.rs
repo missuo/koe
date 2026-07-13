@@ -915,16 +915,20 @@ pub extern "C" fn sp_core_get_feedback_config() -> SPFeedbackConfig {
 
 /// Query current hotkey configuration.
 /// Returns key codes and modifier flags for the configured trigger key.
+fn hotkey_trigger_mode_code(trigger_mode: &str) -> u8 {
+    match trigger_mode {
+        "toggle" => 1,
+        "double_tap" => 2,
+        _ => 0,
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
     let global = CORE.lock().unwrap();
     if let Some(ref core) = *global {
         let params = core.config.hotkey.resolve();
-        let trigger_mode: u8 = if core.config.hotkey.trigger_mode == "toggle" {
-            1
-        } else {
-            0
-        };
+        let trigger_mode = hotkey_trigger_mode_code(&core.config.hotkey.trigger_mode);
         SPHotkeyConfig {
             trigger_key_code: params.key_code,
             trigger_alt_key_code: params.alt_key_code,
@@ -2162,6 +2166,14 @@ mod tests {
     use super::*;
     use koe_asr::{AsrError, AsrEvent, AsrProvider, TranscriptAggregator};
     use std::collections::VecDeque;
+
+    #[test]
+    fn hotkey_trigger_modes_map_to_native_codes() {
+        assert_eq!(hotkey_trigger_mode_code("hold"), 0);
+        assert_eq!(hotkey_trigger_mode_code("toggle"), 1);
+        assert_eq!(hotkey_trigger_mode_code("double_tap"), 2);
+        assert_eq!(hotkey_trigger_mode_code("unknown"), 0);
+    }
 
     /// Mock ASR provider that yields a pre-configured sequence of events.
     struct MockAsrProvider {

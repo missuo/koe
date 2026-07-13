@@ -18,13 +18,18 @@ typedef NS_ENUM(uint8_t, SPHotkeyMatchKind) {
     SPHotkeyMatchKindKeyDown = 1,
 };
 
+typedef NS_ENUM(uint8_t, SPHotkeyTriggerMode) {
+    SPHotkeyTriggerModeHold = 0,
+    SPHotkeyTriggerModeToggle = 1,
+    SPHotkeyTriggerModeDoubleTap = 2,
+};
+
 @interface SPHotkeyMonitor : NSObject
 
 /// Threshold in milliseconds to distinguish tap from hold. Default 180ms.
 @property (nonatomic, assign) NSTimeInterval holdThresholdMs;
 
-/// Trigger mode: 0 = hold (short press ignored), 1 = toggle (tap to start/stop).
-@property (nonatomic, assign) uint8_t triggerMode;
+@property (nonatomic, assign) SPHotkeyTriggerMode triggerMode;
 
 /// Primary key code to monitor (default: 63 = Fn/Globe)
 @property (nonatomic, assign) NSInteger targetKeyCode;
@@ -37,6 +42,10 @@ typedef NS_ENUM(uint8_t, SPHotkeyMatchKind) {
 
 /// How the trigger hotkey should be matched.
 @property (nonatomic, assign) uint8_t targetMatchKind;
+
+/// Maximum interval from the first press to the second press in double-tap
+/// mode. Defaults to the user's macOS double-click interval.
+@property (nonatomic, assign) NSTimeInterval doubleTapThresholdMs;
 
 - (instancetype)initWithDelegate:(id<SPHotkeyMonitorDelegate>)delegate;
 - (void)start;

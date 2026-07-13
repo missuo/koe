@@ -98,7 +98,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
                    self.hotkeyMonitor.altKeyCode != hotkeyConfig.trigger_alt_key_code ||
                    self.hotkeyMonitor.targetModifierFlag != hotkeyConfig.trigger_modifier_flag ||
                    self.hotkeyMonitor.targetMatchKind != hotkeyConfig.trigger_match_kind ||
-                   self.hotkeyMonitor.triggerMode != hotkeyConfig.trigger_mode;
+                   self.hotkeyMonitor.triggerMode != (SPHotkeyTriggerMode)hotkeyConfig.trigger_mode;
 
     if (!changed) return;
 
@@ -110,7 +110,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     self.hotkeyMonitor.altKeyCode = hotkeyConfig.trigger_alt_key_code;
     self.hotkeyMonitor.targetModifierFlag = hotkeyConfig.trigger_modifier_flag;
     self.hotkeyMonitor.targetMatchKind = hotkeyConfig.trigger_match_kind;
-    self.hotkeyMonitor.triggerMode = hotkeyConfig.trigger_mode;
+    self.hotkeyMonitor.triggerMode = (SPHotkeyTriggerMode)hotkeyConfig.trigger_mode;
 
     if (restartIfNeeded) {
         [self.hotkeyMonitor start];

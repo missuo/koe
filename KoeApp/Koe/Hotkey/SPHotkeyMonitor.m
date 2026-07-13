@@ -7,6 +7,9 @@
 typedef NS_ENUM(NSInteger, SPHotkeyState) {
     SPHotkeyStateIdle,
     SPHotkeyStatePending,        // Trigger key pressed, waiting to determine tap vs hold
+    SPHotkeyStateDoubleTapFirstDown, // First press is down; no audio starts yet
+    SPHotkeyStateDoubleTapWaiting,   // First tap completed; waiting for second press
+    SPHotkeyStateDoubleTapSecondDown, // Second press confirmed; pre-capture is active
     SPHotkeyStateRecordingHold,  // Confirmed hold, recording
     SPHotkeyStateRecordingToggle, // Confirmed tap, free-hands recording
     SPHotkeyStateConsumeKeyUp,   // Waiting to consume keyUp after toggle-stop
@@ -17,6 +20,7 @@ typedef NS_ENUM(NSInteger, SPHotkeyState) {
 @property (nonatomic, weak) id<SPHotkeyMonitorDelegate> delegate;
 @property (nonatomic, assign) SPHotkeyState state;
 @property (nonatomic, strong) NSTimer *holdTimer;
+@property (nonatomic, strong) NSTimer *doubleTapTimer;
 @property (nonatomic, assign) BOOL triggerDown;
 @property (nonatomic, assign) CFMachPortRef eventTap;
 @property (nonatomic, assign) CFRunLoopSourceRef runLoopSource;
@@ -34,11 +38,14 @@ typedef NS_ENUM(NSInteger, SPHotkeyState) {
 - (BOOL)isModifierOnlyMatchKind:(uint8_t)matchKind;
 - (BOOL)keyModifiers:(NSUInteger)flags matchRequiredModifiers:(NSUInteger)requiredFlags;
 - (BOOL)isRecordingState;
+- (BOOL)hasUnconfirmedPreCapture;
 - (BOOL)handleNumberKeyWithKeyCode:(NSInteger)keyCode;
 - (BOOL)consumeSuppressedNumberKeyForKeyCode:(NSInteger)keyCode isKeyUp:(BOOL)isKeyUp;
 - (NSUInteger)currentModifierFlags;
 - (void)cancelPendingModifierRelease;
 - (void)scheduleModifierRelease;
+- (void)cancelDoubleTapTimer;
+- (void)cancelDoubleTapCandidateForInterveningInput;
 - (void)handleTriggerDown;
 - (void)handleTriggerUp;
 
@@ -101,6 +108,14 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
         if (isRepeat) {
             return event;
+        }
+
+        // A Command tap that becomes a real keyboard shortcut (for example
+        // Command-C) must not count toward the double-tap gesture.
+        if (type == kCGEventKeyDown && ![monitor isTargetKeyCode:keyCode]) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [monitor cancelDoubleTapCandidateForInterveningInput];
+            });
         }
 
         // Forward number keys 1-9 if handler is set.
@@ -167,6 +182,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     if (self) {
         _delegate = delegate;
         _holdThresholdMs = 180.0;
+        _doubleTapThresholdMs = NSEvent.doubleClickInterval * 1000.0;
         _state = SPHotkeyStateIdle;
         _triggerDown = NO;
         _targetKeyCode = 63;       // kVK_Function (Fn)
@@ -251,16 +267,24 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
 - (void)setSuspended:(BOOL)suspended {
     _suspended = suspended;
-    if (suspended && self.state == SPHotkeyStatePending) {
+    if (suspended && [self hasUnconfirmedPreCapture]) {
         [self cancelHoldTimer];
+        [self cancelDoubleTapTimer];
         self.triggerDown = NO;
         self.state = SPHotkeyStateIdle;
         [self.delegate hotkeyMonitorDidCancelTrigger];
+    } else if (suspended &&
+               (self.state == SPHotkeyStateDoubleTapFirstDown ||
+                self.state == SPHotkeyStateDoubleTapWaiting)) {
+        [self cancelDoubleTapTimer];
+        self.triggerDown = NO;
+        self.state = SPHotkeyStateIdle;
     } else if (!suspended) {
         // Reset state machine on unsuspend — key events were missed while
         // suspended, so triggerDown and state may be out of sync with reality.
         // Without this, stale state can cause phantom key-up/down firings.
         [self cancelHoldTimer];
+        [self cancelDoubleTapTimer];
         [self cancelPendingModifierRelease];
         self.triggerDown = NO;
         self.state = SPHotkeyStateIdle;
@@ -282,6 +306,11 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
 - (BOOL)isRecordingState {
     return self.state == SPHotkeyStateRecordingHold || self.state == SPHotkeyStateRecordingToggle;
+}
+
+- (BOOL)hasUnconfirmedPreCapture {
+    return self.state == SPHotkeyStatePending ||
+           self.state == SPHotkeyStateDoubleTapSecondDown;
 }
 
 - (BOOL)handleNumberKeyWithKeyCode:(NSInteger)keyCode {
@@ -331,6 +360,9 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
         if ([self isModifierOnlyMatchKind:self.targetMatchKind]) {
             if (![self isTargetKeyCode:keyCode]) {
+                if (self.triggerDown && (flags & self.targetModifierFlag) != 0) {
+                    [self cancelDoubleTapCandidateForInterveningInput];
+                }
                 return NO;
             }
             BOOL keyNow = (flags & self.targetModifierFlag) != 0;
@@ -347,6 +379,9 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         }
     } else if (event.type == NSEventTypeKeyDown || event.type == NSEventTypeKeyUp) {
         NSInteger keyCode = event.keyCode;
+        if (event.type == NSEventTypeKeyDown && ![self isTargetKeyCode:keyCode]) {
+            [self cancelDoubleTapCandidateForInterveningInput];
+        }
         if ([self consumeSuppressedNumberKeyForKeyCode:keyCode isKeyUp:(event.type == NSEventTypeKeyUp)]) {
             return YES;
         }
@@ -415,8 +450,9 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         self.eventTap = NULL;
     }
 
-    BOOL hadPendingTrigger = self.state == SPHotkeyStatePending;
+    BOOL hadPendingTrigger = [self hasUnconfirmedPreCapture];
     [self cancelHoldTimer];
+    [self cancelDoubleTapTimer];
     [self cancelPendingModifierRelease];
     self.state = SPHotkeyStateIdle;
     self.canConsumeGlobalKeyEvents = NO;
@@ -443,6 +479,11 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         triggerNow = (flags & self.targetModifierFlag) != 0;
         BOOL isReleaseFallback = self.triggerDown && !triggerNow;
         if (![self isTargetKeyCode:keyCode] && !isReleaseFallback) {
+            if (self.triggerDown && triggerNow) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self cancelDoubleTapCandidateForInterveningInput];
+                });
+            }
             return;
         }
     } else {
@@ -474,10 +515,12 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 - (void)scheduleModifierRelease {
     [self cancelPendingModifierRelease];
 
-    // A pending gesture has not started a session yet. Resolve its physical
-    // key-up immediately so the 180ms hold timer cannot turn a short press into
-    // a recording during the longer modifier-release debounce window.
-    if (self.state == SPHotkeyStatePending) {
+    // An unconfirmed gesture must resolve key-up immediately. In particular,
+    // delaying double-tap releases by the modifier debounce window would make
+    // it impossible for the second press to arrive within the gesture window.
+    if (self.state == SPHotkeyStatePending ||
+        self.state == SPHotkeyStateDoubleTapFirstDown ||
+        self.state == SPHotkeyStateDoubleTapSecondDown) {
         self.triggerDown = NO;
         [self handleTriggerUp];
         return;
@@ -504,8 +547,19 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     NSLog(@"[Koe] Trigger DOWN (state=%ld)", (long)self.state);
     switch (self.state) {
         case SPHotkeyStateIdle:
-            self.state = SPHotkeyStatePending;
-            [self startHoldTimer];
+            if (self.triggerMode == SPHotkeyTriggerModeDoubleTap) {
+                self.state = SPHotkeyStateDoubleTapFirstDown;
+                [self startDoubleTapTimer];
+            } else {
+                self.state = SPHotkeyStatePending;
+                [self startHoldTimer];
+                [self.delegate hotkeyMonitorDidBeginTrigger];
+            }
+            break;
+
+        case SPHotkeyStateDoubleTapWaiting:
+            [self cancelDoubleTapTimer];
+            self.state = SPHotkeyStateDoubleTapSecondDown;
             [self.delegate hotkeyMonitorDidBeginTrigger];
             break;
 
@@ -525,7 +579,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     switch (self.state) {
         case SPHotkeyStatePending:
             [self cancelHoldTimer];
-            if (self.triggerMode == 1) {
+            if (self.triggerMode == SPHotkeyTriggerModeToggle) {
                 // Toggle mode: short press starts recording
                 self.state = SPHotkeyStateRecordingToggle;
                 [self.delegate hotkeyMonitorDidDetectTapStart];
@@ -534,6 +588,15 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
                 self.state = SPHotkeyStateIdle;
                 [self.delegate hotkeyMonitorDidCancelTrigger];
             }
+            break;
+
+        case SPHotkeyStateDoubleTapFirstDown:
+            self.state = SPHotkeyStateDoubleTapWaiting;
+            break;
+
+        case SPHotkeyStateDoubleTapSecondDown:
+            self.state = SPHotkeyStateRecordingToggle;
+            [self.delegate hotkeyMonitorDidDetectTapStart];
             break;
 
         case SPHotkeyStateRecordingHold:
@@ -565,17 +628,58 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     self.holdTimer = nil;
 }
 
+- (void)startDoubleTapTimer {
+    [self cancelDoubleTapTimer];
+    __weak typeof(self) weakSelf = self;
+    self.doubleTapTimer = [NSTimer scheduledTimerWithTimeInterval:(self.doubleTapThresholdMs / 1000.0)
+                                                          repeats:NO
+                                                            block:^(NSTimer *timer) {
+        [weakSelf doubleTapTimerFired];
+    }];
+}
+
+- (void)cancelDoubleTapTimer {
+    [self.doubleTapTimer invalidate];
+    self.doubleTapTimer = nil;
+}
+
+- (void)doubleTapTimerFired {
+    self.doubleTapTimer = nil;
+    if (self.state == SPHotkeyStateDoubleTapFirstDown ||
+        self.state == SPHotkeyStateDoubleTapWaiting) {
+        self.state = SPHotkeyStateIdle;
+    }
+}
+
+- (void)cancelDoubleTapCandidateForInterveningInput {
+    if (self.triggerMode != SPHotkeyTriggerModeDoubleTap) return;
+
+    BOOL hadPreCapture = self.state == SPHotkeyStateDoubleTapSecondDown;
+    if (self.state != SPHotkeyStateDoubleTapFirstDown &&
+        self.state != SPHotkeyStateDoubleTapWaiting &&
+        !hadPreCapture) {
+        return;
+    }
+
+    [self cancelDoubleTapTimer];
+    self.state = SPHotkeyStateIdle;
+    if (hadPreCapture) {
+        [self.delegate hotkeyMonitorDidCancelTrigger];
+    }
+}
+
 - (void)holdTimerFired {
     if (self.state != SPHotkeyStatePending) return;
-    if (self.triggerMode == 1) return;
+    if (self.triggerMode == SPHotkeyTriggerModeToggle) return;
 
     self.state = SPHotkeyStateRecordingHold;
     [self.delegate hotkeyMonitorDidDetectHoldStart];
 }
 
 - (void)resetToIdle {
-    BOOL hadPendingTrigger = self.state == SPHotkeyStatePending;
+    BOOL hadPendingTrigger = [self hasUnconfirmedPreCapture];
     [self cancelHoldTimer];
+    [self cancelDoubleTapTimer];
     [self cancelPendingModifierRelease];
     self.triggerDown = NO;
     self.state = SPHotkeyStateIdle;

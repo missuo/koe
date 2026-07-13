@@ -176,7 +176,7 @@ pub struct SPHotkeyConfig {
     pub trigger_modifier_flag: u64,
     /// Trigger hotkey match kind: 0 = modifier-only, 1 = keyDown/keyUp.
     pub trigger_match_kind: u8,
-    /// Trigger mode: 0 = hold (press-and-hold), 1 = toggle (tap to start/stop)
+    /// Trigger mode: 0 = hold, 1 = toggle, 2 = double-tap start/single-tap stop
     pub trigger_mode: u8,
 }
 

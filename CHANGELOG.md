@@ -9,6 +9,9 @@ All notable user-facing changes to Koe are documented here.
 - Added an optional setting to mute system audio while recording (off by default). When enabled, other apps' playback is silenced for the duration of the capture so it neither distracts the speaker nor bleeds into the microphone. The exact device is restored on stop (including app quit while recording), and a device the user had already muted is left untouched.
 - Release builds are now signed with a Developer ID certificate and notarized by Apple, so Gatekeeper opens them without warnings.
 - Switched in-app updates to Sparkle: updates now download, verify (EdDSA-signed), and install in place instead of opening a browser download.
+- Added a `double_tap` trigger mode that starts dictation on a double tap and
+  stops it on the next single tap, with protection against treating normal
+  Command-key shortcuts as trigger taps.
 
 ### Changed
 

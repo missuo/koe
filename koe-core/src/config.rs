@@ -561,7 +561,8 @@ pub struct HotkeySection {
     #[serde(default, deserialize_with = "deserialize_string_or_int")]
     pub cancel_key: String,
 
-    /// Trigger mode: "hold" (press-and-hold, default) or "toggle" (tap to start/stop).
+    /// Trigger mode: "hold" (press-and-hold, default), "toggle" (tap to
+    /// start/stop), or "double_tap" (double-tap to start, single-tap to stop).
     #[serde(default = "default_trigger_mode")]
     pub trigger_mode: String,
 }
@@ -1772,7 +1773,7 @@ hotkey:
   # 触发键：fn | left_option | right_option | left_command | right_command | left_control | right_control
   # 也可以填 macOS keycode 数字来使用非修饰键，例如 122 (F1)、120 (F2)、99 (F3) 等
   trigger_key: "fn"
-  trigger_mode: "hold"                 # hold | toggle
+  trigger_mode: "hold"                 # hold | toggle | double_tap
 
 overlay:
   font_family: "system"

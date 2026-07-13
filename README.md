@@ -25,7 +25,9 @@ Koe takes a different approach:
 
 ## How It Works
 
-1. Press the trigger shortcut (default: **Fn**, configurable). In `hold` mode you press-and-hold to record; in `toggle` mode you tap once to start and tap again to stop.
+1. Press the trigger shortcut (default: **Fn**, configurable). Use `hold` to
+   press-and-hold, `toggle` to tap once to start/stop, or `double_tap` to
+   double-tap to start and single-tap to stop.
 2. Audio streams in real-time to a cloud ASR service (Doubao/豆包 by ByteDance)
 3. A floating status pill shows real-time interim recognition text as you speak
 4. The overlay stays visible through ASR finalization and LLM correction, so you can see both the final transcript and corrected result
@@ -355,7 +357,7 @@ hotkey:
   # You can also use a raw macOS keycode number such as 96 (F5) or 122 (F1),
   # or a normalized key combo such as "command+shift+49".
   trigger_key: "fn"
-  trigger_mode: "hold"  # "hold" | "toggle"
+  trigger_mode: "hold"  # "hold" | "toggle" | "double_tap"
 ```
 
 | Option | Key | Notes |
@@ -373,6 +375,9 @@ single trigger shortcut model:
 
 - `hold`: press-and-hold to record, release to stop
 - `toggle`: tap once to start, tap again to stop
+- `double_tap`: double-tap to start, then tap once to stop. This is especially
+  useful with `left_command` or `right_command`; Command-key combinations such
+  as Command-C do not count toward the double-tap gesture.
 
 You can choose a named modifier key, a raw macOS keycode, or record a custom
 shortcut combination directly in the Controls pane. Recorded combinations are

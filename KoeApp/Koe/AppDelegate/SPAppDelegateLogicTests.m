@@ -86,6 +86,8 @@ static BOOL sessionStateAllowsConfigReloadForTest(NSString *state) {
 - (void)handleTriggerDown;
 - (void)handleTriggerUp;
 - (void)holdTimerFired;
+- (void)doubleTapTimerFired;
+- (void)cancelDoubleTapCandidateForInterveningInput;
 - (void)scheduleModifierRelease;
 - (void)setRunning:(BOOL)running;
 - (void)setTriggerDown:(BOOL)triggerDown;
@@ -117,7 +119,7 @@ static void SPInstallCurrentModifierFlagsStub(void) {
     SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
     SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
     [monitor setRunning:YES];
-    monitor.triggerMode = 0;
+    monitor.triggerMode = SPHotkeyTriggerModeHold;
 
     [monitor handleTriggerDown];
 
@@ -129,7 +131,7 @@ static void SPInstallCurrentModifierFlagsStub(void) {
     SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
     SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
     [monitor setRunning:YES];
-    monitor.triggerMode = 0;
+    monitor.triggerMode = SPHotkeyTriggerModeHold;
 
     [monitor handleTriggerDown];
     [monitor handleTriggerUp];
@@ -143,7 +145,7 @@ static void SPInstallCurrentModifierFlagsStub(void) {
     SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
     SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
     [monitor setRunning:YES];
-    monitor.triggerMode = 0;
+    monitor.triggerMode = SPHotkeyTriggerModeHold;
 
     [monitor setTriggerDown:YES];
     [monitor handleTriggerDown];
@@ -196,7 +198,7 @@ static void SPInstallCurrentModifierFlagsStub(void) {
     SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
     SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
     [monitor setRunning:YES];
-    monitor.triggerMode = 0;
+    monitor.triggerMode = SPHotkeyTriggerModeHold;
     SPStubbedCurrentModifierFlags = monitor.targetModifierFlag;
 
     [monitor setTriggerDown:YES];
@@ -222,7 +224,7 @@ static void SPInstallCurrentModifierFlagsStub(void) {
     SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
     SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
     [monitor setRunning:YES];
-    monitor.triggerMode = 0;
+    monitor.triggerMode = SPHotkeyTriggerModeHold;
     SPStubbedCurrentModifierFlags = 0;
 
     [monitor setTriggerDown:YES];
@@ -253,7 +255,7 @@ static void SPInstallCurrentModifierFlagsStub(void) {
     SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
     SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
     [monitor setRunning:YES];
-    monitor.triggerMode = 0;
+    monitor.triggerMode = SPHotkeyTriggerModeHold;
     SPStubbedCurrentModifierFlags = 0;
 
     [monitor setTriggerDown:YES];
@@ -277,7 +279,7 @@ static void SPInstallCurrentModifierFlagsStub(void) {
     SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
     SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
     [monitor setRunning:YES];
-    monitor.triggerMode = 1;
+    monitor.triggerMode = SPHotkeyTriggerModeToggle;
 
     [monitor setTriggerDown:YES];
     [monitor handleTriggerDown];
@@ -293,6 +295,84 @@ static void SPInstallCurrentModifierFlagsStub(void) {
     XCTAssertEqual(delegate.holdEndCount, 0);
     XCTAssertEqual(delegate.tapStartCount, 1);
     XCTAssertEqual(delegate.tapEndCount, 0);
+}
+
+- (void)testDoubleTapModeWaitsForSecondTapBeforeStarting {
+    SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
+    SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
+    [monitor setRunning:YES];
+    monitor.triggerMode = SPHotkeyTriggerModeDoubleTap;
+
+    [monitor handleTriggerDown];
+    [monitor handleTriggerUp];
+
+    XCTAssertEqual(delegate.triggerBeginCount, 0);
+    XCTAssertEqual(delegate.tapStartCount, 0);
+
+    [monitor doubleTapTimerFired];
+    [monitor handleTriggerDown];
+    [monitor handleTriggerUp];
+
+    XCTAssertEqual(delegate.triggerBeginCount, 0);
+    XCTAssertEqual(delegate.tapStartCount, 0);
+}
+
+- (void)testDoubleTapModeStartsOnSecondTapAndStopsOnNextSingleTap {
+    SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
+    SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
+    [monitor setRunning:YES];
+    monitor.triggerMode = SPHotkeyTriggerModeDoubleTap;
+
+    [monitor handleTriggerDown];
+    [monitor handleTriggerUp];
+    [monitor handleTriggerDown];
+
+    XCTAssertEqual(delegate.triggerBeginCount, 1);
+    XCTAssertEqual(delegate.tapStartCount, 0);
+
+    [monitor handleTriggerUp];
+
+    XCTAssertEqual(delegate.tapStartCount, 1);
+    XCTAssertEqual(delegate.tapEndCount, 0);
+
+    [monitor handleTriggerDown];
+    [monitor handleTriggerUp];
+
+    XCTAssertEqual(delegate.tapStartCount, 1);
+    XCTAssertEqual(delegate.tapEndCount, 1);
+}
+
+- (void)testDoubleTapModeCancelsCandidateWhenAnotherKeyIsPressed {
+    SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
+    SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
+    [monitor setRunning:YES];
+    monitor.triggerMode = SPHotkeyTriggerModeDoubleTap;
+
+    [monitor handleTriggerDown];
+    [monitor cancelDoubleTapCandidateForInterveningInput];
+    [monitor handleTriggerUp];
+    [monitor handleTriggerDown];
+    [monitor handleTriggerUp];
+
+    XCTAssertEqual(delegate.triggerBeginCount, 0);
+    XCTAssertEqual(delegate.triggerCancelCount, 0);
+    XCTAssertEqual(delegate.tapStartCount, 0);
+}
+
+- (void)testDoubleTapModeCancelsPreCaptureIfSecondTapBecomesShortcut {
+    SPHotkeyMonitorTestDelegate *delegate = [SPHotkeyMonitorTestDelegate new];
+    SPHotkeyMonitor *monitor = [[SPHotkeyMonitor alloc] initWithDelegate:delegate];
+    [monitor setRunning:YES];
+    monitor.triggerMode = SPHotkeyTriggerModeDoubleTap;
+
+    [monitor handleTriggerDown];
+    [monitor handleTriggerUp];
+    [monitor handleTriggerDown];
+    [monitor cancelDoubleTapCandidateForInterveningInput];
+
+    XCTAssertEqual(delegate.triggerBeginCount, 1);
+    XCTAssertEqual(delegate.triggerCancelCount, 1);
+    XCTAssertEqual(delegate.tapStartCount, 0);
 }
 
 @end

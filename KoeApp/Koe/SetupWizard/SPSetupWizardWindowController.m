@@ -2029,9 +2029,11 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   [self.triggerModePopup addItemsWithTitles:@[
     @"Hold (Press & Hold)",
     @"Toggle (Tap to Start/Stop)",
+    @"Double Tap to Start, Single Tap to Stop",
   ]];
   [self.triggerModePopup itemAtIndex:0].representedObject = @"hold";
   [self.triggerModePopup itemAtIndex:1].representedObject = @"toggle";
+  [self.triggerModePopup itemAtIndex:2].representedObject = @"double_tap";
 
   // ── Trigger card ──
   NSView *triggerCard =
@@ -5116,7 +5118,9 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
     // Load trigger mode
     NSString *triggerMode = configGet(@"hotkey.trigger_mode");
-    if ([triggerMode isEqualToString:@"toggle"]) {
+    if ([triggerMode isEqualToString:@"double_tap"]) {
+      [self.triggerModePopup selectItemAtIndex:2];
+    } else if ([triggerMode isEqualToString:@"toggle"]) {
       [self.triggerModePopup selectItemAtIndex:1];
     } else {
       [self.triggerModePopup selectItemAtIndex:0];
