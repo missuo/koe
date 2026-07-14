@@ -1893,6 +1893,13 @@ prompt_templates:
     enabled: true
     shortcut: 1
     system_prompt: "将用户的语音输入翻译为流畅的英文。保持原意，不要添加额外内容。只输出翻译结果。"
+
+# 实验性功能（默认全部关闭）
+experimental:
+  # ASR 识别完成后立即粘贴原始文本，LLM 修正返回后再原位替换。
+  # 仅在焦点、光标和已粘贴文本均未变化、且目标应用支持辅助功能文本替换时
+  # 才会替换；无法安全替换时保留原文，修正版进入剪贴板。
+  paste_asr_first: false
 "#;
 
 const DEFAULT_DICTIONARY_TXT: &str = r#"# Koe User Dictionary

@@ -6,6 +6,7 @@
 #import "SPRustBridge.h"
 #import "SPClipboardManager.h"
 #import "SPPasteManager.h"
+#import "SPInstantPasteGuard.h"
 #import "SPCuePlayer.h"
 #import "SPStatusBarManager.h"
 #import "SPOverlayPanel.h"
@@ -29,6 +30,11 @@
 @property (nonatomic, copy) NSString *pendingMetaAsrText;
 @property (nonatomic, copy) NSString *pendingMetaAsrProvider;
 @property (nonatomic, assign) BOOL pendingMetaLlmApplied;
+// Experimental paste-ASR-first flow (experimental.paste_asr_first):
+// raw text pasted at ASR-final time, awaiting the LLM correction.
+@property (nonatomic, strong) SPInstantPasteGuard *instantPasteGuard;
+@property (nonatomic, copy) NSString *instantPastedText;
+@property (nonatomic, assign) BOOL instantPasteKeepClipboard;
 @property (nonatomic, strong) id numberKeyMonitor;
 @property (nonatomic, assign) BOOL audioPreparationEnabled;
 @property (nonatomic, assign) BOOL preCaptureInterruptedPendingSessionEnd;
@@ -172,6 +178,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     self.cuePlayer = [[SPCuePlayer alloc] init];
     self.clipboardManager = [[SPClipboardManager alloc] init];
     self.pasteManager = [[SPPasteManager alloc] init];
+    self.instantPasteGuard = [[SPInstantPasteGuard alloc] init];
     self.audioCaptureManager = [[SPAudioCaptureManager alloc] init];
     self.audioDeviceManager = [[SPAudioDeviceManager alloc] init];
     self.audioDeviceManager.delegate = self;
@@ -510,6 +517,10 @@ static BOOL configFlagEnabled(const char *keyPath) {
 
 - (void)rustBridgeDidBecomeReady {
     NSLog(@"[Koe] Session ready (ASR connected)");
+    // A fresh session invalidates any instant-paste state from a session
+    // that was cancelled between its raw paste and its LLM correction.
+    self.instantPastedText = nil;
+    [self.instantPasteGuard reset];
     if (self.rustBridge.currentSessionToken == self.recognitionMetricSessionToken) {
         [self.audioCaptureManager logActivationMilestone:@"ASR ready"
                                    forActivationSequence:self.recognitionMetricActivationSequence];
@@ -535,6 +546,10 @@ static BOOL configFlagEnabled(const char *keyPath) {
     self.pendingMetaAsrText = nil;
     self.pendingMetaAsrProvider = nil;
     self.pendingMetaLlmApplied = NO;
+
+    // Experimental paste-ASR-first flow: the raw text is already in the
+    // target app; apply the correction in place instead of pasting again.
+    if ([self finishInstantPasteWithFinalText:text]) return;
 
     // Show corrected text in overlay before pasting
     [self.overlayPanel updateDisplayText:text];
@@ -574,6 +589,8 @@ static BOOL configFlagEnabled(const char *keyPath) {
     os_log_with_type(OS_LOG_DEFAULT, OS_LOG_TYPE_ERROR, "[Koe] Session error: %{public}@", message ?: @"unknown error");
     NSLog(@"[Koe] Session error: %@", message);
     self.showingError = YES;
+    self.instantPastedText = nil;
+    [self.instantPasteGuard reset];
     [self.cuePlayer playError];
     [self.audioCaptureManager stopCapture];
     [self.hotkeyMonitor resetToIdle];
@@ -679,6 +696,76 @@ static BOOL configFlagEnabled(const char *keyPath) {
     }
     self.lastAsrText = text;
     [self.overlayPanel updateDisplayText:text];
+
+    [self maybeInstantPasteAsrText:text];
+}
+
+#pragma mark - Experimental: paste ASR first, correct after LLM
+
+/// Paste the raw ASR text as soon as recognition finishes, so the user sees
+/// text land immediately instead of waiting out the LLM round-trip. The
+/// correction is applied in place later — only when SPInstantPasteGuard can
+/// prove the insertion is untouched — or delivered via clipboard otherwise.
+- (void)maybeInstantPasteAsrText:(NSString *)text {
+    if (self.quitting || text.length == 0) return;
+    if (!configFlagEnabled("experimental.paste_asr_first")) return;
+    if (![self.permissionManager isAccessibilityGranted]) return;
+
+    NSLog(@"[Koe] InstantPaste: pasting raw ASR text (%lu chars)", (unsigned long)text.length);
+    self.instantPastedText = text;
+    self.instantPasteKeepClipboard = NO;
+    [self.instantPasteGuard reset];
+
+    [self.clipboardManager backup];
+    [self.clipboardManager writeText:text];
+
+    uint64_t token = self.rustBridge.currentSessionToken;
+    [self.pasteManager simulatePasteWithCompletion:^{
+        // The correction may have replaced the clipboard content already
+        // (fast LLM); in that case the backup must not be restored over it.
+        if (!self.instantPasteKeepClipboard) {
+            [self.clipboardManager scheduleRestoreAfterDelay:1500];
+        }
+        if (token != self.rustBridge.currentSessionToken) return;
+        // Only capture when the correction hasn't been handled yet.
+        if ([text isEqualToString:self.instantPastedText]) {
+            [self.instantPasteGuard captureAfterPasteWithRawText:text];
+        }
+    }];
+}
+
+/// Handle the corrected text for a session whose raw ASR text was already
+/// pasted. Returns YES when the instant-paste flow consumed the final text.
+- (BOOL)finishInstantPasteWithFinalText:(NSString *)text {
+    if (!self.instantPastedText) return NO;
+    NSString *raw = self.instantPastedText;
+    self.instantPastedText = nil;
+
+    [self.overlayPanel updateDisplayText:text];
+
+    if ([text isEqualToString:raw]) {
+        // Nothing to correct; the raw paste already delivered the result.
+        [self.instantPasteGuard reset];
+        [self.statusBarManager updateState:@"idle"];
+        [self showPromptTemplateButtonsIfNeededOrDismiss];
+    } else if ([self.instantPasteGuard replaceWithCorrectedText:text]) {
+        [self.statusBarManager updateState:@"idle"];
+        [self showPromptTemplateButtonsIfNeededOrDismiss];
+    } else {
+        // Cannot prove in-place replacement is safe (focus moved, user
+        // typed, or the app lacks accessibility text support). Leave the
+        // raw text alone and deliver the correction via clipboard.
+        self.instantPasteKeepClipboard = YES;
+        [self.clipboardManager cancelPendingRestore];
+        [self.clipboardManager writeText:text];
+        [self.statusBarManager updateState:@"idle"];
+        [self.overlayPanel updateDisplayText:[text stringByAppendingString:@"  ✓ Copied"]];
+        [self.overlayPanel updateState:@"pasting"];
+        [self.overlayPanel lingerAndDismiss];
+    }
+
+    [self applyDeferredConfigReloadIfNeeded];
+    return YES;
 }
 
 - (void)rustBridgeDidReceiveSessionMetaWithAsrText:(NSString *)asrText
