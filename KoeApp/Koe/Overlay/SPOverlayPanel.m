@@ -1654,7 +1654,24 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
         [widths addObject:@(w)];
         totalW += w;
     }
-    totalW += (templates.count - 1) * btnSpacing + 2 * barPad;
+    CGFloat chromeW = (templates.count - 1) * btnSpacing + 2 * barPad;
+    totalW += chromeW;
+
+    // Clamp the bar to the screen: with many or long template names the
+    // natural width can exceed the display, pushing end buttons off-screen.
+    // Shrink all buttons proportionally and let their titles truncate.
+    NSScreen *screen = self.panel.screen ?: [NSScreen mainScreen];
+    CGFloat maxBarW = NSWidth(screen.visibleFrame) - 32.0;
+    if (totalW > maxBarW) {
+        CGFloat buttonsW = totalW - chromeW;
+        CGFloat scale = (maxBarW - chromeW) / buttonsW;
+        totalW = chromeW;
+        for (NSUInteger i = 0; i < widths.count; i++) {
+            CGFloat w = floor([widths[i] doubleValue] * scale);
+            widths[i] = @(fmax(w, 32.0));
+            totalW += [widths[i] doubleValue];
+        }
+    }
     CGFloat barH = btnH + 2 * barPad;
 
     // Create button bar panel (SPKeyablePanel to receive keyboard events)
@@ -1722,6 +1739,7 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
 
         SPTemplateButton *btn = [[SPTemplateButton alloc] initWithFrame:NSMakeRect(x, barPad, w, btnH)];
         btn.title = label;
+        ((NSButtonCell *)btn.cell).lineBreakMode = NSLineBreakByTruncatingTail;
         btn.bordered = NO;
         btn.focusRingType = NSFocusRingTypeNone;
         btn.wantsLayer = YES;
@@ -1737,9 +1755,12 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
         x += w + btnSpacing;
     }
 
-    // Position above the main pill with 6pt gap
+    // Position above the main pill with 6pt gap, kept fully on-screen
     NSRect pillFrame = self.panel.frame;
+    NSRect visible = screen.visibleFrame;
     CGFloat barX = NSMidX(pillFrame) - totalW / 2.0;
+    barX = fmax(NSMinX(visible) + 16.0,
+                fmin(barX, NSMaxX(visible) - 16.0 - totalW));
     CGFloat barY = NSMaxY(pillFrame) + 6;
     [bar setFrame:NSMakeRect(barX, barY, totalW, barH) display:YES];
 

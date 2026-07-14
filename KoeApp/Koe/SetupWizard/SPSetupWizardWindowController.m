@@ -563,6 +563,41 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 }
 @end
 
+// Status label whose text is set from many call sites at runtime (test
+// results, model download states). Keeps long text readable without any
+// caller cooperation: in growing mode it re-measures its wrapped height on
+// every text change (top edge fixed, grows downward); otherwise it stays a
+// single truncating line and mirrors the full text into its tooltip.
+@interface SPStatusLabel : NSTextField
+@property(nonatomic, assign) BOOL growsDownward;
+@end
+
+@implementation SPStatusLabel
+
+- (void)setStringValue:(NSString *)stringValue {
+  [super setStringValue:stringValue];
+  if (self.growsDownward) {
+    [self sp_remeasureHeight];
+  } else {
+    self.toolTip = stringValue.length > 0 ? stringValue : nil;
+  }
+}
+
+- (void)sp_remeasureHeight {
+  CGFloat width = self.frame.size.width;
+  if (width <= 0.0)
+    return;
+  NSTextFieldCell *cell = (NSTextFieldCell *)self.cell;
+  NSSize size = [cell cellSizeForBounds:NSMakeRect(0, 0, width, CGFLOAT_MAX)];
+  CGFloat height = ceil(MAX(18.0, size.height));
+  NSRect frame = self.frame;
+  frame.origin.y = NSMaxY(frame) - height;
+  frame.size.height = height;
+  self.frame = frame;
+}
+
+@end
+
 @interface SPTemplateRowView : NSTableRowView
 @end
 
@@ -675,6 +710,9 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property(nonatomic, strong) NSTextField *modelProgressSizeLabel;
 @property(nonatomic, strong) NSMutableSet<NSString *> *downloadingModels;
 @property(nonatomic, copy) NSString *pendingVerificationPath;
+// Pane height needed for the MiMo provider (derived from the measured
+// privacy-notice height at build time).
+@property(nonatomic, assign) CGFloat asrMimoRequiredPaneHeight;
 
 // Apple Speech locale selection
 @property(nonatomic, strong) NSPopUpButton *appleSpeechLocalePopup;
@@ -970,12 +1008,16 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
 - (NSView *)buildAsrPane {
   CGFloat paneWidth = 600;
-  CGFloat labelW = 130;
-  CGFloat fieldX = labelW + 24;
-  CGFloat fieldW = paneWidth - fieldX - 32;
-  CGFloat rowH = 32;
   CGFloat contentX = 24.0;
   CGFloat contentW = paneWidth - 48.0;
+  // Label column measured from the actual strings so no label ever clips.
+  CGFloat labelW = [self formLabelColumnWidthForTitles:@[
+    @"Provider", @"Auth Mode", @"API Key", @"App Key", @"Access Key",
+    @"Language", @"Model", @"Endpoint Silence", @"Output Variant"
+  ]];
+  CGFloat fieldX = contentX + labelW + 12;
+  CGFloat fieldW = paneWidth - fieldX - 32;
+  CGFloat rowH = 32;
 
   // Calculate content height (auth mode, test result, language, advanced
   // section)
@@ -1005,7 +1047,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
   // Provider
   [pane addSubview:[self formLabel:@"Provider"
-                             frame:NSMakeRect(16, y, labelW, 22)]];
+                             frame:NSMakeRect(contentX, y, labelW, 22)]];
   self.asrProviderPopup =
       [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 200, 26)
                                  pullsDown:NO];
@@ -1057,7 +1099,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
   // Auth Mode segmented control (Doubao only)
   NSTextField *authModeLabel = [self formLabel:@"Auth Mode"
-                                         frame:NSMakeRect(16, y, labelW, 22)];
+                                         frame:NSMakeRect(contentX, y, labelW, 22)];
   authModeLabel.tag = 1006;
   authModeLabel.hidden = YES;
   [pane addSubview:authModeLabel];
@@ -1093,7 +1135,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   self.asrApiKeyToggle.hidden = YES;
   [pane addSubview:self.asrApiKeyToggle];
   NSTextField *apiKeyLabel = [self formLabel:@"API Key"
-                                       frame:NSMakeRect(16, y, labelW, 22)];
+                                       frame:NSMakeRect(contentX, y, labelW, 22)];
   apiKeyLabel.tag = 1007;
   apiKeyLabel.hidden = YES;
   [pane addSubview:apiKeyLabel];
@@ -1103,13 +1145,13 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                                 placeholder:@"Volcengine App ID"];
   [pane addSubview:self.asrAppKeyField];
   NSTextField *appKeyLabel = [self formLabel:@"App Key"
-                                       frame:NSMakeRect(16, y, labelW, 22)];
+                                       frame:NSMakeRect(contentX, y, labelW, 22)];
   appKeyLabel.tag = 1001;
   [pane addSubview:appKeyLabel];
 
   // Apple Speech locale popup (same row as App Key / Model, tag 1005)
   NSTextField *localeLabel = [self formLabel:@"Language"
-                                       frame:NSMakeRect(16, y, labelW, 22)];
+                                       frame:NSMakeRect(contentX, y, labelW, 22)];
   localeLabel.tag = 1005;
   localeLabel.hidden = YES;
   [pane addSubview:localeLabel];
@@ -1125,7 +1167,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
   // Row 1: Model popup + Download button (Local providers, same row as App Key)
   self.localModelLabel = [self formLabel:@"Model"
-                                   frame:NSMakeRect(16, y, labelW, 22)];
+                                   frame:NSMakeRect(contentX, y, labelW, 22)];
   self.localModelLabel.tag = 1004;
   self.localModelLabel.hidden = YES;
   [pane addSubview:self.localModelLabel];
@@ -1154,8 +1196,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   y -= rowH;
 
   // Row 2: Status + Delete button
-  self.modelStatusLabel = [[NSTextField alloc]
+  self.modelStatusLabel = [[SPStatusLabel alloc]
       initWithFrame:NSMakeRect(fieldX, y + 2, fieldW - 32, 18)];
+  self.modelStatusLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+  self.modelStatusLabel.usesSingleLineMode = YES;
   self.modelStatusLabel.bezeled = NO;
   self.modelStatusLabel.drawsBackground = NO;
   self.modelStatusLabel.editable = NO;
@@ -1225,7 +1269,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   [pane addSubview:self.asrAccessKeyToggle];
   NSTextField *accessKeyLabel =
       [self formLabel:@"Access Key"
-                frame:NSMakeRect(16, accessKeyY, labelW, 22)];
+                frame:NSMakeRect(contentX, accessKeyY, labelW, 22)];
   accessKeyLabel.tag = 1002;
   [pane addSubview:accessKeyLabel];
 
@@ -1249,7 +1293,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   self.asrQwenApiKeyToggle.hidden = YES;
   [pane addSubview:self.asrQwenApiKeyToggle];
   NSTextField *qwenKeyLabel =
-      [self formLabel:@"API Key" frame:NSMakeRect(16, qwenY, labelW, 22)];
+      [self formLabel:@"API Key" frame:NSMakeRect(contentX, qwenY, labelW, 22)];
   qwenKeyLabel.tag = 1003;
   qwenKeyLabel.hidden = YES;
   [pane addSubview:qwenKeyLabel];
@@ -1274,7 +1318,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   self.asrGlmApiKeyToggle.hidden = YES;
   [pane addSubview:self.asrGlmApiKeyToggle];
   NSTextField *glmKeyLabel =
-      [self formLabel:@"API Key" frame:NSMakeRect(16, glmY, labelW, 22)];
+      [self formLabel:@"API Key" frame:NSMakeRect(contentX, glmY, labelW, 22)];
   glmKeyLabel.tag = 1010;
   glmKeyLabel.hidden = YES;
   [pane addSubview:glmKeyLabel];
@@ -1299,7 +1343,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   self.asrMimoApiKeyToggle.hidden = YES;
   [pane addSubview:self.asrMimoApiKeyToggle];
   NSTextField *mimoKeyLabel =
-      [self formLabel:@"API Key" frame:NSMakeRect(16, mimoY, labelW, 22)];
+      [self formLabel:@"API Key" frame:NSMakeRect(contentX, mimoY, labelW, 22)];
   mimoKeyLabel.tag = 1011;
   mimoKeyLabel.hidden = YES;
   [pane addSubview:mimoKeyLabel];
@@ -1309,18 +1353,30 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
       @"Xiaomi collecting your personal information and voice data. Koe "
       @"collects nothing and runs no servers. For any questions, please "
       @"contact the Xiaomi team."];
-  // Sits one row below the API key field, clear of the test result label.
-  mimoPrivacyNotice.frame =
-      NSMakeRect(fieldX, mimoY - rowH * 2 - 50, paneWidth - fieldX - 32, 44);
   mimoPrivacyNotice.font = [NSFont systemFontOfSize:11];
+  // Measured height so the full notice is always visible; sits below the
+  // test result row, growing downward.
+  CGFloat mimoNoticeW = paneWidth - fieldX - 32;
+  CGFloat mimoNoticeH = [self fittingHeightForWrappingLabel:mimoPrivacyNotice
+                                                      width:mimoNoticeW];
+  CGFloat mimoNoticeTop = mimoY - rowH * 2 - 6;
+  mimoPrivacyNotice.frame = NSMakeRect(fieldX, mimoNoticeTop - mimoNoticeH,
+                                       mimoNoticeW, mimoNoticeH);
   mimoPrivacyNotice.textColor = [NSColor systemOrangeColor];
   mimoPrivacyNotice.tag = 1011;
   mimoPrivacyNotice.hidden = YES;
   [pane addSubview:mimoPrivacyNotice];
+  // Pane height needed to show the whole notice (56pt bottom button area).
+  self.asrMimoRequiredPaneHeight =
+      ceil(contentHeight - NSMinY(mimoPrivacyNotice.frame)) + 56.0;
 
   // Test result label — positioned right after credential rows, before
-  // language.
-  self.asrTestResultLabel = [NSTextField wrappingLabelWithString:@""];
+  // language. Single truncating line (the Language row sits directly below);
+  // the full message is available via tooltip.
+  SPStatusLabel *asrTestResult = [SPStatusLabel labelWithString:@""];
+  asrTestResult.lineBreakMode = NSLineBreakByTruncatingTail;
+  asrTestResult.usesSingleLineMode = YES;
+  self.asrTestResultLabel = asrTestResult;
   CGFloat testResultY = accessKeyY - rowH;
   self.asrTestResultLabel.frame =
       NSMakeRect(fieldX, testResultY, paneWidth - fieldX - 24, 20);
@@ -1331,7 +1387,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   // Language popup (Doubao + DoubaoIME)
   CGFloat langY = testResultY - rowH;
   NSTextField *langLabel = [self formLabel:@"Language"
-                                     frame:NSMakeRect(16, langY, labelW, 22)];
+                                     frame:NSMakeRect(contentX, langY, labelW, 22)];
   langLabel.tag = 1008;
   langLabel.hidden = YES;
   [pane addSubview:langLabel];
@@ -1384,7 +1440,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   // Advanced row 1: Endpoint Silence
   CGFloat advRowY = rowH * 2;
   NSTextField *endLabel = [self formLabel:@"Endpoint Silence"
-                                    frame:NSMakeRect(16, advRowY, labelW, 22)];
+                                    frame:NSMakeRect(contentX, advRowY, labelW, 22)];
   [self.asrAdvancedContainer addSubview:endLabel];
   self.asrEndWindowField =
       [self formTextField:NSMakeRect(fieldX, advRowY, 80, 22)
@@ -1393,6 +1449,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   NSTextField *endUnit =
       [self formLabel:@"ms (min 200)"
                 frame:NSMakeRect(fieldX + 86, advRowY, 100, 22)];
+  endUnit.alignment = NSTextAlignmentLeft;
   endUnit.font = [NSFont systemFontOfSize:11];
   endUnit.textColor = [NSColor secondaryLabelColor];
   [self.asrAdvancedContainer addSubview:endUnit];
@@ -1401,7 +1458,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   advRowY -= rowH;
   NSTextField *variantLabel =
       [self formLabel:@"Output Variant"
-                frame:NSMakeRect(16, advRowY, labelW, 22)];
+                frame:NSMakeRect(contentX, advRowY, labelW, 22)];
   [self.asrAdvancedContainer addSubview:variantLabel];
   self.asrOutputVariantPopup = [[NSPopUpButton alloc]
       initWithFrame:NSMakeRect(fieldX, advRowY - 2, 160, 26)
@@ -1433,7 +1490,11 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   // which stays pinned to the bottom. This lets `resizeAsrPaneToCurrentProvider`
   // shrink/grow the pane height per provider without orphaning controls.
   for (NSView *sub in pane.subviews) {
-    if (NSMinY(sub.frame) < 50) {
+    if (sub == self.asrAdvancedContainer) {
+      // Part of the form stack — must stay directly below its disclosure
+      // checkbox even though it builds low enough to look bottom-pinned.
+      sub.autoresizingMask = NSViewMinYMargin;
+    } else if (NSMinY(sub.frame) < 50) {
       sub.autoresizingMask = NSViewMaxYMargin;
     } else {
       sub.autoresizingMask = NSViewMinYMargin;
@@ -1465,8 +1526,12 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   CGFloat sidebarW = 160.0;
   CGFloat sidebarButtonsH = 28.0;
 
-  // Detail form geometry (right of sidebar)
-  CGFloat labelW = 96;
+  // Detail form geometry (right of sidebar). The label column is measured
+  // from the actual strings so no label ever clips.
+  CGFloat labelW = [self formLabelColumnWidthForTitles:@[
+    @"Name", @"Type", @"Base URL", @"API Key", @"Model", @"Model List",
+    @"API Path", @"Token Parameter"
+  ]];
   CGFloat detailLabelX = sidebarX + sidebarW + 16;
   CGFloat fieldX = detailLabelX + labelW + 8;
   CGFloat fieldW = paneWidth - fieldX - 24;
@@ -1706,7 +1771,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   tokenParamLabel.tag = 2006;
   [pane addSubview:tokenParamLabel];
   self.maxTokenParamPopup = [[NSPopUpButton alloc]
-      initWithFrame:NSMakeRect(fieldX, detailY - 2, 240, 26)
+      initWithFrame:NSMakeRect(fieldX, detailY - 2, MIN(240.0, fieldW), 26)
           pullsDown:NO];
   self.maxTokenParamPopup.tag = 2006;
   [self.maxTokenParamPopup addItemsWithTitles:@[
@@ -1717,16 +1782,18 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
       @"max_completion_tokens";
   [self.maxTokenParamPopup itemAtIndex:1].representedObject = @"max_tokens";
   [pane addSubview:self.maxTokenParamPopup];
-  detailY -= 42;
 
-  // Hint text
+  // Hint text — measured so the full text is always visible
   NSTextField *tokenHint = [self
       descriptionLabel:@"GPT-4o and older models use max_tokens. GPT-5 and "
                        @"reasoning models (o1/o3) use max_completion_tokens."];
-  tokenHint.frame = NSMakeRect(fieldX, detailY - 2, fieldW, 32);
+  CGFloat tokenHintH = [self fittingHeightForWrappingLabel:tokenHint
+                                                     width:fieldW];
+  tokenHint.frame = NSMakeRect(fieldX, detailY - 10.0 - tokenHintH, fieldW,
+                               tokenHintH);
   tokenHint.tag = 2007;
   [pane addSubview:tokenHint];
-  detailY -= 44;
+  detailY = NSMinY(tokenHint.frame) - 40.0;
 
   // Test button
   self.llmTestButton = [NSButton buttonWithTitle:@"Test Connection"
@@ -1736,11 +1803,13 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   self.llmTestButton.frame = NSMakeRect(fieldX, detailY, 130, 28);
   self.llmTestButton.tag = 2008;
   [pane addSubview:self.llmTestButton];
-  detailY -= 32;
 
-  // Test result
-  self.llmTestResultLabel = [NSTextField wrappingLabelWithString:@""];
-  self.llmTestResultLabel.frame = NSMakeRect(fieldX, detailY - 36, fieldW, 42);
+  // Test result — re-measures and grows downward whenever its text changes
+  SPStatusLabel *llmTestResult = [SPStatusLabel wrappingLabelWithString:@""];
+  llmTestResult.growsDownward = YES;
+  self.llmTestResultLabel = llmTestResult;
+  self.llmTestResultLabel.frame =
+      NSMakeRect(fieldX, detailY - 8.0 - 42.0, fieldW, 42);
   self.llmTestResultLabel.font = [NSFont systemFontOfSize:12];
   self.llmTestResultLabel.selectable = YES;
   self.llmTestResultLabel.tag = 2008;
@@ -1782,8 +1851,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   mlxY -= rowH;
 
   // MLX Status + Delete button
-  self.llmModelStatusLabel = [[NSTextField alloc]
+  self.llmModelStatusLabel = [[SPStatusLabel alloc]
       initWithFrame:NSMakeRect(fieldX, mlxY + 2, fieldW - 32, 18)];
+  self.llmModelStatusLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+  self.llmModelStatusLabel.usesSingleLineMode = YES;
   self.llmModelStatusLabel.bezeled = NO;
   self.llmModelStatusLabel.drawsBackground = NO;
   self.llmModelStatusLabel.editable = NO;
@@ -2026,7 +2097,15 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                          target:self
                          action:@selector(recordTriggerHotkey:)];
   self.recordTriggerHotkeyButton.bezelStyle = NSBezelStyleRounded;
-  self.recordTriggerHotkeyButton.frame = NSMakeRect(0, 0, 70, 28);
+  // Wide enough for both runtime titles ("Record" / "Press...")
+  self.recordTriggerHotkeyButton.title = @"Press...";
+  [self.recordTriggerHotkeyButton sizeToFit];
+  CGFloat recordButtonW = self.recordTriggerHotkeyButton.frame.size.width;
+  self.recordTriggerHotkeyButton.title = @"Record";
+  [self.recordTriggerHotkeyButton sizeToFit];
+  recordButtonW =
+      MAX(recordButtonW, self.recordTriggerHotkeyButton.frame.size.width);
+  self.recordTriggerHotkeyButton.frame = NSMakeRect(0, 0, recordButtonW, 28);
   self.resetTriggerHotkeyButton =
       [NSButton buttonWithTitle:@"Reset"
                          target:self
@@ -3277,12 +3356,28 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
 - (NSView *)buildAboutPane {
   CGFloat paneWidth = 600;
-  CGFloat contentHeight = 308;
+  // Measure the description first — the pane height grows to fit it.
+  NSTextField *desc = [self
+      descriptionLabel:@"A background-first macOS voice input tool.\nPress a "
+                       @"hotkey, speak, and the corrected text is pasted into "
+                       @"whatever app you’re using."];
+  desc.alignment = NSTextAlignmentCenter;
+  CGFloat descH = [self fittingHeightForWrappingLabel:desc
+                                                width:paneWidth - 120];
+  CGFloat contentHeight = 308 + MAX(0.0, descH - 40.0) + 132.0;
   NSView *pane =
       [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
   [self applySettingsPaneBackgroundToView:pane];
 
-  CGFloat y = contentHeight - 48;
+  CGFloat y = contentHeight - 36;
+
+  // App icon
+  NSImageView *iconView =
+      [NSImageView imageViewWithImage:[NSApp applicationIconImage]];
+  iconView.imageScaling = NSImageScaleProportionallyUpOrDown;
+  iconView.frame = NSMakeRect((paneWidth - 96.0) / 2.0, y - 96, 96, 96);
+  [pane addSubview:iconView];
+  y = NSMinY(iconView.frame) - 46;
 
   // App name
   NSTextField *appName = [NSTextField labelWithString:@"Koe (\u58f0)"];
@@ -3308,15 +3403,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   [pane addSubview:versionLabel];
   y -= 32;
 
-  // Description
-  NSTextField *desc = [self
-      descriptionLabel:@"A background-first macOS voice input tool.\nPress a "
-                       @"hotkey, speak, and the corrected text is pasted into "
-                       @"whatever app you\u2019re using."];
-  desc.alignment = NSTextAlignmentCenter;
-  desc.frame = NSMakeRect(60, y - 10, paneWidth - 120, 40);
+  // Description (pre-measured above)
+  desc.frame = NSMakeRect(60, y + 30 - descH, paneWidth - 120, descH);
   [pane addSubview:desc];
-  y -= 56;
+  y = NSMinY(desc.frame) - 46;
 
   // GitHub button
   NSButton *githubButton = [NSButton buttonWithTitle:@"GitHub Repository"
@@ -3394,6 +3484,18 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   label.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
   label.textColor = [NSColor labelColor];
   return label;
+}
+
+// Width of the label column needed so none of the given form labels clip.
+- (CGFloat)formLabelColumnWidthForTitles:(NSArray<NSString *> *)titles {
+  NSDictionary *attrs = @{
+    NSFontAttributeName : [NSFont systemFontOfSize:13
+                                            weight:NSFontWeightMedium]
+  };
+  CGFloat width = 0.0;
+  for (NSString *title in titles)
+    width = MAX(width, ceil([title sizeWithAttributes:attrs].width));
+  return width + 4.0;
 }
 
 - (NSTextField *)formTextField:(NSRect)frame
@@ -3777,7 +3879,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
     if (i < rows.count - 1) {
       NSBox *sep = [[NSBox alloc]
-          initWithFrame:NSMakeRect(cardPad, rowY, width - cardPad, 1)];
+          initWithFrame:NSMakeRect(cardPad, rowY, width - 2 * cardPad, 1)];
       sep.boxType = NSBoxSeparator;
       [card addSubview:sep];
     }
@@ -3811,13 +3913,25 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 - (void)layoutCardRowControls:(NSView *)card width:(CGFloat)width {
   CGFloat pad = 16.0;
   for (NSView *row in card.subviews) {
+    NSView *control = nil;
     for (NSView *sub in row.subviews) {
       if (sub.autoresizingMask & NSViewMinXMargin) {
+        control = sub;
         CGFloat controlW = sub.frame.size.width;
         CGFloat controlH = sub.frame.size.height;
         sub.frame = NSMakeRect(width - pad - controlW,
                                (row.frame.size.height - controlH) / 2.0,
                                controlW, controlH);
+      }
+    }
+    // Give the row label all remaining space up to the control so long
+    // titles never clip against a fixed label width.
+    for (NSView *sub in row.subviews) {
+      if (sub != control && [sub isKindOfClass:[NSTextField class]]) {
+        NSRect frame = sub.frame;
+        CGFloat rightEdge = control ? NSMinX(control.frame) : width - pad;
+        frame.size.width = MAX(40.0, rightEdge - 12.0 - NSMinX(frame));
+        sub.frame = frame;
       }
     }
   }
@@ -3987,7 +4101,8 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   }
   if ([provider isEqualToString:@"mimo"]) {
     // Taller than GLM to fit the privacy notice under the API key row.
-    return 360.0;
+    // The exact height is measured at pane-build time from the notice text.
+    return MAX(360.0, self.asrMimoRequiredPaneHeight);
   }
   if ([provider isEqualToString:@"apple-speech"]) {
     return 280.0;
