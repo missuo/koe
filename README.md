@@ -527,9 +527,9 @@ Koe supports three on-device speech recognition providers:
 MLX and sherpa-onnx models are managed through `.koe-manifest.json` files under `~/.koe/models/`. You can manage them in two ways:
 
 1. **Setup Wizard** — select a local provider in the ASR tab, pick a model from the dropdown, and click the download button. Progress is shown inline with a progress bar.
-2. **koe CLI** — command-line model management (see below).
+2. **Koe CLI** — command-line model management (see below).
 
-### koe CLI
+### Koe CLI
 
 The `koe` CLI tool manages local models:
 
