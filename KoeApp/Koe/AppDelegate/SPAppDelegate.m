@@ -24,6 +24,11 @@
 @property (nonatomic, copy) dispatch_block_t pendingSessionEndBlock;
 @property (nonatomic, assign) BOOL showingError;
 @property (nonatomic, copy) NSString *lastAsrText;
+// Session result metadata delivered just before the final text; consumed
+// (and cleared) when the final text arrives and history is recorded.
+@property (nonatomic, copy) NSString *pendingMetaAsrText;
+@property (nonatomic, copy) NSString *pendingMetaAsrProvider;
+@property (nonatomic, assign) BOOL pendingMetaLlmApplied;
 @property (nonatomic, strong) id numberKeyMonitor;
 @property (nonatomic, assign) BOOL audioPreparationEnabled;
 @property (nonatomic, assign) BOOL preCaptureInterruptedPendingSessionEnd;
@@ -522,7 +527,14 @@ static BOOL configFlagEnabled(const char *keyPath) {
         durationMs = (NSInteger)(-[self.recordingStartTime timeIntervalSinceNow] * 1000);
         self.recordingStartTime = nil;
     }
-    [[SPHistoryManager sharedManager] recordSessionWithDurationMs:durationMs text:text];
+    [[SPHistoryManager sharedManager] recordSessionWithDurationMs:durationMs
+                                                             text:text
+                                                          asrText:self.pendingMetaAsrText
+                                                      asrProvider:self.pendingMetaAsrProvider
+                                                       llmApplied:self.pendingMetaLlmApplied];
+    self.pendingMetaAsrText = nil;
+    self.pendingMetaAsrProvider = nil;
+    self.pendingMetaLlmApplied = NO;
 
     // Show corrected text in overlay before pasting
     [self.overlayPanel updateDisplayText:text];
@@ -667,6 +679,14 @@ static BOOL configFlagEnabled(const char *keyPath) {
     }
     self.lastAsrText = text;
     [self.overlayPanel updateDisplayText:text];
+}
+
+- (void)rustBridgeDidReceiveSessionMetaWithAsrText:(NSString *)asrText
+                                          provider:(NSString *)provider
+                                        llmApplied:(BOOL)llmApplied {
+    self.pendingMetaAsrText = asrText;
+    self.pendingMetaAsrProvider = provider;
+    self.pendingMetaLlmApplied = llmApplied;
 }
 
 - (void)rustBridgeDidReceiveRewriteText:(NSString *)text {

@@ -54,6 +54,13 @@ pub struct SPCallbacks {
     /// Called when a rewrite (using an alternative prompt template) completes.
     /// text is a UTF-8 C string, caller must NOT free it.
     pub on_rewrite_text_ready: Option<extern "C" fn(token: u64, text: *const c_char)>,
+    /// Called just before `on_final_text_ready` with session result metadata
+    /// for history recording. Strings are UTF-8 C strings, caller must NOT
+    /// free them. `llm_applied` is true only when LLM correction ran and its
+    /// output was used (false when the LLM is disabled, fails, or its output
+    /// is discarded as degenerate).
+    pub on_session_result_meta:
+        Option<extern "C" fn(token: u64, asr_text: *const c_char, asr_provider: *const c_char, llm_applied: bool)>,
 }
 
 static CALLBACKS: Mutex<Option<SPCallbacks>> = Mutex::new(None);
@@ -156,6 +163,18 @@ pub fn invoke_asr_final_text(token: u64, text: &str) {
     if let Some(f) = f {
         let c_text = ffi_cstring(text);
         f(token, c_text.as_ptr());
+    }
+}
+
+pub fn invoke_session_result_meta(token: u64, asr_text: &str, asr_provider: &str, llm_applied: bool) {
+    let f = {
+        let cb = CALLBACKS.lock().unwrap();
+        cb.as_ref().and_then(|cbs| cbs.on_session_result_meta)
+    };
+    if let Some(f) = f {
+        let c_asr_text = ffi_cstring(asr_text);
+        let c_provider = ffi_cstring(asr_provider);
+        f(token, c_asr_text.as_ptr(), c_provider.as_ptr(), llm_applied);
     }
 }
 

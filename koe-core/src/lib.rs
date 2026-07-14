@@ -12,9 +12,9 @@ pub mod telemetry;
 use crate::config::Config;
 use crate::ffi::{
     cstr_to_str, invoke_asr_final_text, invoke_final_text_ready, invoke_interim_text,
-    invoke_rewrite_text_ready, invoke_session_error, invoke_session_ready, invoke_session_warning,
-    invoke_state_changed, SPCallbacks, SPFeedbackConfig, SPHotkeyConfig, SPSessionContext,
-    SPSessionMode,
+    invoke_rewrite_text_ready, invoke_session_error, invoke_session_ready,
+    invoke_session_result_meta, invoke_session_warning, invoke_state_changed, SPCallbacks,
+    SPFeedbackConfig, SPHotkeyConfig, SPSessionContext, SPSessionMode,
 };
 #[cfg(feature = "mlx")]
 use crate::llm::mlx::MlxLlmProvider;
@@ -1188,7 +1188,7 @@ async fn run_session(
 
     let llm_enabled = llm_enabled_for_session(&llm_config);
 
-    let final_text = if llm_enabled {
+    let (final_text, llm_applied) = if llm_enabled {
         {
             let mut s = session_arc.lock().unwrap();
             if let Some(ref mut session) = *s {
@@ -1272,16 +1272,16 @@ async fn run_session(
                         corrected.len(),
                         request.asr_text.len()
                     );
-                    asr_text
+                    (asr_text.clone(), false)
                 } else {
                     log::info!("[{session_id}] LLM corrected: {} chars", corrected.len());
-                    corrected
+                    (corrected, true)
                 }
             }
             Err(e) => {
                 log::warn!("[{session_id}] LLM failed, falling back to ASR text: {e}");
                 invoke_session_warning(session_token, &format!("LLM correction failed: {e}"));
-                asr_text
+                (asr_text.clone(), false)
             }
         }
     } else {
@@ -1290,7 +1290,7 @@ async fn run_session(
         } else {
             log::info!("[{session_id}] LLM not configured, using raw ASR text");
         }
-        asr_text
+        (asr_text.clone(), false)
     };
 
     // Check cancellation after LLM (which may have taken seconds) to avoid
@@ -1314,6 +1314,11 @@ async fn run_session(
     invoke_state_changed(session_token, "preparing_paste");
 
     // --- Deliver result to Obj-C ---
+    // Metadata must go out before the final text: the Obj-C side records
+    // history (raw ASR text, provider, LLM outcome) when the final text
+    // arrives, using the metadata delivered here.
+    invoke_session_result_meta(session_token, &asr_text, &asr_provider, llm_applied);
+
     // The Obj-C side owns all state transitions from here (pasting → idle).
     // Rust must NOT emit completed/idle state changes — they would be
     // dispatched to the main queue and overwrite the pasting state that

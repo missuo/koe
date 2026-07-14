@@ -15,6 +15,12 @@ typedef NS_ENUM(NSInteger, SPSessionModeObjC) {
 - (void)rustBridgeDidReceiveInterimText:(NSString *)text;
 - (void)rustBridgeDidReceiveAsrFinalText:(NSString *)text;
 - (void)rustBridgeDidReceiveRewriteText:(NSString *)text;
+/// Delivered just before rustBridgeDidReceiveFinalText: with metadata about
+/// the session result (raw ASR text, provider name, whether LLM correction
+/// was actually applied). Used for history recording.
+- (void)rustBridgeDidReceiveSessionMetaWithAsrText:(NSString *)asrText
+                                          provider:(NSString *)provider
+                                        llmApplied:(BOOL)llmApplied;
 @end
 
 @interface SPRustBridge : NSObject

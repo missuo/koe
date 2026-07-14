@@ -122,6 +122,8 @@ targets:
     sources:
       - path: Koe/AppDelegate/SPAppDelegateLogicTests.m
       - path: Koe/Hotkey/SPHotkeyMonitor.m
+      - path: Koe/History/SPHistoryManager.m
+      - path: Koe/History/SPHistoryManagerTests.m
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
@@ -130,3 +132,4 @@ targets:
     frameworks:
       - XCTest
       - Foundation
+      - sdk: libsqlite3.tbd
