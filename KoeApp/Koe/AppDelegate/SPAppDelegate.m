@@ -222,16 +222,15 @@ static BOOL configFlagEnabled(const char *keyPath) {
             return;
         }
 
+        // No app-level alerts for Accessibility / Input Monitoring at launch:
+        // macOS shows its own Input Monitoring prompt when the event tap
+        // starts, and the status bar menu offers grant actions for both.
         if (!accessibilityGranted) {
             NSLog(@"[Koe] WARNING: Accessibility permission not granted");
-            [self.permissionManager showPermissionAlertForType:SPPermissionTypeAccessibility
-                                                  settingsURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]];
         }
 
         if (!inputMonitoringGranted) {
             NSLog(@"[Koe] WARNING: Input Monitoring probe failed, will attempt hotkey monitor anyway");
-            [self.permissionManager showPermissionAlertForType:SPPermissionTypeInputMonitoring
-                                                  settingsURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"]];
         }
 
         // Build the queue after TCC confirms microphone access, but do not
