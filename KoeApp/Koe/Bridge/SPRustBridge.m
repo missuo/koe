@@ -227,8 +227,15 @@ static void bridge_on_rewrite_text_ready(uint64_t token, const char *text) {
     return [result isKindOfClass:[NSArray class]] ? result : @[];
 }
 
-- (NSDictionary *)llmRemoteModelsForBaseURL:(NSString *)baseURL apiKey:(NSString *)apiKey {
-    char *json = sp_llm_list_models_json((baseURL ?: @"").UTF8String, (apiKey ?: @"").UTF8String);
+- (NSDictionary *)llmRemoteModelsForProfile:(NSDictionary *)profile {
+    NSData *profileData = [NSJSONSerialization dataWithJSONObject:profile ?: @{}
+                                                          options:0
+                                                            error:nil];
+    NSString *profileJson = profileData
+                                ? [[NSString alloc] initWithData:profileData
+                                                       encoding:NSUTF8StringEncoding]
+                                : nil;
+    char *json = sp_llm_list_models_for_profile_json((profileJson ?: @"{}").UTF8String);
     if (!json) {
         return @{
             @"success": @NO,

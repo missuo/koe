@@ -23,6 +23,11 @@ static NSString *const kSystemPromptFile = @"system_prompt.txt";
 static NSString *const kTemplateEditablePromptKey = @"__editable_prompt";
 static NSString *const kTemplateOriginalPromptKey = @"__original_prompt";
 static NSString *const kDefaultLlmChatCompletionsPath = @"/chat/completions";
+static NSString *const kDefaultLlmResponsesPath = @"/responses";
+static NSString *const kDefaultLlmAnthropicMessagesPath = @"/messages";
+static NSString *const kLlmProtocolOpenAIChat = @"openai_chat";
+static NSString *const kLlmProtocolOpenAIResponses = @"openai_responses";
+static NSString *const kLlmProtocolAnthropicMessages = @"anthropic_messages";
 static NSString *const kOverlayFontFamilyDefault = @"system";
 static NSString *const kOverlayFontFamilySystemLabel = @"System Default";
 static const NSInteger kOverlayFontSizeDefault = 13;
@@ -1681,9 +1686,9 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   [self setHidden:YES forViewsWithTagInRange:NSMakeRange(2004, 1) inView:pane];
   detailY -= rowH + 4;
 
-  // Chat Completions Path
+  // Protocol endpoint path
   NSTextField *chatPathLabel =
-      [self formLabel:@"Chat Path"
+      [self formLabel:@"API Path"
                 frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
   chatPathLabel.tag = 2005;
   [pane addSubview:chatPathLabel];
@@ -2744,11 +2749,8 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                                [profile[@"name"] length] > 0
                            ? profile[@"name"]
                            : profileId;
-      NSString *provider = [profile[@"provider"] isKindOfClass:[NSString class]]
-                               ? profile[@"provider"]
-                               : @"openai";
       titleLabel.stringValue = name;
-      subtitleLabel.stringValue = [self prettyNameForLlmProvider:provider];
+      subtitleLabel.stringValue = [self prettyNameForLlmProfile:profile];
     }
     return cell;
   }
@@ -4578,26 +4580,51 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   copy[@"mlx"] = [mlx isKindOfClass:[NSDictionary class]]
                      ? [mlx mutableCopy]
                      : [@{@"model" : @"mlx/Qwen3-0.6B-4bit"} mutableCopy];
-  NSString *chatPath =
-      [copy[@"chat_completions_path"] isKindOfClass:[NSString class]]
-          ? copy[@"chat_completions_path"]
-          : @"";
-  if (chatPath.length == 0) {
-    copy[@"chat_completions_path"] = kDefaultLlmChatCompletionsPath;
-  }
+  NSString *protocol = [self apiProtocolForLlmProfile:copy];
+  copy[@"api_protocol"] = protocol;
+  NSString *endpointPath =
+      [copy[@"endpoint_path"] isKindOfClass:[NSString class]]
+          ? copy[@"endpoint_path"]
+          : ([copy[@"chat_completions_path"] isKindOfClass:[NSString class]]
+                 ? copy[@"chat_completions_path"]
+                 : @"");
+  if (endpointPath.length == 0)
+    endpointPath = [self defaultEndpointPathForLlmProtocol:protocol];
+  copy[@"endpoint_path"] = endpointPath;
+  [copy removeObjectForKey:@"chat_completions_path"];
   return copy;
 }
 
-- (NSMutableDictionary *)defaultOpenAILlmProfileWithName:(NSString *)name {
+- (NSMutableDictionary *)defaultOpenAILlmProfileWithName:(NSString *)name
+                                                 protocol:(NSString *)protocol {
+  BOOL usesResponses = [protocol isEqualToString:kLlmProtocolOpenAIResponses];
   return [@{
-    @"name" : name ?: @"OpenAI Compatible",
+    @"name" : name ?: (usesResponses ? @"OpenAI Responses"
+                                     : @"OpenAI Chat Completions"),
     @"provider" : @"openai",
+    @"api_protocol" : protocol ?: kLlmProtocolOpenAIChat,
     @"base_url" : @"https://api.openai.com/v1",
     @"api_key" : @"",
     @"model" : @"gpt-5.4-nano",
-    @"chat_completions_path" : kDefaultLlmChatCompletionsPath,
+    @"endpoint_path" : usesResponses ? kDefaultLlmResponsesPath
+                                      : kDefaultLlmChatCompletionsPath,
     @"max_token_parameter" : @"max_completion_tokens",
-    @"no_reasoning_control" : @"reasoning_effort",
+    @"no_reasoning_control" : @"none",
+    @"mlx" : @{@"model" : @"mlx/Qwen3-0.6B-4bit"},
+  } mutableCopy];
+}
+
+- (NSMutableDictionary *)defaultAnthropicLlmProfile {
+  return [@{
+    @"name" : @"Anthropic Messages",
+    @"provider" : @"anthropic",
+    @"api_protocol" : kLlmProtocolAnthropicMessages,
+    @"base_url" : @"https://api.anthropic.com/v1",
+    @"api_key" : @"",
+    @"model" : @"",
+    @"endpoint_path" : kDefaultLlmAnthropicMessagesPath,
+    @"max_token_parameter" : @"max_tokens",
+    @"no_reasoning_control" : @"none",
     @"mlx" : @{@"model" : @"mlx/Qwen3-0.6B-4bit"},
   } mutableCopy];
 }
@@ -4606,10 +4633,11 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   return [@{
     @"name" : @"APFEL",
     @"provider" : @"apfel",
+    @"api_protocol" : kLlmProtocolOpenAIChat,
     @"base_url" : @"http://127.0.0.1:11434/v1",
     @"api_key" : @"",
     @"model" : @"apple-foundationmodel",
-    @"chat_completions_path" : kDefaultLlmChatCompletionsPath,
+    @"endpoint_path" : kDefaultLlmChatCompletionsPath,
     @"max_token_parameter" : @"max_tokens",
     @"no_reasoning_control" : @"none",
     @"mlx" : @{@"model" : @"mlx/Qwen3-0.6B-4bit"},
@@ -4620,22 +4648,55 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   return [@{
     @"name" : name ?: @"MLX (Apple Silicon)",
     @"provider" : @"mlx",
+    @"api_protocol" : kLlmProtocolOpenAIChat,
     @"base_url" : @"",
     @"api_key" : @"",
     @"model" : @"",
-    @"chat_completions_path" : kDefaultLlmChatCompletionsPath,
+    @"endpoint_path" : @"",
     @"max_token_parameter" : @"max_completion_tokens",
     @"no_reasoning_control" : @"none",
     @"mlx" : @{@"model" : @"mlx/Qwen3-0.6B-4bit"},
   } mutableCopy];
 }
 
-- (NSString *)prettyNameForLlmProvider:(NSString *)provider {
+- (NSString *)apiProtocolForLlmProfile:(NSDictionary *)profile {
+  NSString *provider = [profile[@"provider"] isKindOfClass:[NSString class]]
+                           ? profile[@"provider"]
+                           : @"openai";
+  if ([provider isEqualToString:@"anthropic"])
+    return kLlmProtocolAnthropicMessages;
+  if ([provider isEqualToString:@"apfel"] ||
+      [provider isEqualToString:@"mlx"])
+    return kLlmProtocolOpenAIChat;
+  NSString *protocol =
+      [profile[@"api_protocol"] isKindOfClass:[NSString class]]
+          ? profile[@"api_protocol"]
+          : kLlmProtocolOpenAIChat;
+  return protocol.length > 0 ? protocol : kLlmProtocolOpenAIChat;
+}
+
+- (NSString *)defaultEndpointPathForLlmProtocol:(NSString *)protocol {
+  if ([protocol isEqualToString:kLlmProtocolOpenAIResponses])
+    return kDefaultLlmResponsesPath;
+  if ([protocol isEqualToString:kLlmProtocolAnthropicMessages])
+    return kDefaultLlmAnthropicMessagesPath;
+  return kDefaultLlmChatCompletionsPath;
+}
+
+- (NSString *)prettyNameForLlmProfile:(NSDictionary *)profile {
+  NSString *provider = [profile[@"provider"] isKindOfClass:[NSString class]]
+                           ? profile[@"provider"]
+                           : @"openai";
   if ([provider isEqualToString:@"apfel"])
     return @"APFEL";
   if ([provider isEqualToString:@"mlx"])
     return @"MLX (Apple Silicon)";
-  return @"OpenAI Compatible";
+  if ([provider isEqualToString:@"anthropic"])
+    return @"Anthropic Messages";
+  if ([[self apiProtocolForLlmProfile:profile]
+          isEqualToString:kLlmProtocolOpenAIResponses])
+    return @"OpenAI Responses";
+  return @"OpenAI Chat Completions";
 }
 
 - (void)loadLlmProfilesFromCore {
@@ -4667,7 +4728,12 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
   if (self.llmProfiles.count == 0) {
     self.llmProfiles[@"openai"] =
-        [self defaultOpenAILlmProfileWithName:@"OpenAI Compatible"];
+        [self defaultOpenAILlmProfileWithName:@"OpenAI Chat Completions"
+                                      protocol:kLlmProtocolOpenAIChat];
+    self.llmProfiles[@"openai-responses"] =
+        [self defaultOpenAILlmProfileWithName:@"OpenAI Responses"
+                                      protocol:kLlmProtocolOpenAIResponses];
+    self.llmProfiles[@"anthropic"] = [self defaultAnthropicLlmProfile];
     self.llmProfiles[@"apfel"] = [self defaultApfelLlmProfile];
     self.llmProfiles[@"mlx"] =
         [self defaultMlxLlmProfileWithName:@"MLX (Apple Silicon)"];
@@ -4729,19 +4795,21 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                          : self.llmApiKeySecureField.stringValue;
   profile[@"api_key"] = apiKey ?: @"";
   profile[@"model"] = self.llmModelField.stringValue ?: @"";
-  NSString *chatPath = [[self.llmChatCompletionsPathField.stringValue ?: @""
+  NSString *endpointPath = [[self.llmChatCompletionsPathField.stringValue ?: @""
       stringByTrimmingCharactersInSet:[NSCharacterSet
                                           whitespaceAndNewlineCharacterSet]]
       copy];
-  profile[@"chat_completions_path"] =
-      (chatPath.length > 0) ? chatPath : kDefaultLlmChatCompletionsPath;
+  NSString *protocol = [self apiProtocolForLlmProfile:profile];
+  profile[@"api_protocol"] = protocol;
+  profile[@"endpoint_path"] =
+      (endpointPath.length > 0)
+          ? endpointPath
+          : [self defaultEndpointPathForLlmProtocol:protocol];
   profile[@"max_token_parameter"] =
       self.maxTokenParamPopup.selectedItem.representedObject
           ?: @"max_completion_tokens";
   if (!profile[@"no_reasoning_control"]) {
-    BOOL usesReasoningEffort = [provider isEqualToString:@"openai"];
-    profile[@"no_reasoning_control"] =
-        usesReasoningEffort ? @"reasoning_effort" : @"none";
+    profile[@"no_reasoning_control"] = @"none";
   }
 
   if ([provider isEqualToString:@"mlx"]) {
@@ -4770,7 +4838,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                        : @"";
   self.llmProfileNameField.stringValue = name;
   self.llmProfileTypeLabel.stringValue =
-      [self prettyNameForLlmProvider:provider];
+      [self prettyNameForLlmProfile:profile];
 
   self.llmBaseUrlField.stringValue =
       [profile[@"base_url"] isKindOfClass:[NSString class]]
@@ -4789,12 +4857,16 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   self.llmModelField.stringValue =
       [profile[@"model"] isKindOfClass:[NSString class]] ? profile[@"model"]
                                                          : @"";
+  NSString *protocol = [self apiProtocolForLlmProfile:profile];
   NSString *chatPath =
-      [profile[@"chat_completions_path"] isKindOfClass:[NSString class]]
-          ? profile[@"chat_completions_path"]
-          : kDefaultLlmChatCompletionsPath;
+      [profile[@"endpoint_path"] isKindOfClass:[NSString class]]
+          ? profile[@"endpoint_path"]
+          : [self defaultEndpointPathForLlmProtocol:protocol];
   self.llmChatCompletionsPathField.stringValue =
-      chatPath.length > 0 ? chatPath : kDefaultLlmChatCompletionsPath;
+      chatPath.length > 0 ? chatPath
+                          : [self defaultEndpointPathForLlmProtocol:protocol];
+  self.llmChatCompletionsPathField.placeholderString =
+      [self defaultEndpointPathForLlmProtocol:protocol];
 
   NSString *maxTokenParam =
       [profile[@"max_token_parameter"] isKindOfClass:[NSString class]]
@@ -4861,13 +4933,27 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
 - (void)showAddLlmProfileMenu:(id)sender {
   NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
-  NSMenuItem *openaiItem =
-      [[NSMenuItem alloc] initWithTitle:@"OpenAI Compatible"
+  NSMenuItem *openaiChatItem =
+      [[NSMenuItem alloc] initWithTitle:@"OpenAI Chat Completions"
                                  action:@selector(addLlmProfileFromMenu:)
                           keyEquivalent:@""];
-  openaiItem.target = self;
-  openaiItem.representedObject = @"openai";
-  [menu addItem:openaiItem];
+  openaiChatItem.target = self;
+  openaiChatItem.representedObject = @"openai_chat";
+  [menu addItem:openaiChatItem];
+  NSMenuItem *openaiResponsesItem =
+      [[NSMenuItem alloc] initWithTitle:@"OpenAI Responses"
+                                 action:@selector(addLlmProfileFromMenu:)
+                          keyEquivalent:@""];
+  openaiResponsesItem.target = self;
+  openaiResponsesItem.representedObject = @"openai_responses";
+  [menu addItem:openaiResponsesItem];
+  NSMenuItem *anthropicItem =
+      [[NSMenuItem alloc] initWithTitle:@"Anthropic Messages"
+                                 action:@selector(addLlmProfileFromMenu:)
+                          keyEquivalent:@""];
+  anthropicItem.target = self;
+  anthropicItem.representedObject = @"anthropic";
+  [menu addItem:anthropicItem];
   NSMenuItem *apfelItem =
       [[NSMenuItem alloc] initWithTitle:@"APFEL"
                                  action:@selector(addLlmProfileFromMenu:)
@@ -4897,7 +4983,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   NSString *prefix =
       [type isEqualToString:@"mlx"]
           ? @"mlx"
-          : ([type isEqualToString:@"apfel"] ? @"apfel" : @"openai");
+          : ([type isEqualToString:@"apfel"]
+                 ? @"apfel"
+                 : ([type isEqualToString:@"anthropic"]
+                        ? @"anthropic"
+                        : ([type isEqualToString:@"openai_responses"]
+                               ? @"openai-responses"
+                               : @"openai")));
   NSString *profileId = [self newLlmProfileIdWithPrefix:prefix];
   NSMutableDictionary *profile = nil;
   if ([type isEqualToString:@"apfel"]) {
@@ -4905,8 +4997,14 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     profile[@"name"] = @"APFEL";
   } else if ([type isEqualToString:@"mlx"]) {
     profile = [self defaultMlxLlmProfileWithName:@"MLX (Apple Silicon)"];
+  } else if ([type isEqualToString:@"anthropic"]) {
+    profile = [self defaultAnthropicLlmProfile];
+  } else if ([type isEqualToString:@"openai_responses"]) {
+    profile = [self defaultOpenAILlmProfileWithName:@"OpenAI Responses"
+                                            protocol:kLlmProtocolOpenAIResponses];
   } else {
-    profile = [self defaultOpenAILlmProfileWithName:@"OpenAI Compatible"];
+    profile = [self defaultOpenAILlmProfileWithName:@"OpenAI Chat Completions"
+                                            protocol:kLlmProtocolOpenAIChat];
   }
   self.llmProfiles[profileId] = profile;
   self.activeLlmProfileId = profileId;
@@ -5686,23 +5784,19 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 }
 
 - (void)refreshLlmRemoteModels:(id)sender {
-  NSDictionary *activeProfile = [self activeLlmProfile];
+  NSDictionary *activeProfile = [self runtimeLlmProfileForActiveProfile];
   NSString *provider =
       [activeProfile[@"provider"] isKindOfClass:[NSString class]]
           ? activeProfile[@"provider"]
           : @"openai";
-  BOOL isOpenAiLike = [provider isEqualToString:@"openai"] ||
-                      [provider isEqualToString:@"apfel"];
-  if (!isOpenAiLike)
+  BOOL isRemote = ![provider isEqualToString:@"mlx"];
+  if (!isRemote)
     return;
   [self updateLlmFieldsEnabled];
 
   NSString *baseURL = [self.llmBaseUrlField.stringValue
       stringByTrimmingCharactersInSet:[NSCharacterSet
                                           whitespaceAndNewlineCharacterSet]];
-  NSString *apiKey = self.llmApiKeyToggle.tag == 1
-                         ? self.llmApiKeyField.stringValue
-                         : self.llmApiKeySecureField.stringValue;
   NSString *currentModel = [self.llmModelField.stringValue copy] ?: @"";
   if (baseURL.length == 0) {
     [self.llmRemoteModelPopup removeAllItems];
@@ -5724,8 +5818,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
           return;
 
         NSDictionary *result =
-            [strongSelf.rustBridge llmRemoteModelsForBaseURL:baseURL
-                                                      apiKey:apiKey];
+            [strongSelf.rustBridge llmRemoteModelsForProfile:activeProfile];
         BOOL success = [result[@"success"] boolValue];
         NSArray *modelsRaw = [result[@"models"] isKindOfClass:[NSArray class]]
                                  ? result[@"models"]
@@ -5750,9 +5843,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
               [innerActive[@"provider"] isKindOfClass:[NSString class]]
                   ? innerActive[@"provider"]
                   : @"openai";
-          BOOL stillOpenAiLike = [activeProvider isEqualToString:@"openai"] ||
-                                 [activeProvider isEqualToString:@"apfel"];
-          if (!stillOpenAiLike)
+          BOOL stillRemote = ![activeProvider isEqualToString:@"mlx"];
+          if (!stillRemote)
             return;
 
           innerSelf.llmRefreshModelsButton.enabled =
@@ -5787,22 +5879,24 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
       [activeProfile[@"provider"] isKindOfClass:[NSString class]]
           ? activeProfile[@"provider"]
           : @"openai";
-  // APFEL is just an OpenAI-compatible endpoint with a distinct label, so it
-  // reuses the same field set as "openai".
-  BOOL isOpenAiLike = [provider isEqualToString:@"openai"] ||
-                      [provider isEqualToString:@"apfel"];
   BOOL isMlx = [provider isEqualToString:@"mlx"];
+  BOOL isRemote = !isMlx;
+  NSString *protocol = [self apiProtocolForLlmProfile:activeProfile];
+  BOOL isOpenAIChat = [protocol isEqualToString:kLlmProtocolOpenAIChat];
 
   // Toggle OpenAI fields (tag 2001-2008). Tag 2004 (Model List row) is
   // managed separately below because its visibility is gated by the
   // expand/collapse state of the Choose button.
-  [self setHidden:!isOpenAiLike
+  [self setHidden:!isRemote
       forViewsWithTagInRange:NSMakeRange(2001, 8)
                       inView:self.currentPaneView];
+  [self setHidden:!isOpenAIChat
+      forViewsWithTagInRange:NSMakeRange(2006, 2)
+                      inView:self.currentPaneView];
   // Eye toggle doesn't use tag for show/hide (tag is used for 0/1 state)
-  self.llmApiKeyToggle.hidden = !isOpenAiLike;
+  self.llmApiKeyToggle.hidden = !isRemote;
   // Preserve API key visibility state when showing OpenAI fields
-  if (isOpenAiLike) {
+  if (isRemote) {
     BOOL showPlain = (self.llmApiKeyToggle.tag == 1);
     self.llmApiKeyField.hidden = !showPlain;
     self.llmApiKeySecureField.hidden = showPlain;
@@ -5812,12 +5906,12 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   self.llmApiKeyField.enabled = enabled;
   self.llmApiKeySecureField.enabled = enabled;
   self.llmModelField.enabled = enabled;
-  self.llmToggleModelPickerButton.hidden = !isOpenAiLike;
-  self.llmToggleModelPickerButton.enabled = enabled && isOpenAiLike;
+  self.llmToggleModelPickerButton.hidden = !isRemote;
+  self.llmToggleModelPickerButton.enabled = enabled && isRemote;
   [self.llmToggleModelPickerButton
       setTitle:(self.llmRemoteModelPickerExpanded ? @"Hide" : @"Choose")];
   BOOL showRemoteModelPicker =
-      isOpenAiLike && self.llmRemoteModelPickerExpanded;
+      isRemote && self.llmRemoteModelPickerExpanded;
   [self setLlmRemoteModelPickerRowVisible:showRemoteModelPicker];
   [self setHidden:!showRemoteModelPicker
       forViewsWithTagInRange:NSMakeRange(2004, 1)
@@ -5827,8 +5921,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   self.llmRemoteModelPopup.enabled =
       enabled && showRemoteModelPicker && hasSelectableRemoteModel;
   self.llmRefreshModelsButton.enabled = enabled && showRemoteModelPicker;
-  self.llmChatCompletionsPathField.enabled = enabled;
-  self.maxTokenParamPopup.enabled = enabled;
+  self.llmChatCompletionsPathField.enabled = enabled && isRemote;
+  self.maxTokenParamPopup.enabled = enabled && isOpenAIChat;
   self.llmTestButton.enabled = enabled;
 
   // Toggle MLX fields (tag 2010-2012)
@@ -6072,7 +6166,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   NSString *model = [profile[@"model"] isKindOfClass:[NSString class]]
                         ? profile[@"model"]
                         : @"";
-  if ([provider isEqualToString:@"openai"] &&
+  if (![provider isEqualToString:@"mlx"] &&
       (baseUrl.length == 0 || model.length == 0)) {
     self.llmTestResultLabel.stringValue =
         @"Please fill in Base URL and Model first.";
