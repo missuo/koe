@@ -2,7 +2,7 @@
 
 All notable user-facing changes to Koe are documented here.
 
-## Unreleased
+## 1.0.17 - 2026-07-14
 
 ### Added
 
@@ -12,6 +12,12 @@ All notable user-facing changes to Koe are documented here.
 - Added a `double_tap` trigger mode that starts dictation on a double tap and
   stops it on the next single tap, with protection against treating normal
   Command-key shortcuts as trigger taps.
+- Added protocol-specific LLM profiles: in addition to OpenAI Chat Completions, profiles can now target the OpenAI Responses API and the Anthropic Messages API.
+
+### Fixed
+
+- Fixed text clipping and overflow across the settings window (measured label widths, multi-line re-measure, growing test-result labels, ASR pane alignment) and clamped the overlay template button bar to the screen width near display edges.
+- Dropped the redundant first-launch alerts for Accessibility and Input Monitoring — macOS shows its own prompt, and the status bar menu already offers grant actions.
 
 ### Changed
 
