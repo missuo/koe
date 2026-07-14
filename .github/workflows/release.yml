@@ -69,6 +69,29 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
+      - name: Import Developer ID certificate
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERTIFICATE_PATH="$RUNNER_TEMP/certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 24)
+
+          echo "$CERTIFICATE_P12_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          rm -f "$CERTIFICATE_PATH"
+
+          echo "CODESIGN_IDENTITY=Developer ID Application" >> "$GITHUB_ENV"
+
       - name: Build CLI
         run: cargo build --package koe-cli --release --target aarch64-apple-darwin
 
@@ -91,17 +114,15 @@ jobs:
         working-directory: KoeApp
 
       - name: Package full app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          set -euo pipefail
-          APP_PATH="KoeApp/build-ci/arm64/Build/Products/Release/Koe.app"
-          CLI_PATH="target/aarch64-apple-darwin/release/koe"
-          test -d "$APP_PATH"
-          test -x "$CLI_PATH"
-          cp "$CLI_PATH" "$APP_PATH/Contents/MacOS/koe-cli"
-          chmod +x "$APP_PATH/Contents/MacOS/koe-cli"
-          codesign --force --deep --sign - "$APP_PATH"
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" Koe-macOS-arm64.zip
+          .github/scripts/package-app.sh \
+            "KoeApp/build-ci/arm64/Build/Products/Release/Koe.app" \
+            "target/aarch64-apple-darwin/release/koe" \
+            Koe-macOS-arm64.zip
       - name: Generate lite Xcode project
         run: xcodegen generate --spec project-lite.yml
         working-directory: KoeApp
@@ -121,17 +142,15 @@ jobs:
         working-directory: KoeApp
 
       - name: Package lite app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          set -euo pipefail
-          APP_PATH="KoeApp/build-ci/arm64-lite/Build/Products/Release/Koe.app"
-          CLI_PATH="target/aarch64-apple-darwin/release/koe"
-          test -d "$APP_PATH"
-          test -x "$CLI_PATH"
-          cp "$CLI_PATH" "$APP_PATH/Contents/MacOS/koe-cli"
-          chmod +x "$APP_PATH/Contents/MacOS/koe-cli"
-          codesign --force --deep --sign - "$APP_PATH"
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" Koe-macOS-arm64-lite.zip
+          .github/scripts/package-app.sh \
+            "KoeApp/build-ci/arm64-lite/Build/Products/Release/Koe.app" \
+            "target/aarch64-apple-darwin/release/koe" \
+            Koe-macOS-arm64-lite.zip
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -145,6 +164,10 @@ jobs:
           name: Koe-macOS-arm64-lite
           path: Koe-macOS-arm64-lite.zip
           if-no-files-found: error
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
 
   build-x86_64:
     name: Build macOS x86_64
@@ -181,6 +204,29 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
+      - name: Import Developer ID certificate
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERTIFICATE_PATH="$RUNNER_TEMP/certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 24)
+
+          echo "$CERTIFICATE_P12_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          rm -f "$CERTIFICATE_PATH"
+
+          echo "CODESIGN_IDENTITY=Developer ID Application" >> "$GITHUB_ENV"
+
       - name: Generate Xcode project
         run: xcodegen generate --spec project-x86.yml
         working-directory: KoeApp
@@ -203,23 +249,25 @@ jobs:
         working-directory: KoeApp
 
       - name: Package app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          set -euo pipefail
-          APP_PATH="KoeApp/build-ci/x86_64/Build/Products/Release/Koe.app"
-          CLI_PATH="target/x86_64-apple-darwin/release/koe"
-          test -d "$APP_PATH"
-          test -x "$CLI_PATH"
-          cp "$CLI_PATH" "$APP_PATH/Contents/MacOS/koe-cli"
-          chmod +x "$APP_PATH/Contents/MacOS/koe-cli"
-          codesign --force --deep --sign - "$APP_PATH"
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" Koe-macOS-x86_64.zip
+          .github/scripts/package-app.sh \
+            "KoeApp/build-ci/x86_64/Build/Products/Release/Koe.app" \
+            "target/x86_64-apple-darwin/release/koe" \
+            Koe-macOS-x86_64.zip
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: Koe-macOS-x86_64
           path: Koe-macOS-x86_64.zip
           if-no-files-found: error
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
 
   release:
     name: Create GitHub Release
