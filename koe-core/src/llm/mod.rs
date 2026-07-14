@@ -36,6 +36,8 @@ pub fn strip_reasoning(s: &str) -> &str {
 pub fn supported_providers() -> &'static [&'static str] {
     &[
         "openai",
+        "anthropic",
+        "apfel",
         #[cfg(feature = "mlx")]
         "mlx",
     ]

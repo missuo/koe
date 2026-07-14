@@ -351,23 +351,47 @@ pub struct LlmProfilesPayload {
     pub profiles: BTreeMap<String, LlmProfileConfig>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmApiProtocol {
+    #[default]
+    OpenaiChat,
+    OpenaiResponses,
+    AnthropicMessages,
+}
+
+impl LlmApiProtocol {
+    pub fn default_endpoint_path(self) -> &'static str {
+        match self {
+            Self::OpenaiChat => "/chat/completions",
+            Self::OpenaiResponses => "/responses",
+            Self::AnthropicMessages => "/messages",
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct LlmProfileConfig {
     #[serde(default)]
     pub name: String,
-    /// LLM provider: "openai", "apfel", or "mlx". "apfel" is treated as an
-    /// OpenAI-compatible provider at runtime but tracked separately so the UI
-    /// can show it as a distinct option with Apple Foundation Models defaults.
+    /// LLM provider: "openai", "anthropic", "apfel", or "mlx". "apfel" is
+    /// tracked separately so the UI can show Apple Foundation Models defaults.
     #[serde(default = "default_llm_provider")]
     pub provider: String,
+    /// Wire protocol used by this remote profile. Existing profiles without
+    /// this field continue to use OpenAI Chat Completions.
+    #[serde(default)]
+    pub api_protocol: LlmApiProtocol,
     #[serde(default)]
     pub base_url: String,
     #[serde(default)]
     pub api_key: String,
     #[serde(default)]
     pub model: String,
-    #[serde(default = "default_llm_chat_completions_path")]
-    pub chat_completions_path: String,
+    /// Relative API path appended to `base_url`. The legacy
+    /// `chat_completions_path` key is accepted for migration.
+    #[serde(default, alias = "chat_completions_path")]
+    pub endpoint_path: String,
     #[serde(default = "default_llm_max_token_parameter")]
     pub max_token_parameter: LlmMaxTokenParameter,
     #[serde(default)]
@@ -382,11 +406,13 @@ pub struct LlmProfileRuntimeConfig {
     pub id: String,
     pub name: String,
     pub provider: String,
+    #[serde(default)]
+    pub api_protocol: LlmApiProtocol,
     pub base_url: String,
     pub api_key: String,
     pub model: String,
-    #[serde(default = "default_llm_chat_completions_path")]
-    pub chat_completions_path: String,
+    #[serde(default, alias = "chat_completions_path")]
+    pub endpoint_path: String,
     pub max_token_parameter: LlmMaxTokenParameter,
     pub no_reasoning_control: LlmNoReasoningControl,
     pub mlx: MlxLlmConfig,
@@ -418,10 +444,11 @@ impl LlmProfileConfig {
                 self.name.clone()
             },
             provider: self.provider.clone(),
+            api_protocol: self.api_protocol,
             base_url: self.base_url.clone(),
             api_key: self.api_key.clone(),
             model: self.model.clone(),
-            chat_completions_path: self.chat_completions_path.clone(),
+            endpoint_path: self.endpoint_path.clone(),
             max_token_parameter: self.max_token_parameter,
             no_reasoning_control: self.no_reasoning_control,
             mlx: self.mlx.clone(),
@@ -430,6 +457,23 @@ impl LlmProfileConfig {
 }
 
 impl LlmProfileRuntimeConfig {
+    pub fn effective_api_protocol(&self) -> LlmApiProtocol {
+        match self.provider.as_str() {
+            "anthropic" => LlmApiProtocol::AnthropicMessages,
+            "apfel" => LlmApiProtocol::OpenaiChat,
+            _ => self.api_protocol,
+        }
+    }
+
+    pub fn effective_endpoint_path(&self) -> &str {
+        let configured = self.endpoint_path.trim();
+        if configured.is_empty() {
+            self.effective_api_protocol().default_endpoint_path()
+        } else {
+            configured
+        }
+    }
+
     pub fn is_ready(&self) -> bool {
         match self.provider.as_str() {
             "mlx" => !self.mlx.model.is_empty(),
@@ -458,10 +502,11 @@ impl Default for LlmProfileConfig {
         Self {
             name: String::new(),
             provider: default_llm_provider(),
+            api_protocol: LlmApiProtocol::default(),
             base_url: String::new(),
             api_key: String::new(),
             model: String::new(),
-            chat_completions_path: default_llm_chat_completions_path(),
+            endpoint_path: String::new(),
             max_token_parameter: default_llm_max_token_parameter(),
             no_reasoning_control: LlmNoReasoningControl::default(),
             mlx: MlxLlmConfig::default(),
@@ -895,9 +940,6 @@ fn default_llm_max_token_parameter() -> LlmMaxTokenParameter {
 fn default_llm_provider() -> String {
     "openai".into()
 }
-fn default_llm_chat_completions_path() -> String {
-    "/chat/completions".into()
-}
 fn default_llm_active_profile() -> String {
     "openai".into()
 }
@@ -908,10 +950,11 @@ fn default_llm_profiles() -> BTreeMap<String, LlmProfileConfig> {
         LlmProfileConfig {
             name: "APFEL".into(),
             provider: "apfel".into(),
+            api_protocol: LlmApiProtocol::OpenaiChat,
             base_url: "http://127.0.0.1:11434/v1".into(),
             api_key: String::new(),
             model: "apple-foundationmodel".into(),
-            chat_completions_path: default_llm_chat_completions_path(),
+            endpoint_path: "/chat/completions".into(),
             max_token_parameter: LlmMaxTokenParameter::MaxTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
             mlx: MlxLlmConfig::default(),
@@ -922,10 +965,11 @@ fn default_llm_profiles() -> BTreeMap<String, LlmProfileConfig> {
         LlmProfileConfig {
             name: "MLX (Apple Silicon)".into(),
             provider: "mlx".into(),
+            api_protocol: LlmApiProtocol::OpenaiChat,
             base_url: String::new(),
             api_key: String::new(),
             model: String::new(),
-            chat_completions_path: default_llm_chat_completions_path(),
+            endpoint_path: String::new(),
             max_token_parameter: LlmMaxTokenParameter::MaxTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
             mlx: MlxLlmConfig::default(),
@@ -934,14 +978,45 @@ fn default_llm_profiles() -> BTreeMap<String, LlmProfileConfig> {
     profiles.insert(
         "openai".into(),
         LlmProfileConfig {
-            name: "OpenAI Compatible".into(),
+            name: "OpenAI Chat Completions".into(),
             provider: "openai".into(),
+            api_protocol: LlmApiProtocol::OpenaiChat,
             base_url: "https://api.openai.com/v1".into(),
             api_key: String::new(),
             model: "gpt-5.4-nano".into(),
-            chat_completions_path: default_llm_chat_completions_path(),
+            endpoint_path: "/chat/completions".into(),
             max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
-            no_reasoning_control: LlmNoReasoningControl::ReasoningEffort,
+            no_reasoning_control: LlmNoReasoningControl::None,
+            mlx: MlxLlmConfig::default(),
+        },
+    );
+    profiles.insert(
+        "openai-responses".into(),
+        LlmProfileConfig {
+            name: "OpenAI Responses".into(),
+            provider: "openai".into(),
+            api_protocol: LlmApiProtocol::OpenaiResponses,
+            base_url: "https://api.openai.com/v1".into(),
+            api_key: String::new(),
+            model: "gpt-5.4-nano".into(),
+            endpoint_path: "/responses".into(),
+            max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
+            no_reasoning_control: LlmNoReasoningControl::None,
+            mlx: MlxLlmConfig::default(),
+        },
+    );
+    profiles.insert(
+        "anthropic".into(),
+        LlmProfileConfig {
+            name: "Anthropic Messages".into(),
+            provider: "anthropic".into(),
+            api_protocol: LlmApiProtocol::AnthropicMessages,
+            base_url: "https://api.anthropic.com/v1".into(),
+            api_key: String::new(),
+            model: String::new(),
+            endpoint_path: "/messages".into(),
+            max_token_parameter: LlmMaxTokenParameter::MaxTokens,
+            no_reasoning_control: LlmNoReasoningControl::None,
             mlx: MlxLlmConfig::default(),
         },
     );
@@ -1746,21 +1821,43 @@ llm:
   user_prompt_path: "user_prompt.txt"      # relative to ~/.koe/
   profiles:
     openai:
-      name: "OpenAI Compatible"
+      name: "OpenAI Chat Completions"
       provider: "openai"
+      api_protocol: "openai_chat"
       base_url: "https://api.openai.com/v1"
       api_key: ""          # or use ${LLM_API_KEY}
       model: "gpt-5.4-nano"
-      chat_completions_path: "/chat/completions"  # relative path appended to base_url
+      endpoint_path: "/chat/completions"  # relative path appended to base_url
       max_token_parameter: "max_completion_tokens"
-      no_reasoning_control: "reasoning_effort"
+      no_reasoning_control: "none"
+    openai-responses:
+      name: "OpenAI Responses"
+      provider: "openai"
+      api_protocol: "openai_responses"
+      base_url: "https://api.openai.com/v1"
+      api_key: ""          # or use ${LLM_API_KEY}
+      model: "gpt-5.4-nano"
+      endpoint_path: "/responses"
+      max_token_parameter: "max_completion_tokens"
+      no_reasoning_control: "none"
+    anthropic:
+      name: "Anthropic Messages"
+      provider: "anthropic"
+      api_protocol: "anthropic_messages"
+      base_url: "https://api.anthropic.com/v1"
+      api_key: ""          # or use ${ANTHROPIC_API_KEY}
+      model: ""            # choose any text-capable model from /models
+      endpoint_path: "/messages"
+      max_token_parameter: "max_tokens"
+      no_reasoning_control: "none"
     apfel:
       name: "APFEL"
       provider: "apfel"
+      api_protocol: "openai_chat"
       base_url: "http://127.0.0.1:11434/v1"
       api_key: ""           # optional; leave blank to send no Authorization header
       model: "apple-foundationmodel"
-      chat_completions_path: "/chat/completions"  # customize for non-standard OpenAI-compatible endpoints
+      endpoint_path: "/chat/completions"  # customize for non-standard OpenAI-compatible endpoints
       max_token_parameter: "max_tokens"
       no_reasoning_control: "none"
     mlx:
@@ -1948,11 +2045,13 @@ mod tests {
     }
 
     #[test]
-    fn default_llm_config_includes_openai_apfel_and_mlx_profiles() {
+    fn default_llm_config_includes_all_remote_protocols_and_local_profiles() {
         let llm = LlmSection::default();
 
         assert_eq!(llm.active_profile, "openai");
         assert!(llm.profiles.contains_key("openai"));
+        assert!(llm.profiles.contains_key("openai-responses"));
+        assert!(llm.profiles.contains_key("anthropic"));
         assert!(llm.profiles.contains_key("apfel"));
         assert!(llm.profiles.contains_key("mlx"));
 
@@ -1961,7 +2060,8 @@ mod tests {
         assert_eq!(apfel.base_url, "http://127.0.0.1:11434/v1");
         assert_eq!(apfel.api_key, "");
         assert_eq!(apfel.model, "apple-foundationmodel");
-        assert_eq!(apfel.chat_completions_path, "/chat/completions");
+        assert_eq!(apfel.endpoint_path, "/chat/completions");
+        assert_eq!(apfel.api_protocol, LlmApiProtocol::OpenaiChat);
         assert!(matches!(
             apfel.max_token_parameter,
             LlmMaxTokenParameter::MaxTokens
@@ -1986,12 +2086,13 @@ mod tests {
         assert_eq!(active.base_url, "http://127.0.0.1:11434/v1");
         assert_eq!(active.api_key, "");
         assert_eq!(active.model, "apple-foundationmodel");
-        assert_eq!(active.chat_completions_path, "/chat/completions");
+        assert_eq!(active.endpoint_path, "/chat/completions");
+        assert_eq!(active.effective_api_protocol(), LlmApiProtocol::OpenaiChat);
         assert!(active.is_ready());
     }
 
     #[test]
-    fn llm_profile_runtime_config_missing_chat_path_defaults_to_chat_completions() {
+    fn legacy_profile_defaults_to_chat_and_accepts_legacy_path_key() {
         let profile: LlmProfileRuntimeConfig = serde_json::from_value(serde_json::json!({
             "id": "openai",
             "name": "OpenAI",
@@ -1999,13 +2100,39 @@ mod tests {
             "base_url": "https://api.openai.com/v1",
             "api_key": "",
             "model": "gpt-5.4-nano",
+            "chat_completions_path": "/custom/chat",
             "max_token_parameter": "max_completion_tokens",
             "no_reasoning_control": "reasoning_effort",
             "mlx": {"model": "mlx/Qwen3-0.6B-4bit"}
         }))
         .unwrap();
 
-        assert_eq!(profile.chat_completions_path, "/chat/completions");
+        assert_eq!(profile.effective_api_protocol(), LlmApiProtocol::OpenaiChat);
+        assert_eq!(profile.effective_endpoint_path(), "/custom/chat");
+    }
+
+    #[test]
+    fn empty_endpoint_uses_each_protocol_default() {
+        for (protocol, expected) in [
+            (LlmApiProtocol::OpenaiChat, "/chat/completions"),
+            (LlmApiProtocol::OpenaiResponses, "/responses"),
+            (LlmApiProtocol::AnthropicMessages, "/messages"),
+        ] {
+            let profile = LlmProfileRuntimeConfig {
+                id: "test".into(),
+                name: "Test".into(),
+                provider: "openai".into(),
+                api_protocol: protocol,
+                base_url: "https://example.com/v1".into(),
+                api_key: String::new(),
+                model: "model".into(),
+                endpoint_path: String::new(),
+                max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
+                no_reasoning_control: LlmNoReasoningControl::None,
+                mlx: Default::default(),
+            };
+            assert_eq!(profile.effective_endpoint_path(), expected);
+        }
     }
 
     #[test]

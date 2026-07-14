@@ -19,7 +19,8 @@ use crate::ffi::{
 #[cfg(feature = "mlx")]
 use crate::llm::mlx::MlxLlmProvider;
 use crate::llm::openai_compatible::{
-    build_http_client, list_models as llm_list_models, OpenAiCompatibleProvider,
+    build_http_client, list_models as llm_list_models,
+    list_models_for_profile as llm_list_models_for_profile, OpenAiCompatibleProvider,
     LLM_HTTP_POOL_IDLE_TIMEOUT,
 };
 use crate::llm::{CorrectionRequest, LlmProvider};
@@ -851,17 +852,12 @@ pub unsafe extern "C" fn sp_core_rewrite_with_template(
                     llm_config.timeout_ms,
                 ))
             }
-            _ => Box::new(OpenAiCompatibleProvider::new(
+            _ => Box::new(OpenAiCompatibleProvider::from_profile(
                 llm_http_client,
-                active_profile.base_url.clone(),
-                active_profile.chat_completions_path.clone(),
-                active_profile.api_key.clone(),
-                active_profile.model.clone(),
+                active_profile.clone(),
                 llm_config.temperature,
                 llm_config.top_p,
                 llm_config.max_output_tokens,
-                active_profile.max_token_parameter,
-                active_profile.no_reasoning_control,
             )),
         };
 
@@ -1220,17 +1216,12 @@ async fn run_session(
                     llm_config.timeout_ms,
                 ))
             }
-            _ => Box::new(OpenAiCompatibleProvider::new(
+            _ => Box::new(OpenAiCompatibleProvider::from_profile(
                 llm_http_client,
-                active_profile.base_url,
-                active_profile.chat_completions_path,
-                active_profile.api_key,
-                active_profile.model,
+                active_profile.clone(),
                 llm_config.temperature,
                 llm_config.top_p,
                 llm_config.max_output_tokens,
-                active_profile.max_token_parameter,
-                active_profile.no_reasoning_control,
             )),
         };
 
@@ -1453,17 +1444,12 @@ fn start_llm_warmup_if_needed(
                 return;
             }
         };
-        let llm = OpenAiCompatibleProvider::new(
+        let llm = OpenAiCompatibleProvider::from_profile(
             llm_http_client,
-            warmup_profile.base_url,
-            warmup_profile.chat_completions_path,
-            warmup_profile.api_key,
-            warmup_profile.model,
+            warmup_profile,
             warmup_cfg.temperature,
             warmup_cfg.top_p,
             warmup_cfg.max_output_tokens,
-            warmup_profile.max_token_parameter,
-            warmup_profile.no_reasoning_control,
         );
 
         let warmup_ok = match llm.warmup().await {
@@ -1687,12 +1673,13 @@ pub unsafe extern "C" fn sp_llm_test(
         id: "test".into(),
         name: "Test".into(),
         provider: "openai".into(),
+        api_protocol: config::LlmApiProtocol::OpenaiChat,
         base_url,
         api_key,
         model,
-        chat_completions_path: "/chat/completions".into(),
+        endpoint_path: "/chat/completions".into(),
         max_token_parameter,
-        no_reasoning_control: config::LlmNoReasoningControl::ReasoningEffort,
+        no_reasoning_control: config::LlmNoReasoningControl::None,
         mlx: Default::default(),
     };
 
@@ -1856,6 +1843,106 @@ pub unsafe extern "C" fn sp_llm_list_models_json(
         .into_raw()
 }
 
+/// List remote models using the authentication rules from a complete LLM
+/// profile. This supports both OpenAI-compatible and Anthropic `/models`
+/// endpoints while preserving `sp_llm_list_models_json` for older clients.
+///
+/// # Safety
+/// `profile_json` must be a valid null-terminated C string.
+/// Caller must free the returned pointer with `sp_core_free_string()`.
+#[no_mangle]
+pub unsafe extern "C" fn sp_llm_list_models_for_profile_json(
+    profile_json: *const c_char,
+) -> *mut c_char {
+    let Some(profile_json) = (unsafe { cstr_to_str(profile_json) }) else {
+        return CString::new(
+            serde_json::json!({
+                "success": false,
+                "models": [],
+                "message": "Missing profile JSON",
+            })
+            .to_string(),
+        )
+        .unwrap_or_default()
+        .into_raw();
+    };
+    let profile: config::LlmProfileRuntimeConfig = match serde_json::from_str(profile_json) {
+        Ok(profile) => profile,
+        Err(e) => {
+            return CString::new(
+                serde_json::json!({
+                    "success": false,
+                    "models": [],
+                    "message": format!("Invalid profile JSON: {e}"),
+                })
+                .to_string(),
+            )
+            .unwrap_or_default()
+            .into_raw();
+        }
+    };
+    if profile.base_url.trim().is_empty() {
+        return CString::new(
+            serde_json::json!({
+                "success": false,
+                "models": [],
+                "message": "Base URL is required",
+            })
+            .to_string(),
+        )
+        .unwrap_or_default()
+        .into_raw();
+    }
+
+    let cfg = config::load_config().unwrap_or_default();
+    let client = match build_http_client(cfg.llm.timeout_ms) {
+        Ok(client) => client,
+        Err(e) => {
+            return CString::new(
+                serde_json::json!({
+                    "success": false,
+                    "models": [],
+                    "message": format!("Failed to create HTTP client: {e}"),
+                })
+                .to_string(),
+            )
+            .unwrap_or_default()
+            .into_raw();
+        }
+    };
+    let runtime = match Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            return CString::new(
+                serde_json::json!({
+                    "success": false,
+                    "models": [],
+                    "message": format!("Failed to create async runtime: {e}"),
+                })
+                .to_string(),
+            )
+            .unwrap_or_default()
+            .into_raw();
+        }
+    };
+    let result = runtime.block_on(llm_list_models_for_profile(client, &profile));
+    let json = match result {
+        Ok(models) => serde_json::json!({
+            "success": true,
+            "models": models,
+            "message": "Models fetched",
+        }),
+        Err(e) => serde_json::json!({
+            "success": false,
+            "models": [],
+            "message": format!("{e}"),
+        }),
+    };
+    CString::new(json.to_string())
+        .unwrap_or_default()
+        .into_raw()
+}
+
 /// Return the active LLM profile id and saved profile map as JSON.
 #[no_mangle]
 pub extern "C" fn sp_llm_profiles_json() -> *mut c_char {
@@ -2000,17 +2087,12 @@ pub unsafe extern "C" fn sp_llm_test_profile_json(profile_json: *const c_char) -
                     .into_raw();
                 }
             };
-            let llm = OpenAiCompatibleProvider::new(
+            let llm = OpenAiCompatibleProvider::from_profile(
                 client,
-                profile.base_url,
-                profile.chat_completions_path,
-                profile.api_key,
-                profile.model,
+                profile,
                 cfg.llm.temperature,
                 cfg.llm.top_p,
                 cfg.llm.max_output_tokens,
-                profile.max_token_parameter,
-                profile.no_reasoning_control,
             );
             rt.block_on(llm.correct(&request))
         }

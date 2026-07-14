@@ -38,7 +38,7 @@ ASR provider support:
 
 - **Cloud**: **Doubao (豆包)** and **Qwen (通义)** streaming ASR
 - **Local**: **Apple Speech** (macOS 26+, zero-config on-device), **MLX** (Apple Silicon, Qwen3-ASR models), and **sherpa-onnx** (CPU, streaming zipformer models)
-- **LLM**: any **OpenAI-compatible API**, or **MLX** local models (Apple Silicon, fully offline) for text correction
+- **LLM**: **OpenAI Chat Completions**, **OpenAI Responses**, **Anthropic Messages**, compatible gateways, or **MLX** local models
 - **Planned**: future ASR support may include the **OpenAI Transcriptions API**
 
 ## Installation
@@ -265,13 +265,20 @@ After ASR, the transcript is sent to an LLM for correction (capitalization,
 spacing, terminology, filler word removal). Koe stores multiple LLM profiles and
 uses `llm.active_profile` to choose the endpoint for correction.
 
-- **OpenAI-compatible APIs** — any cloud or self-hosted endpoint that implements the OpenAI chat completions API
+- **OpenAI Chat Completions** — OpenAI and compatible cloud/self-hosted endpoints
+- **OpenAI Responses** — the native Responses API used by current OpenAI text and reasoning models
+- **Anthropic Messages** — the native Claude Messages API, including Anthropic-compatible gateways
 - **APFEL** — an OpenAI-compatible local endpoint preset at `http://127.0.0.1:11434/v1`
 - **MLX** (Apple Silicon only) — fully offline local inference using Qwen3 models, no API key required
 
-OpenAI-compatible profiles, including APFEL, share the LLM HTTP client across
-sessions with HTTP/2 support and connection pooling for lower latency. MLX
-profiles run on-device via the KoeMLX Swift package.
+All remote profiles, including APFEL, share the LLM HTTP client across sessions
+with HTTP/2 support and connection pooling for lower latency. Requests and
+authentication are encoded using the selected protocol; responses collect only
+visible text and ignore reasoning, thinking, and tool blocks. Model IDs are not
+hard-coded, so any text-output model accepted by the selected API can be entered
+or chosen from its `/models` endpoint. Specialized image, audio, embedding, and
+moderation models are not text-correction models. MLX profiles run on-device via
+the KoeMLX Swift package.
 
 Koe does not install, start, restart, or choose a port for APFEL. Install and
 start APFEL separately with `apfel --serve` or `apfel service install/start`,
@@ -282,7 +289,7 @@ llm:
   # Set to false to skip LLM correction and paste raw ASR output directly.
   enabled: true
 
-  # Active LLM profile id. Built-in defaults include "openai", "apfel", and "mlx".
+  # Built-ins: openai, openai-responses, anthropic, apfel, and mlx.
   active_profile: "openai"
 
   # LLM sampling parameters. temperature: 0 = deterministic, best for correction tasks.
@@ -308,20 +315,46 @@ llm:
 
   profiles:
     openai:
-      name: "OpenAI Compatible"
+      name: "OpenAI Chat Completions"
       provider: "openai"
+      api_protocol: "openai_chat"
       base_url: "https://api.openai.com/v1"
       api_key: ""          # supports ${LLM_API_KEY}
       model: "gpt-5.4-nano"
+      endpoint_path: "/chat/completions"
       max_token_parameter: "max_completion_tokens"
-      no_reasoning_control: "reasoning_effort"
+      no_reasoning_control: "none"
+
+    openai-responses:
+      name: "OpenAI Responses"
+      provider: "openai"
+      api_protocol: "openai_responses"
+      base_url: "https://api.openai.com/v1"
+      api_key: ""          # supports ${LLM_API_KEY}
+      model: "gpt-5.4-nano"
+      endpoint_path: "/responses"
+      max_token_parameter: "max_completion_tokens"
+      no_reasoning_control: "none"
+
+    anthropic:
+      name: "Anthropic Messages"
+      provider: "anthropic"
+      api_protocol: "anthropic_messages"
+      base_url: "https://api.anthropic.com/v1"
+      api_key: ""          # supports ${ANTHROPIC_API_KEY}
+      model: ""            # choose or enter any text-capable Claude model
+      endpoint_path: "/messages"
+      max_token_parameter: "max_tokens"
+      no_reasoning_control: "none"
 
     apfel:
       name: "APFEL"
-      provider: "openai"
+      provider: "apfel"
+      api_protocol: "openai_chat"
       base_url: "http://127.0.0.1:11434/v1"
       api_key: ""          # APFEL does not require an API key by default
       model: "apple-foundationmodel"
+      endpoint_path: "/chat/completions"
       max_token_parameter: "max_tokens"
       no_reasoning_control: "none"
 
@@ -640,7 +673,7 @@ Local ASR providers are controlled by Rust feature flags in `koe-core/Cargo.toml
 Koe is built as a native macOS app with two layers:
 
 - **Objective-C shell** — handles macOS integration: hotkey detection, audio capture, clipboard management, paste simulation, menu bar UI, and usage statistics (SQLite)
-- **Rust core library** — handles ASR (cloud WebSocket streaming + local MLX/sherpa-onnx/Apple Speech), LLM correction (OpenAI-compatible profile endpoints + local MLX), config management, model management, transcript aggregation, and session orchestration
+- **Rust core library** — handles ASR, OpenAI Chat/Responses and Anthropic Messages LLM correction, local MLX inference, config/model management, transcript aggregation, and session orchestration
 - **Swift KoeMLX package** — bridges MLX inference to Rust via C FFI for on-device ASR (Qwen3-ASR) and LLM text correction (Qwen3) on Apple Silicon
 - **Swift KoeAppleSpeech package** — bridges Apple's SpeechAnalyzer to Rust via C FFI for zero-config on-device ASR (macOS 26+)
 

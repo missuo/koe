@@ -1,65 +1,53 @@
-use crate::config::{LlmMaxTokenParameter, LlmNoReasoningControl, LlmProfileRuntimeConfig};
+use crate::config::{
+    LlmApiProtocol, LlmMaxTokenParameter, LlmNoReasoningControl, LlmProfileRuntimeConfig,
+};
 use crate::errors::{KoeError, Result};
 use crate::llm::{CorrectionRequest, LlmProvider};
-use reqwest::Client;
+use reqwest::{Client, RequestBuilder};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 use urlencoding::encode;
 
 pub const LLM_HTTP_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
-/// LLM provider compatible with the OpenAI chat completions API.
+/// Remote LLM provider supporting OpenAI Chat Completions, OpenAI Responses,
+/// and Anthropic Messages wire protocols.
 pub struct OpenAiCompatibleProvider {
     client: Client,
-    base_url: String,
-    chat_completions_path: String,
-    api_key: String,
-    model: String,
+    profile: LlmProfileRuntimeConfig,
     temperature: f64,
     top_p: f64,
     max_output_tokens: u32,
-    max_token_parameter: LlmMaxTokenParameter,
-    no_reasoning_control: LlmNoReasoningControl,
 }
 
 impl OpenAiCompatibleProvider {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub fn from_profile(
         client: Client,
-        base_url: String,
-        chat_completions_path: String,
-        api_key: String,
-        model: String,
+        profile: LlmProfileRuntimeConfig,
         temperature: f64,
         top_p: f64,
         max_output_tokens: u32,
-        max_token_parameter: LlmMaxTokenParameter,
-        no_reasoning_control: LlmNoReasoningControl,
     ) -> Self {
         Self {
             client,
-            base_url,
-            chat_completions_path,
-            api_key,
-            model,
+            profile,
             temperature,
             top_p,
             max_output_tokens,
-            max_token_parameter,
-            no_reasoning_control,
         }
     }
 
     pub async fn warmup(&self) -> Result<()> {
-        let model = encode(&self.model);
-        let url = format!("{}/models/{}", self.base_url.trim_end_matches('/'), model);
+        let model = encode(&self.profile.model);
+        let url = format!(
+            "{}/models/{}",
+            self.profile.base_url.trim_end_matches('/'),
+            model
+        );
 
         log::debug!("LLM warmup request to {url}");
 
-        let mut builder = self.client.get(&url);
-        if !self.api_key.is_empty() {
-            builder = builder.header("Authorization", format!("Bearer {}", self.api_key));
-        }
+        let builder = authenticate_request(self.client.get(&url), &self.profile);
         let response = builder.send().await.map_err(|e| {
             if e.is_timeout() {
                 KoeError::LlmTimeout
@@ -83,11 +71,34 @@ impl OpenAiCompatibleProvider {
     }
 }
 
-fn build_chat_completions_url(base_url: &str, chat_completions_path: &str) -> String {
+fn authentication_headers(profile: &LlmProfileRuntimeConfig) -> Vec<(&'static str, String)> {
+    let mut headers = Vec::new();
+    if profile.effective_api_protocol() == LlmApiProtocol::AnthropicMessages {
+        headers.push(("anthropic-version", "2023-06-01".into()));
+        if !profile.api_key.is_empty() {
+            headers.push(("x-api-key", profile.api_key.clone()));
+        }
+    } else if !profile.api_key.is_empty() {
+        headers.push(("Authorization", format!("Bearer {}", profile.api_key)));
+    }
+    headers
+}
+
+fn authenticate_request(
+    mut builder: RequestBuilder,
+    profile: &LlmProfileRuntimeConfig,
+) -> RequestBuilder {
+    for (name, value) in authentication_headers(profile) {
+        builder = builder.header(name, value);
+    }
+    builder
+}
+
+fn build_endpoint_url(base_url: &str, endpoint_path: &str, protocol: LlmApiProtocol) -> String {
     let base = base_url.trim_end_matches('/');
-    let normalized_path = chat_completions_path.trim();
+    let normalized_path = endpoint_path.trim();
     let effective_path = if normalized_path.is_empty() {
-        "/chat/completions"
+        protocol.default_endpoint_path()
     } else {
         normalized_path
     };
@@ -123,13 +134,33 @@ fn parse_model_ids(response: &Value) -> Result<Vec<String>> {
 }
 
 pub async fn list_models(client: Client, base_url: &str, api_key: &str) -> Result<Vec<String>> {
-    let url = build_models_url(base_url);
+    let profile = LlmProfileRuntimeConfig {
+        id: String::new(),
+        name: String::new(),
+        provider: "openai".into(),
+        api_protocol: LlmApiProtocol::OpenaiChat,
+        base_url: base_url.into(),
+        api_key: api_key.into(),
+        model: String::new(),
+        endpoint_path: String::new(),
+        max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
+        no_reasoning_control: LlmNoReasoningControl::None,
+        mlx: Default::default(),
+    };
+    list_models_for_profile(client, &profile).await
+}
+
+pub async fn list_models_for_profile(
+    client: Client,
+    profile: &LlmProfileRuntimeConfig,
+) -> Result<Vec<String>> {
+    let mut url = build_models_url(&profile.base_url);
+    if profile.effective_api_protocol() == LlmApiProtocol::AnthropicMessages {
+        url.push_str("?limit=1000");
+    }
     log::debug!("LLM models request to {url}");
 
-    let mut builder = client.get(&url);
-    if !api_key.is_empty() {
-        builder = builder.header("Authorization", format!("Bearer {}", api_key));
-    }
+    let builder = authenticate_request(client.get(&url), profile);
     let response = builder.send().await.map_err(|e| {
         if e.is_timeout() {
             KoeError::LlmTimeout
@@ -174,17 +205,12 @@ pub async fn test_correction(
     system_prompt: &str,
     user_prompt: &str,
 ) -> (Result<String>, Duration) {
-    let llm = OpenAiCompatibleProvider::new(
+    let llm = OpenAiCompatibleProvider::from_profile(
         client,
-        profile.base_url.clone(),
-        profile.chat_completions_path.clone(),
-        profile.api_key.clone(),
-        profile.model.clone(),
+        profile.clone(),
         temperature,
         top_p,
         max_output_tokens,
-        profile.max_token_parameter,
-        profile.no_reasoning_control,
     );
 
     let request = CorrectionRequest {
@@ -208,8 +234,6 @@ pub fn build_chat_completion_body(
 ) -> Value {
     let mut body = json!({
         "model": profile.model,
-        "temperature": temperature,
-        "top_p": top_p,
         "messages": [
             {
                 "role": "system",
@@ -226,6 +250,15 @@ pub fn build_chat_completion_body(
         LlmMaxTokenParameter::MaxCompletionTokens => "max_completion_tokens",
     };
     body[token_field_name] = json!(max_output_tokens);
+
+    // Legacy/non-reasoning Chat endpoints commonly accept sampling controls.
+    // Reasoning models use max_completion_tokens and frequently reject these
+    // fields, so omit them there to keep the common request compatible across
+    // the full OpenAI model family.
+    if matches!(profile.max_token_parameter, LlmMaxTokenParameter::MaxTokens) {
+        body["temperature"] = json!(temperature);
+        body["top_p"] = json!(top_p);
+    }
     match profile.no_reasoning_control {
         LlmNoReasoningControl::ReasoningEffort => {
             if matches!(
@@ -243,25 +276,209 @@ pub fn build_chat_completion_body(
     body
 }
 
+pub fn build_responses_body(
+    profile: &LlmProfileRuntimeConfig,
+    max_output_tokens: u32,
+    request: &CorrectionRequest,
+) -> Value {
+    let mut body = json!({
+        "model": profile.model,
+        "instructions": request.system_prompt,
+        "input": request.user_prompt,
+        "max_output_tokens": max_output_tokens,
+        // Correction requests are independent and contain user dictation;
+        // do not retain server-side response state by default.
+        "store": false,
+    });
+    if matches!(
+        profile.no_reasoning_control,
+        LlmNoReasoningControl::ReasoningEffort
+    ) {
+        body["reasoning"] = json!({"effort": "none"});
+    }
+    body
+}
+
+pub fn build_anthropic_messages_body(
+    profile: &LlmProfileRuntimeConfig,
+    temperature: f64,
+    max_output_tokens: u32,
+    request: &CorrectionRequest,
+) -> Value {
+    let mut body = json!({
+        "model": profile.model,
+        "max_tokens": max_output_tokens,
+        "system": request.system_prompt,
+        "messages": [{
+            "role": "user",
+            "content": request.user_prompt,
+        }],
+    });
+    // Anthropic recommends changing temperature or top_p, not both. Use the
+    // user-facing temperature control and leave top_p at the API default.
+    if temperature.is_finite() && (0.0..=1.0).contains(&temperature) {
+        body["temperature"] = json!(temperature);
+    }
+    body
+}
+
+fn build_request_body(
+    profile: &LlmProfileRuntimeConfig,
+    temperature: f64,
+    top_p: f64,
+    max_output_tokens: u32,
+    request: &CorrectionRequest,
+) -> Value {
+    match profile.effective_api_protocol() {
+        LlmApiProtocol::OpenaiChat => {
+            build_chat_completion_body(profile, temperature, top_p, max_output_tokens, request)
+        }
+        LlmApiProtocol::OpenaiResponses => {
+            build_responses_body(profile, max_output_tokens, request)
+        }
+        LlmApiProtocol::AnthropicMessages => {
+            build_anthropic_messages_body(profile, temperature, max_output_tokens, request)
+        }
+    }
+}
+
+fn text_from_content_part(part: &Value) -> Option<&str> {
+    part.get("text")
+        .and_then(|text| {
+            text.as_str()
+                .or_else(|| text.get("value").and_then(Value::as_str))
+        })
+        .or_else(|| part.get("content").and_then(Value::as_str))
+}
+
+fn collect_text_parts(parts: &[Value], accepted_types: &[&str]) -> String {
+    parts
+        .iter()
+        .filter(|part| {
+            part.get("type")
+                .and_then(Value::as_str)
+                .is_none_or(|kind| accepted_types.contains(&kind))
+        })
+        .filter_map(text_from_content_part)
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn clean_response_content(content: &str) -> Result<String> {
+    let content = crate::llm::strip_reasoning(content);
+    let cleaned = content.trim();
+    let cleaned = cleaned
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(cleaned);
+    let cleaned = cleaned
+        .strip_prefix('\u{201c}')
+        .and_then(|s| s.strip_suffix('\u{201d}'))
+        .unwrap_or(cleaned);
+    if cleaned.trim().is_empty() {
+        return Err(KoeError::LlmFailed("empty content in response".into()));
+    }
+    Ok(cleaned.to_string())
+}
+
+fn parse_chat_response(json: &Value) -> Result<String> {
+    let choice = json.get("choices").and_then(|choices| choices.get(0));
+    if choice
+        .and_then(|item| item.get("finish_reason"))
+        .and_then(Value::as_str)
+        == Some("length")
+    {
+        log::warn!("LLM Chat response reached max tokens; validating returned content");
+    }
+    let content = choice
+        .and_then(|item| item.get("message"))
+        .and_then(|message| message.get("content"))
+        .ok_or_else(|| KoeError::LlmFailed("missing content in Chat response".into()))?;
+    let text = if let Some(text) = content.as_str() {
+        text.to_string()
+    } else if let Some(parts) = content.as_array() {
+        collect_text_parts(parts, &["text", "output_text"])
+    } else {
+        String::new()
+    };
+    clean_response_content(&text)
+}
+
+fn parse_responses_response(json: &Value) -> Result<String> {
+    if json.get("status").and_then(Value::as_str) == Some("failed") {
+        let message = json
+            .pointer("/error/message")
+            .and_then(Value::as_str)
+            .unwrap_or("Responses API returned failed status");
+        return Err(KoeError::LlmFailed(message.into()));
+    }
+    if json.get("status").and_then(Value::as_str) == Some("incomplete") {
+        log::warn!("LLM Responses result is incomplete; validating returned content");
+    }
+
+    let mut text = json
+        .get("output_text")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if text.is_empty() {
+        let output = json
+            .get("output")
+            .and_then(Value::as_array)
+            .ok_or_else(|| KoeError::LlmFailed("missing output in Responses response".into()))?;
+        let mut chunks = Vec::new();
+        for item in output {
+            if item.get("type").and_then(Value::as_str) != Some("message") {
+                continue;
+            }
+            if let Some(parts) = item.get("content").and_then(Value::as_array) {
+                let chunk = collect_text_parts(parts, &["output_text", "text"]);
+                if !chunk.is_empty() {
+                    chunks.push(chunk);
+                }
+            }
+        }
+        text = chunks.join("");
+    }
+    clean_response_content(&text)
+}
+
+fn parse_anthropic_response(json: &Value) -> Result<String> {
+    if json.get("stop_reason").and_then(Value::as_str) == Some("max_tokens") {
+        log::warn!("Anthropic Messages response reached max_tokens; validating returned content");
+    }
+    let content = json
+        .get("content")
+        .ok_or_else(|| KoeError::LlmFailed("missing content in Anthropic response".into()))?;
+    let text = if let Some(text) = content.as_str() {
+        text.to_string()
+    } else if let Some(parts) = content.as_array() {
+        collect_text_parts(parts, &["text"])
+    } else {
+        String::new()
+    };
+    clean_response_content(&text)
+}
+
+fn parse_protocol_response(protocol: LlmApiProtocol, json: &Value) -> Result<String> {
+    match protocol {
+        LlmApiProtocol::OpenaiChat => parse_chat_response(json),
+        LlmApiProtocol::OpenaiResponses => parse_responses_response(json),
+        LlmApiProtocol::AnthropicMessages => parse_anthropic_response(json),
+    }
+}
+
 #[async_trait::async_trait]
 impl LlmProvider for OpenAiCompatibleProvider {
     async fn correct(&self, request: &CorrectionRequest) -> Result<String> {
-        let url = build_chat_completions_url(&self.base_url, &self.chat_completions_path);
-
-        let profile = LlmProfileRuntimeConfig {
-            id: String::new(),
-            name: String::new(),
-            provider: "openai".into(),
-            base_url: self.base_url.clone(),
-            api_key: self.api_key.clone(),
-            model: self.model.clone(),
-            chat_completions_path: self.chat_completions_path.clone(),
-            max_token_parameter: self.max_token_parameter,
-            no_reasoning_control: self.no_reasoning_control,
-            mlx: Default::default(),
-        };
-        let body = build_chat_completion_body(
-            &profile,
+        let protocol = self.profile.effective_api_protocol();
+        let url = build_endpoint_url(
+            &self.profile.base_url,
+            self.profile.effective_endpoint_path(),
+            protocol,
+        );
+        let body = build_request_body(
+            &self.profile,
             self.temperature,
             self.top_p,
             self.max_output_tokens,
@@ -270,14 +487,12 @@ impl LlmProvider for OpenAiCompatibleProvider {
 
         log::debug!("LLM request to {url}");
 
-        let mut builder = self
+        let builder = self
             .client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&body);
-        if !self.api_key.is_empty() {
-            builder = builder.header("Authorization", format!("Bearer {}", self.api_key));
-        }
+        let builder = authenticate_request(builder, &self.profile);
         let response = builder.send().await.map_err(|e| {
             if e.is_timeout() {
                 KoeError::LlmTimeout
@@ -296,58 +511,16 @@ impl LlmProvider for OpenAiCompatibleProvider {
             .json()
             .await
             .map_err(|e| KoeError::LlmFailed(format!("parse response: {e}")))?;
-
-        let choice = json.get("choices").and_then(|c| c.get(0));
-
-        // A length finish reason is advisory: the returned rewrite may still
-        // be complete and useful. Keep it so the shared degeneration guard can
-        // compare it with the ASR text instead of unconditionally discarding
-        // all corrections.
-        let finish = choice
-            .and_then(|c| c.get("finish_reason"))
-            .and_then(|f| f.as_str());
-        if finish == Some("length") {
-            log::warn!("LLM response reached max_tokens (finish_reason=length); validating returned content");
-        }
-
-        let content = choice
-            .and_then(|c| c.get("message"))
-            .and_then(|m| m.get("content"))
-            .and_then(|c| c.as_str())
-            .ok_or_else(|| KoeError::LlmFailed("missing content in response".into()))?;
-
-        // Strip any leading <think>...</think> reasoning block emitted by
-        // reasoning models (Qwen3, R1, etc.) when the server ignores the
-        // no-reasoning request flag.  Must run before the empty-content guard
-        // so an unterminated <think> (truncated output) returns "" and triggers
-        // ASR fallback rather than pasting a partial monologue.
-        let content = crate::llm::strip_reasoning(content);
-
-        // Basic output cleaning: trim whitespace, remove wrapping quotes
-        let cleaned = content.trim();
-        let cleaned = cleaned
-            .strip_prefix('"')
-            .and_then(|s| s.strip_suffix('"'))
-            .unwrap_or(cleaned);
-        let cleaned = cleaned
-            .strip_prefix('\u{201c}')
-            .and_then(|s| s.strip_suffix('\u{201d}'))
-            .unwrap_or(cleaned);
-
-        // Reject empty or whitespace-only output so callers fall back to raw
-        // ASR text instead of silently erasing the user's utterance.
-        if cleaned.trim().is_empty() {
-            return Err(KoeError::LlmFailed("empty content in response".into()));
-        }
-
-        Ok(cleaned.to_string())
+        parse_protocol_response(protocol, &json)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{LlmMaxTokenParameter, LlmNoReasoningControl, LlmProfileRuntimeConfig};
+    use crate::config::{
+        LlmApiProtocol, LlmMaxTokenParameter, LlmNoReasoningControl, LlmProfileRuntimeConfig,
+    };
 
     fn request() -> CorrectionRequest {
         CorrectionRequest {
@@ -358,16 +531,37 @@ mod tests {
         }
     }
 
+    fn profile(protocol: LlmApiProtocol) -> LlmProfileRuntimeConfig {
+        LlmProfileRuntimeConfig {
+            id: "test".into(),
+            name: "Test".into(),
+            provider: if protocol == LlmApiProtocol::AnthropicMessages {
+                "anthropic".into()
+            } else {
+                "openai".into()
+            },
+            api_protocol: protocol,
+            base_url: "https://example.com/v1".into(),
+            api_key: "secret".into(),
+            model: "test-model".into(),
+            endpoint_path: protocol.default_endpoint_path().into(),
+            max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
+            no_reasoning_control: LlmNoReasoningControl::None,
+            mlx: Default::default(),
+        }
+    }
+
     #[test]
     fn apfel_body_uses_max_tokens_without_reasoning_controls() {
         let profile = LlmProfileRuntimeConfig {
             id: "apfel".into(),
             name: "APFEL".into(),
-            provider: "openai".into(),
+            provider: "apfel".into(),
+            api_protocol: LlmApiProtocol::OpenaiChat,
             base_url: "http://127.0.0.1:11434/v1".into(),
             api_key: "".into(),
             model: "apple-foundationmodel".into(),
-            chat_completions_path: "/chat/completions".into(),
+            endpoint_path: "/chat/completions".into(),
             max_token_parameter: LlmMaxTokenParameter::MaxTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
             mlx: Default::default(),
@@ -388,10 +582,11 @@ mod tests {
             id: "openai".into(),
             name: "OpenAI".into(),
             provider: "openai".into(),
+            api_protocol: LlmApiProtocol::OpenaiChat,
             base_url: "https://api.openai.com/v1".into(),
             api_key: "sk-test".into(),
             model: "gpt-5.4-nano".into(),
-            chat_completions_path: "/chat/completions".into(),
+            endpoint_path: "/chat/completions".into(),
             max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
             no_reasoning_control: LlmNoReasoningControl::ReasoningEffort,
             mlx: Default::default(),
@@ -403,18 +598,128 @@ mod tests {
         assert_eq!(body["max_completion_tokens"], 1024);
         assert_eq!(body["reasoning_effort"], "none");
         assert!(body.get("max_tokens").is_none());
+        assert!(body.get("temperature").is_none());
+        assert!(body.get("top_p").is_none());
     }
 
     #[test]
-    fn chat_completion_url_avoids_double_slashes() {
-        let url = build_chat_completions_url("https://api.openai.com/v1/", "/chat/completions");
+    fn endpoint_url_avoids_double_slashes() {
+        let url = build_endpoint_url(
+            "https://api.openai.com/v1/",
+            "/chat/completions",
+            LlmApiProtocol::OpenaiChat,
+        );
         assert_eq!(url, "https://api.openai.com/v1/chat/completions");
     }
 
     #[test]
-    fn chat_completion_url_accepts_path_without_leading_slash() {
-        let url = build_chat_completions_url("https://api.openai.com/v1", "chat/completions");
-        assert_eq!(url, "https://api.openai.com/v1/chat/completions");
+    fn endpoint_url_uses_protocol_default_for_empty_path() {
+        let url = build_endpoint_url(
+            "https://api.openai.com/v1",
+            "",
+            LlmApiProtocol::OpenaiResponses,
+        );
+        assert_eq!(url, "https://api.openai.com/v1/responses");
+    }
+
+    #[test]
+    fn responses_body_uses_native_fields_and_disables_storage() {
+        let profile = profile(LlmApiProtocol::OpenaiResponses);
+        let body = build_responses_body(&profile, 2048, &request());
+
+        assert_eq!(body["model"], "test-model");
+        assert_eq!(body["instructions"], "system");
+        assert_eq!(body["input"], "user");
+        assert_eq!(body["max_output_tokens"], 2048);
+        assert_eq!(body["store"], false);
+        assert!(body.get("messages").is_none());
+        assert!(body.get("temperature").is_none());
+    }
+
+    #[test]
+    fn anthropic_body_uses_system_and_messages_api_fields() {
+        let profile = profile(LlmApiProtocol::AnthropicMessages);
+        let body = build_anthropic_messages_body(&profile, 0.2, 2048, &request());
+
+        assert_eq!(body["model"], "test-model");
+        assert_eq!(body["system"], "system");
+        assert_eq!(body["messages"][0]["role"], "user");
+        assert_eq!(body["messages"][0]["content"], "user");
+        assert_eq!(body["max_tokens"], 2048);
+        assert_eq!(body["temperature"], 0.2);
+        assert!(body.get("top_p").is_none());
+    }
+
+    #[test]
+    fn openai_and_anthropic_use_protocol_specific_authentication() {
+        let openai = profile(LlmApiProtocol::OpenaiResponses);
+        assert_eq!(
+            authentication_headers(&openai),
+            vec![("Authorization", "Bearer secret".into())]
+        );
+
+        let anthropic = profile(LlmApiProtocol::AnthropicMessages);
+        assert_eq!(
+            authentication_headers(&anthropic),
+            vec![
+                ("anthropic-version", "2023-06-01".into()),
+                ("x-api-key", "secret".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_chat_string_and_content_parts() {
+        let string = json!({"choices": [{"message": {"content": " corrected "}}]});
+        assert_eq!(parse_chat_response(&string).unwrap(), "corrected");
+
+        let parts = json!({"choices": [{"message": {"content": [
+            {"type": "text", "text": "first "},
+            {"type": "output_text", "text": "second"}
+        ]}}]});
+        assert_eq!(parse_chat_response(&parts).unwrap(), "first second");
+    }
+
+    #[test]
+    fn parses_responses_output_and_ignores_reasoning_items() {
+        let response = json!({
+            "status": "completed",
+            "output": [
+                {"type": "reasoning", "summary": []},
+                {"type": "message", "content": [
+                    {"type": "output_text", "text": "corrected text", "annotations": []}
+                ]}
+            ]
+        });
+        assert_eq!(
+            parse_responses_response(&response).unwrap(),
+            "corrected text"
+        );
+    }
+
+    #[test]
+    fn parses_anthropic_text_blocks_and_ignores_thinking() {
+        let response = json!({
+            "stop_reason": "end_turn",
+            "content": [
+                {"type": "thinking", "thinking": "hidden"},
+                {"type": "text", "text": "corrected text"}
+            ]
+        });
+        assert_eq!(
+            parse_anthropic_response(&response).unwrap(),
+            "corrected text"
+        );
+    }
+
+    #[test]
+    fn all_protocols_reject_missing_visible_text() {
+        let chat = json!({"choices": [{"message": {"content": []}}]});
+        let responses = json!({"status": "completed", "output": []});
+        let anthropic = json!({"content": [{"type": "thinking", "thinking": "hidden"}]});
+        assert!(parse_chat_response(&chat).is_err());
+        assert!(parse_responses_response(&responses).is_err());
+        assert!(parse_anthropic_response(&anthropic).is_err());
     }
 
     #[test]
