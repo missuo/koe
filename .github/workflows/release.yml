@@ -62,7 +62,7 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
 
       - name: Cache Swift packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: KoeApp/build-ci/SourcePackages
           key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('KoeApp/project.yml', 'Packages/**/Package.swift', 'Packages/**/Package.resolved') }}
@@ -177,7 +177,7 @@ jobs:
             "target/aarch64-apple-darwin/release/koe" \
             Koe-MLX-macOS-arm64.zip
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Koe-macOS-arm64
           path: |
@@ -186,7 +186,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload MLX build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Koe-MLX-macOS-arm64
           path: |
@@ -213,7 +213,7 @@ jobs:
           ref: main
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
