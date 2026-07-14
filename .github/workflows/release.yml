@@ -71,7 +71,11 @@ jobs:
           key: aarch64-apple-darwin
 
       - name: Install dependencies
-        run: brew install xcodegen cmake
+        # Untap the runner image's untrusted aws/tap first so Homebrew's
+        # tap-trust check doesn't emit warnings.
+        run: |
+          brew untap aws/tap 2>/dev/null || true
+          brew install xcodegen cmake
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1
 
@@ -233,7 +237,7 @@ jobs:
           merge-multiple: true
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*.zip
           generate_release_notes: true
