@@ -1,8 +1,8 @@
-ASR 原文：
-{{asr_text}}
+用户词典：
+{{dictionary_entries}}
 
 ASR 中间修订历史：
 {{interim_history}}
 
-用户词典：
-{{dictionary_entries}}
+ASR 原文：
+{{asr_text}}

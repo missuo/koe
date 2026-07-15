@@ -266,6 +266,32 @@ pub fn filter_dictionary_candidates(
 mod tests {
     use super::*;
 
+    #[test]
+    fn default_user_prompt_places_stable_dictionary_before_dynamic_fields() {
+        let template = build_default_user_prompt_template();
+
+        assert_eq!(template.matches("{{dictionary_entries}}").count(), 1);
+        assert_eq!(template.matches("{{interim_history}}").count(), 1);
+        assert_eq!(template.matches("{{asr_text}}").count(), 1);
+
+        let dictionary_pos = template.find("{{dictionary_entries}}").unwrap();
+        let history_pos = template.find("{{interim_history}}").unwrap();
+        let asr_pos = template.find("{{asr_text}}").unwrap();
+        assert!(dictionary_pos < history_pos);
+        assert!(dictionary_pos < asr_pos);
+
+        let dictionary = vec!["StableTerm".to_string()];
+        let history = vec!["interim revision".to_string()];
+        let rendered = render_user_prompt(&template, "final ASR", &dictionary, &history);
+        assert!(rendered.contains("StableTerm"));
+        assert!(rendered.contains("1. interim revision"));
+        assert!(rendered.contains("final ASR"));
+
+        let rendered_empty = render_user_prompt(&template, "final ASR", &[], &[]);
+        assert!(rendered_empty.contains("用户词典：\n（无）"));
+        assert!(rendered_empty.contains("ASR 中间修订历史：\n（无）"));
+    }
+
     fn dict() -> Vec<String> {
         [
             "cc-connect",

@@ -2,6 +2,12 @@
 
 All notable user-facing changes to Koe are documented here.
 
+## Unreleased
+
+### Changed
+
+- Reordered the built-in user prompt so stable dictionary context precedes per-request ASR content, improving exact-prefix cache reuse for compatible LLM providers when the rendered dictionary remains unchanged. Existing custom `user_prompt.txt` files are not overwritten.
+
 ## 1.0.17 - 2026-07-14
 
 ### Added
