@@ -276,6 +276,10 @@ static BOOL configFlagEnabled(const char *keyPath) {
 - (void)applicationWillTerminate:(NSNotification *)notification {
     NSLog(@"[Koe] Application terminating...");
     self.quitting = YES;
+    // Stop the hotkey monitor before any slow teardown so its event tap
+    // cannot stall the session keyboard stream (see statusBarDidSelectQuit).
+    // Safe to call twice — stop() is idempotent.
+    [self.hotkeyMonitor stop];
     [self cancelPendingSessionEnd];
     // Cancel any scheduled CGEventPost paste/undo blocks. The status-bar quit
     // path already does this, but termination can also start elsewhere
@@ -292,7 +296,6 @@ static BOOL configFlagEnabled(const char *keyPath) {
         self.configWatcher = nil;
     }
     [self.audioDeviceManager stopListening];
-    [self.hotkeyMonitor stop];
     [self.rustBridge destroyCore];
 }
 
@@ -895,6 +898,13 @@ static BOOL configFlagEnabled(const char *keyPath) {
     self.quitting = YES;
     self.hotkeyMonitor.suspended = YES;
 
+    // Stop the hotkey monitor FIRST, before any slow teardown (audio, Rust).
+    // While the monitor's event tap is alive, a blocked process stalls the
+    // session's keyboard stream: keystrokes get swallowed and WindowServer
+    // accumulates stale modifier state that it flushes as phantom
+    // FlagsChanged events when the tap dies (issues #57/#65).
+    [self.hotkeyMonitor stop];
+
     // Cancel any pending session-end block so it cannot trigger a paste
     // during the run-loop draining inside [NSApp terminate:].
     [self cancelPendingSessionEnd];
@@ -903,7 +913,6 @@ static BOOL configFlagEnabled(const char *keyPath) {
     [self.pasteManager cancel];
     [self.audioCaptureManager shutdown];
     [self.rustBridge cancelSession];
-    [self.hotkeyMonitor stop];
     [NSApp terminate:nil];
 }
 

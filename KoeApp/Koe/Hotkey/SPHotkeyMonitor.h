@@ -63,11 +63,13 @@ typedef NS_ENUM(uint8_t, SPHotkeyTriggerMode) {
 
 /// Optional block called when a number key (1-9) is pressed.
 /// Return YES to consume the key event so it does not continue to the target app.
-@property (nonatomic, copy) BOOL (^numberKeyHandler)(NSInteger number);
+/// Atomic: read from the event-tap thread while set/cleared on the main thread.
+@property (copy) BOOL (^numberKeyHandler)(NSInteger number);
 
 /// Optional block called when any non-template key is pressed (any key except 1-9).
 /// The key event is NOT consumed — it always passes through to the target app.
 /// Used to dismiss the overlay when the user resumes typing after text insertion.
-@property (nonatomic, copy) void (^anyKeyDismissHandler)(void);
+/// Atomic: read from the event-tap thread while set/cleared on the main thread.
+@property (copy) void (^anyKeyDismissHandler)(void);
 
 @end

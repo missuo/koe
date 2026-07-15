@@ -28,6 +28,17 @@ typedef NS_ENUM(NSInteger, SPHotkeyState) {
 @property (nonatomic, strong) id globalMonitorRef;
 @property (nonatomic, strong) id localMonitorRef;
 @property (nonatomic, assign) BOOL running;
+// The CGEventTap lives on this dedicated thread. Its callback gates every
+// keyboard event in the session, so it must never run on the main thread:
+// when the main thread stalls (ASR finalization, paste, overlay work —
+// exactly when the user releases the trigger key), a main-thread tap
+// swallows in-flight modifier events. WindowServer then accumulates stale
+// modifier state for downstream consumers and emits corrective FlagsChanged
+// events (keycode 63/Fn) when the tap is destroyed at quit — other apps'
+// Fn-hotkey detectors see those as real presses (issues #57/#65).
+@property (nonatomic, strong) NSThread *tapThread;
+@property (nonatomic, assign) CFRunLoopRef tapRunLoop;
+@property (nonatomic, strong) dispatch_semaphore_t tapShutdownSemaphore;
 @property (nonatomic, assign, readwrite) BOOL canConsumeGlobalKeyEvents;
 @property (nonatomic, strong) NSMutableSet<NSNumber *> *suppressedNumberKeyCodes;
 @property (nonatomic, strong) NSMutableSet<NSNumber *> *suppressedHotkeyKeyCodes;
@@ -42,6 +53,10 @@ typedef NS_ENUM(NSInteger, SPHotkeyState) {
 - (BOOL)hasUnconfirmedPreCapture;
 - (BOOL)handleNumberKeyWithKeyCode:(NSInteger)keyCode;
 - (BOOL)consumeSuppressedNumberKeyForKeyCode:(NSInteger)keyCode isKeyUp:(BOOL)isKeyUp;
+- (BOOL)isSuppressedHotkeyKeyCode:(NSNumber *)keyCodeNumber;
+- (void)addSuppressedHotkeyKeyCode:(NSNumber *)keyCodeNumber;
+- (BOOL)removeSuppressedHotkeyKeyCodeIfPresent:(NSNumber *)keyCodeNumber;
+- (void)tapThreadMain:(dispatch_semaphore_t)readySemaphore;
 - (NSUInteger)currentModifierFlags;
 - (void)cancelPendingModifierRelease;
 - (void)scheduleModifierRelease;
@@ -65,6 +80,21 @@ static NSInteger numberForKeyCode(NSInteger keyCode) {
         case 25: return 9;
         default: return 0;
     }
+}
+
+// Run a block on the main thread in kCFRunLoopCommonModes. Unlike
+// dispatch_async(main queue), this also executes while the main run loop is
+// in a modal or event-tracking mode (NSAlert, Sparkle update prompts, menu
+// tracking) — the main dispatch queue is NOT drained during those loops, and
+// trigger handling must not freeze whenever an alert happens to be on screen.
+static void SPPerformOnMainRunLoop(dispatch_block_t block) {
+    if ([NSThread isMainThread]) {
+        block();
+        return;
+    }
+    CFRunLoopRef mainRunLoop = CFRunLoopGetMain();
+    CFRunLoopPerformBlock(mainRunLoop, kCFRunLoopCommonModes, block);
+    CFRunLoopWakeUp(mainRunLoop);
 }
 
 static const NSUInteger SPHotkeyRelevantModifierMask =
@@ -101,7 +131,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         NSNumber *keyCodeNumber = @(keyCode);
         NSUInteger flags = (NSUInteger)CGEventGetFlags(event);
         BOOL isRepeat = CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat) != 0;
-        BOOL suppressedTriggerKey = [monitor.suppressedHotkeyKeyCodes containsObject:keyCodeNumber];
+        BOOL suppressedTriggerKey = [monitor isSuppressedHotkeyKeyCode:keyCodeNumber];
 
         if ([monitor consumeSuppressedNumberKeyForKeyCode:keyCode isKeyUp:(type == kCGEventKeyUp)]) {
             return monitor.canConsumeGlobalKeyEvents ? NULL : event;
@@ -114,7 +144,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         // A Command tap that becomes a real keyboard shortcut (for example
         // Command-C) must not count toward the double-tap gesture.
         if (type == kCGEventKeyDown && ![monitor isTargetKeyCode:keyCode]) {
-            dispatch_async(dispatch_get_main_queue(), ^{
+            SPPerformOnMainRunLoop(^{
                 [monitor cancelDoubleTapCandidateForInterveningInput];
             });
         }
@@ -130,7 +160,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         // The event is NOT consumed — it passes through to the target app.
         if (type == kCGEventKeyDown && monitor.anyKeyDismissHandler) {
             void (^handler)(void) = monitor.anyKeyDismissHandler;
-            dispatch_async(dispatch_get_main_queue(), ^{
+            SPPerformOnMainRunLoop(^{
                 handler();
             });
         }
@@ -149,7 +179,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
             BOOL isDown = (type == kCGEventKeyDown);
             if (isDown != monitor.triggerDown) {
                 monitor.triggerDown = isDown;
-                dispatch_async(dispatch_get_main_queue(), ^{
+                SPPerformOnMainRunLoop(^{
                     if (isDown) {
                         [monitor handleTriggerDown];
                     } else {
@@ -158,17 +188,16 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
                 });
             }
             if (handlesKeyDownMatchedTrigger && isDown) {
-                [monitor.suppressedHotkeyKeyCodes addObject:keyCodeNumber];
+                [monitor addSuppressedHotkeyKeyCode:keyCodeNumber];
                 return NULL;
             }
             if (handlesKeyDownMatchedTrigger && suppressedTriggerKey) {
-                [monitor.suppressedHotkeyKeyCodes removeObject:keyCodeNumber];
+                [monitor removeSuppressedHotkeyKeyCodeIfPresent:keyCodeNumber];
                 return NULL;
             }
         }
 
-        if (type == kCGEventKeyUp && [monitor.suppressedHotkeyKeyCodes containsObject:keyCodeNumber]) {
-            [monitor.suppressedHotkeyKeyCodes removeObject:keyCodeNumber];
+        if (type == kCGEventKeyUp && [monitor removeSuppressedHotkeyKeyCodeIfPresent:keyCodeNumber]) {
             return NULL;
         }
     }
@@ -223,46 +252,89 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
           self.targetMatchKind,
           self.holdThresholdMs);
 
-    // Also try CGEventTap as additional source.
-    // Prefer active taps that can swallow handled number shortcuts so they do
-    // not leak into the user's focused app. Some systems reject one tap
-    // location but allow another, so try both before degrading to listen-only.
-    CGEventMask mask = CGEventMaskBit(kCGEventFlagsChanged)
-                     | CGEventMaskBit(kCGEventKeyDown)
-                     | CGEventMaskBit(kCGEventKeyUp);
-    struct {
-        CGEventTapLocation location;
-        CGEventTapOptions options;
-        NSString *logMessage;
-    } attempts[] = {
-        { kCGSessionEventTap, kCGEventTapOptionDefault, @"[Koe] CGEventTap active on session stream (event suppression enabled)" },
-        { kCGHIDEventTap, kCGEventTapOptionDefault, @"[Koe] CGEventTap active on HID stream (event suppression enabled)" },
-        { kCGSessionEventTap, kCGEventTapOptionListenOnly, @"[Koe] CGEventTap active in listen-only fallback mode on session stream" },
-        { kCGHIDEventTap, kCGEventTapOptionListenOnly, @"[Koe] CGEventTap active in listen-only fallback mode on HID stream" },
-    };
-
-    self.canConsumeGlobalKeyEvents = NO;
-    for (NSUInteger i = 0; i < sizeof(attempts) / sizeof(attempts[0]); i++) {
-        self.eventTap = CGEventTapCreate(attempts[i].location,
-                                         kCGHeadInsertEventTap,
-                                         attempts[i].options,
-                                         mask,
-                                         hotkeyEventCallback,
-                                         (__bridge void *)self);
-        if (!self.eventTap) {
-            continue;
-        }
-
-        self.runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, self.eventTap, 0);
-        CFRunLoopAddSource(CFRunLoopGetMain(), self.runLoopSource, kCFRunLoopCommonModes);
-        CGEventTapEnable(self.eventTap, true);
-        self.canConsumeGlobalKeyEvents = (attempts[i].options == kCGEventTapOptionDefault);
-        NSLog(@"%@", attempts[i].logMessage);
-        break;
-    }
+    // Also try CGEventTap as additional source, hosted on a dedicated thread
+    // (see tapThread property for why it must never share the main thread).
+    dispatch_semaphore_t ready = dispatch_semaphore_create(0);
+    self.tapShutdownSemaphore = dispatch_semaphore_create(0);
+    NSThread *thread = [[NSThread alloc] initWithTarget:self
+                                               selector:@selector(tapThreadMain:)
+                                                 object:ready];
+    thread.name = @"im.koe.hotkey-tap";
+    thread.qualityOfService = NSQualityOfServiceUserInteractive;
+    self.tapThread = thread;
+    [thread start];
+    // Wait for the tap to be installed so canConsumeGlobalKeyEvents is
+    // accurate for callers that read it right after start.
+    dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)));
 
     if (!self.eventTap) {
         NSLog(@"[Koe] CGEventTap unavailable (ok, NSEvent monitors active)");
+    }
+}
+
+- (void)tapThreadMain:(dispatch_semaphore_t)readySemaphore {
+    @autoreleasepool {
+        // Prefer active taps that can swallow handled number shortcuts so they
+        // do not leak into the user's focused app. Some systems reject one tap
+        // location but allow another, so try both before degrading to
+        // listen-only.
+        CGEventMask mask = CGEventMaskBit(kCGEventFlagsChanged)
+                         | CGEventMaskBit(kCGEventKeyDown)
+                         | CGEventMaskBit(kCGEventKeyUp);
+        struct {
+            CGEventTapLocation location;
+            CGEventTapOptions options;
+            NSString *logMessage;
+        } attempts[] = {
+            { kCGSessionEventTap, kCGEventTapOptionDefault, @"[Koe] CGEventTap active on session stream (event suppression enabled)" },
+            { kCGHIDEventTap, kCGEventTapOptionDefault, @"[Koe] CGEventTap active on HID stream (event suppression enabled)" },
+            { kCGSessionEventTap, kCGEventTapOptionListenOnly, @"[Koe] CGEventTap active in listen-only fallback mode on session stream" },
+            { kCGHIDEventTap, kCGEventTapOptionListenOnly, @"[Koe] CGEventTap active in listen-only fallback mode on HID stream" },
+        };
+
+        self.canConsumeGlobalKeyEvents = NO;
+        for (NSUInteger i = 0; i < sizeof(attempts) / sizeof(attempts[0]); i++) {
+            self.eventTap = CGEventTapCreate(attempts[i].location,
+                                             kCGHeadInsertEventTap,
+                                             attempts[i].options,
+                                             mask,
+                                             hotkeyEventCallback,
+                                             (__bridge void *)self);
+            if (!self.eventTap) {
+                continue;
+            }
+
+            self.runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, self.eventTap, 0);
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), self.runLoopSource, kCFRunLoopCommonModes);
+            CGEventTapEnable(self.eventTap, true);
+            self.canConsumeGlobalKeyEvents = (attempts[i].options == kCGEventTapOptionDefault);
+            NSLog(@"%@", attempts[i].logMessage);
+            break;
+        }
+
+        self.tapRunLoop = CFRunLoopGetCurrent();
+        dispatch_semaphore_signal(readySemaphore);
+
+        if (self.runLoopSource) {
+            CFRunLoopRun(); // exits via CFRunLoopStop from -stop
+        }
+
+        // Tear the tap down on the thread that owns it, so the callback can
+        // never race the release.
+        if (self.eventTap) {
+            CGEventTapEnable(self.eventTap, false);
+        }
+        if (self.runLoopSource) {
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), self.runLoopSource, kCFRunLoopCommonModes);
+            CFRelease(self.runLoopSource);
+            self.runLoopSource = NULL;
+        }
+        if (self.eventTap) {
+            CFRelease(self.eventTap);
+            self.eventTap = NULL;
+        }
+        self.tapRunLoop = NULL;
+        dispatch_semaphore_signal(self.tapShutdownSemaphore);
     }
 }
 
@@ -320,31 +392,69 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     NSInteger number = numberForKeyCode(keyCode);
     if (number <= 0) return NO;
 
+    // The handler consults overlay UI state, so it must run on the main
+    // thread, and the tap callback needs the consume decision synchronously.
+    // Wait with a short timeout: if the main thread is too busy to answer,
+    // let the key pass through rather than stall the session event stream
+    // (a stalled tap swallows events — the root cause of issues #57/#65).
     BOOL (^handler)(NSInteger) = self.numberKeyHandler;
     __block BOOL handled = NO;
     if ([NSThread isMainThread]) {
         handled = handler(number);
     } else {
-        dispatch_sync(dispatch_get_main_queue(), ^{
-            handled = handler(number);
+        dispatch_semaphore_t done = dispatch_semaphore_create(0);
+        __block BOOL mainResult = NO;
+        SPPerformOnMainRunLoop(^{
+            mainResult = handler(number);
+            dispatch_semaphore_signal(done);
         });
+        if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW,
+                                                        (int64_t)(100 * NSEC_PER_MSEC))) == 0) {
+            handled = mainResult;
+        }
     }
 
     if (handled) {
-        [self.suppressedNumberKeyCodes addObject:@(keyCode)];
+        @synchronized (self) {
+            [self.suppressedNumberKeyCodes addObject:@(keyCode)];
+        }
     }
     return handled;
 }
 
 - (BOOL)consumeSuppressedNumberKeyForKeyCode:(NSInteger)keyCode isKeyUp:(BOOL)isKeyUp {
     NSNumber *keyCodeNumber = @(keyCode);
-    if (![self.suppressedNumberKeyCodes containsObject:keyCodeNumber]) {
-        return NO;
-    }
-    if (isKeyUp) {
-        [self.suppressedNumberKeyCodes removeObject:keyCodeNumber];
+    @synchronized (self) {
+        if (![self.suppressedNumberKeyCodes containsObject:keyCodeNumber]) {
+            return NO;
+        }
+        if (isKeyUp) {
+            [self.suppressedNumberKeyCodes removeObject:keyCodeNumber];
+        }
     }
     return YES;
+}
+
+- (BOOL)isSuppressedHotkeyKeyCode:(NSNumber *)keyCodeNumber {
+    @synchronized (self) {
+        return [self.suppressedHotkeyKeyCodes containsObject:keyCodeNumber];
+    }
+}
+
+- (void)addSuppressedHotkeyKeyCode:(NSNumber *)keyCodeNumber {
+    @synchronized (self) {
+        [self.suppressedHotkeyKeyCodes addObject:keyCodeNumber];
+    }
+}
+
+- (BOOL)removeSuppressedHotkeyKeyCodeIfPresent:(NSNumber *)keyCodeNumber {
+    @synchronized (self) {
+        if (![self.suppressedHotkeyKeyCodes containsObject:keyCodeNumber]) {
+            return NO;
+        }
+        [self.suppressedHotkeyKeyCodes removeObject:keyCodeNumber];
+        return YES;
+    }
 }
 
 - (NSUInteger)currentModifierFlags {
@@ -440,15 +550,23 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         [NSEvent removeMonitor:self.localMonitorRef];
         self.localMonitorRef = nil;
     }
-    if (self.eventTap) {
-        CGEventTapEnable(self.eventTap, false);
-        if (self.runLoopSource) {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), self.runLoopSource, kCFRunLoopCommonModes);
-            CFRelease(self.runLoopSource);
-            self.runLoopSource = NULL;
+    if (self.tapThread) {
+        // Disable first so the tap stops gating the session event stream
+        // immediately, then stop the tap thread's run loop and wait for it
+        // to finish tearing the tap down on its own thread.
+        if (self.eventTap) {
+            CGEventTapEnable(self.eventTap, false);
         }
-        CFRelease(self.eventTap);
-        self.eventTap = NULL;
+        CFRunLoopRef tapRunLoop = self.tapRunLoop;
+        if (tapRunLoop) {
+            CFRunLoopStop(tapRunLoop);
+        }
+        if (self.tapShutdownSemaphore) {
+            dispatch_semaphore_wait(self.tapShutdownSemaphore,
+                                    dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)));
+        }
+        self.tapThread = nil;
+        self.tapShutdownSemaphore = nil;
     }
 
     BOOL hadPendingTrigger = [self hasUnconfirmedPreCapture];
@@ -457,8 +575,10 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     [self cancelPendingModifierRelease];
     self.state = SPHotkeyStateIdle;
     self.canConsumeGlobalKeyEvents = NO;
-    [self.suppressedNumberKeyCodes removeAllObjects];
-    [self.suppressedHotkeyKeyCodes removeAllObjects];
+    @synchronized (self) {
+        [self.suppressedNumberKeyCodes removeAllObjects];
+        [self.suppressedHotkeyKeyCodes removeAllObjects];
+    }
     if (hadPendingTrigger) {
         [self.delegate hotkeyMonitorDidCancelTrigger];
     }
@@ -481,7 +601,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         BOOL isReleaseFallback = self.triggerDown && !triggerNow;
         if (![self isTargetKeyCode:keyCode] && !isReleaseFallback) {
             if (self.triggerDown && triggerNow) {
-                dispatch_async(dispatch_get_main_queue(), ^{
+                SPPerformOnMainRunLoop(^{
                     [self cancelDoubleTapCandidateForInterveningInput];
                 });
             }
@@ -496,11 +616,11 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     self.triggerDown = triggerNow;
 
     if (triggerNow) {
-        dispatch_async(dispatch_get_main_queue(), ^{
+        SPPerformOnMainRunLoop(^{
             [self handleTriggerDown];
         });
     } else {
-        dispatch_async(dispatch_get_main_queue(), ^{
+        SPPerformOnMainRunLoop(^{
             [self scheduleModifierRelease];
         });
     }
@@ -701,8 +821,10 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     [self cancelPendingModifierRelease];
     self.triggerDown = NO;
     self.state = SPHotkeyStateIdle;
-    [self.suppressedNumberKeyCodes removeAllObjects];
-    [self.suppressedHotkeyKeyCodes removeAllObjects];
+    @synchronized (self) {
+        [self.suppressedNumberKeyCodes removeAllObjects];
+        [self.suppressedHotkeyKeyCodes removeAllObjects];
+    }
     if (hadPendingTrigger) {
         [self.delegate hotkeyMonitorDidCancelTrigger];
     }
