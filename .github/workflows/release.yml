@@ -52,9 +52,25 @@ jobs:
         run: cargo test --manifest-path koe-core/Cargo.toml
 
   build-arm64:
-    name: Build macOS arm64
+    # The two app variants build in parallel so the (much slower) MLX build
+    # never delays the standard app. On tag pushes each variant uploads its
+    # zip to the GitHub Release as soon as it finishes; the appcast update
+    # still waits for both.
+    name: Build macOS arm64 (${{ matrix.variant }})
     needs: test
     runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: standard
+            scheme: Koe
+            zip: Koe-macOS-arm64.zip
+            artifact: Koe-macOS-arm64
+          - variant: mlx
+            scheme: Koe-MLX
+            zip: Koe-MLX-macOS-arm64.zip
+            artifact: Koe-MLX-macOS-arm64
 
     steps:
       - name: Checkout
@@ -68,7 +84,9 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: aarch64-apple-darwin
+          # Per-variant: the two schemes build koe-core with different
+          # feature sets, so sharing one cache would thrash it.
+          key: aarch64-apple-darwin-${{ matrix.variant }}
 
       - name: Install dependencies
         # Untap the runner image's untrusted aws/tap first so Homebrew's
@@ -83,8 +101,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: KoeApp/build-ci/SourcePackages
-          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('KoeApp/project.yml', 'Packages/**/Package.swift', 'Packages/**/Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ hashFiles('KoeApp/project.yml', 'Packages/**/Package.swift', 'Packages/**/Package.resolved') }}
           restore-keys: |
+            spm-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-
             spm-${{ runner.os }}-${{ runner.arch }}-
       - name: Show Xcode and Swift versions
         run: |
@@ -147,11 +166,11 @@ jobs:
           set -euo pipefail
           xcodebuild \
             -project Koe.xcodeproj \
-            -scheme Koe \
+            -scheme "${{ matrix.scheme }}" \
             -configuration Release \
             -skipPackagePluginValidation \
             -skipMacroValidation \
-            -derivedDataPath build-ci/standard \
+            -derivedDataPath "build-ci/${{ matrix.variant }}" \
             -clonedSourcePackagesDirPath build-ci/SourcePackages \
             ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=NO \
@@ -165,52 +184,36 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           .github/scripts/package-app.sh \
-            "KoeApp/build-ci/standard/Build/Products/Release/Koe.app" \
+            "KoeApp/build-ci/${{ matrix.variant }}/Build/Products/Release/Koe.app" \
             "target/aarch64-apple-darwin/release/koe" \
-            Koe-macOS-arm64.zip
-      - name: Build MLX app
-        run: |
-          set -euo pipefail
-          xcodebuild \
-            -project Koe.xcodeproj \
-            -scheme Koe-MLX \
-            -configuration Release \
-            -skipPackagePluginValidation \
-            -skipMacroValidation \
-            -derivedDataPath build-ci/mlx \
-            -clonedSourcePackagesDirPath build-ci/SourcePackages \
-            ARCHS=arm64 \
-            ONLY_ACTIVE_ARCH=NO \
-            build
-        working-directory: KoeApp
+            "${{ matrix.zip }}"
 
-      - name: Package MLX app
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          .github/scripts/package-app.sh \
-            "KoeApp/build-ci/mlx/Build/Products/Release/Koe.app" \
-            "target/aarch64-apple-darwin/release/koe" \
-            Koe-MLX-macOS-arm64.zip
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Koe-macOS-arm64
+          name: ${{ matrix.artifact }}
           path: |
-            Koe-macOS-arm64.zip
-            Koe-macOS-arm64.zip.sparkle.json
+            ${{ matrix.zip }}
+            ${{ matrix.zip }}.sparkle.json
           if-no-files-found: error
 
-      - name: Upload MLX build artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: Koe-MLX-macOS-arm64
-          path: |
-            Koe-MLX-macOS-arm64.zip
-            Koe-MLX-macOS-arm64.zip.sparkle.json
-          if-no-files-found: error
+      - name: Upload to GitHub Release
+        # Each variant is published the moment it is ready — the standard app
+        # must not wait for the slower MLX build. Creating the release can
+        # race with the other variant's job; `|| true` + upload handles the
+        # loser of that race.
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" --generate-notes || true
+          fi
+          gh release upload "$TAG" "${{ matrix.zip }}" \
+            --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Clean up signing material
         if: always()
@@ -219,7 +222,10 @@ jobs:
           rm -f "$RUNNER_TEMP/sparkle_ed25519.key"
 
   release:
-    name: Create GitHub Release
+    # The zips are uploaded by each build job as soon as they are ready; this
+    # job only updates the Sparkle feeds, which need BOTH variants' signing
+    # metadata, so it waits for the whole matrix.
+    name: Update Sparkle feeds
     needs: build-arm64
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
@@ -235,14 +241,6 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: dist/*.zip
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update Sparkle appcasts on main
         if: ${{ !contains(github.ref_name, '-') }}
