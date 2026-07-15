@@ -5,6 +5,7 @@
 #import "SPAudioDeviceManager.h"
 #import "SPRustBridge.h"
 #import "SPClipboardManager.h"
+#import "SPClipboardRestorePolicy.h"
 #import "SPPasteManager.h"
 #import "SPInstantPasteGuard.h"
 #import "SPCuePlayer.h"
@@ -33,6 +34,9 @@
 // Experimental paste-ASR-first flow (experimental.paste_asr_first):
 // raw text pasted at ASR-final time, awaiting the LLM correction.
 @property (nonatomic, strong) SPInstantPasteGuard *instantPasteGuard;
+// Session-scoped clipboard restoration policy; the effective delay is
+// snapshotted when a session begins (see beginRustSessionWithMode:).
+@property (nonatomic, strong) SPClipboardRestorePolicy *clipboardRestorePolicy;
 @property (nonatomic, copy) NSString *instantPastedText;
 @property (nonatomic, assign) BOOL instantPasteKeepClipboard;
 @property (nonatomic, strong) id numberKeyMonitor;
@@ -177,6 +181,8 @@ static BOOL configFlagEnabled(const char *keyPath) {
     // Initialize components
     self.cuePlayer = [[SPCuePlayer alloc] init];
     self.clipboardManager = [[SPClipboardManager alloc] init];
+    self.clipboardRestorePolicy = [[SPClipboardRestorePolicy alloc] init];
+    self.clipboardRestorePolicy.clipboardManager = self.clipboardManager;
     self.pasteManager = [[SPPasteManager alloc] init];
     self.instantPasteGuard = [[SPInstantPasteGuard alloc] init];
     self.audioCaptureManager = [[SPAudioCaptureManager alloc] init];
@@ -382,6 +388,25 @@ static BOOL configFlagEnabled(const char *keyPath) {
     }
 }
 
+/// Begin a Rust session and capture per-session state shared by the hold and
+/// tap start paths. Returns NO (after surfacing the error) when the session
+/// could not be started.
+- (BOOL)beginRustSessionWithMode:(SPSessionModeObjC)mode {
+    if (![self.rustBridge beginSessionWithMode:mode]) {
+        [self handleAudioCaptureError:@"Failed to start session"];
+        return NO;
+    }
+    // Snapshot the effective clipboard restoration policy for this session.
+    // Rust hot-reloads config inside session_begin, so this is the validated
+    // value governing this session; edits apply from the next session.
+    [self.clipboardRestorePolicy
+        captureSessionRestoreDelayMs:sp_core_get_clipboard_config().restore_delay_ms];
+    self.loggedFirstRecognitionForActivation = NO;
+    self.recognitionMetricActivationSequence = self.audioCaptureManager.activationSequence;
+    self.recognitionMetricSessionToken = self.rustBridge.currentSessionToken;
+    return YES;
+}
+
 - (void)hotkeyMonitorDidDetectHoldStart {
     NSLog(@"[Koe] Hold start detected");
     [self.audioCaptureManager logActivationMilestone:@"hold decision"];
@@ -403,13 +428,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     [self.overlayPanel updateState:@"recording"];
 
     // Start Rust session + audio capture
-    if (![self.rustBridge beginSessionWithMode:SPSessionModeHold]) {
-        [self handleAudioCaptureError:@"Failed to start session"];
-        return;
-    }
-    self.loggedFirstRecognitionForActivation = NO;
-    self.recognitionMetricActivationSequence = self.audioCaptureManager.activationSequence;
-    self.recognitionMetricSessionToken = self.rustBridge.currentSessionToken;
+    if (![self beginRustSessionWithMode:SPSessionModeHold]) return;
     [self startAudioCaptureWithRetryIncludingPreRoll:YES];
 }
 
@@ -452,13 +471,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     [self.statusBarManager updateState:@"recording"];
     [self.overlayPanel updateState:@"recording"];
 
-    if (![self.rustBridge beginSessionWithMode:SPSessionModeToggle]) {
-        [self handleAudioCaptureError:@"Failed to start session"];
-        return;
-    }
-    self.loggedFirstRecognitionForActivation = NO;
-    self.recognitionMetricActivationSequence = self.audioCaptureManager.activationSequence;
-    self.recognitionMetricSessionToken = self.rustBridge.currentSessionToken;
+    if (![self beginRustSessionWithMode:SPSessionModeToggle]) return;
     [self startAudioCaptureWithRetryIncludingPreRoll:NO];
 }
 
@@ -569,7 +582,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
     if (accessOK) {
         [self.pasteManager simulatePasteWithCompletion:^{
             NSLog(@"[Koe] Paste completion callback fired");
-            [self.clipboardManager scheduleRestoreAfterDelay:1500];
+            [self.clipboardRestorePolicy scheduleRestoreForCurrentSession];
             if (token != self.rustBridge.currentSessionToken) return;
             [self.statusBarManager updateState:@"idle"];
             [self showPromptTemplateButtonsIfNeededOrDismiss];
@@ -724,7 +737,7 @@ static BOOL configFlagEnabled(const char *keyPath) {
         // The correction may have replaced the clipboard content already
         // (fast LLM); in that case the backup must not be restored over it.
         if (!self.instantPasteKeepClipboard) {
-            [self.clipboardManager scheduleRestoreAfterDelay:1500];
+            [self.clipboardRestorePolicy scheduleRestoreForCurrentSession];
         }
         if (token != self.rustBridge.currentSessionToken) return;
         // Only capture when the correction hasn't been handled yet.

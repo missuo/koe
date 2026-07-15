@@ -4,6 +4,10 @@ All notable user-facing changes to Koe are documented here.
 
 ## Unreleased
 
+### Added
+
+- The clipboard restoration delay after automatic paste is now configurable via `clipboard.restore_delay_ms` in `config.yaml` (default 1500, range 0–60000; 0 restores immediately after the paste completes). Both the normal paste flow and the experimental ASR-first flow honor the setting; invalid values fall back to 1500 with a warning without affecting other configuration.
+
 ### Changed
 
 - Reordered the built-in user prompt so stable dictionary context precedes per-request ASR content, improving exact-prefix cache reuse for compatible LLM providers when the rendered dictionary remains unchanged. Existing custom `user_prompt.txt` files are not overwritten.

@@ -15,7 +15,7 @@ use crate::ffi::{
     cstr_to_str, invoke_asr_final_text, invoke_final_text_ready, invoke_interim_text,
     invoke_rewrite_text_ready, invoke_session_error, invoke_session_ready,
     invoke_session_result_meta, invoke_session_warning, invoke_state_changed, SPCallbacks,
-    SPFeedbackConfig, SPHotkeyConfig, SPSessionContext, SPSessionMode,
+    SPClipboardConfig, SPFeedbackConfig, SPHotkeyConfig, SPSessionContext, SPSessionMode,
 };
 #[cfg(feature = "mlx")]
 use crate::llm::mlx::MlxLlmProvider;
@@ -699,6 +699,24 @@ pub extern "C" fn sp_core_get_feedback_config() -> SPFeedbackConfig {
             stop_sound: false,
             error_sound: false,
             mute_system_output: false,
+        }
+    }
+}
+
+/// Query current clipboard configuration.
+/// Returns the validated restoration delay from the cached config — never the
+/// raw YAML scalar — so field validation, defaults, and session snapshot
+/// semantics apply. Callers snapshot this once per session.
+#[no_mangle]
+pub extern "C" fn sp_core_get_clipboard_config() -> SPClipboardConfig {
+    let global = CORE.lock().unwrap();
+    if let Some(ref core) = *global {
+        SPClipboardConfig {
+            restore_delay_ms: core.config.clipboard.restore_delay_ms,
+        }
+    } else {
+        SPClipboardConfig {
+            restore_delay_ms: config::DEFAULT_CLIPBOARD_RESTORE_DELAY_MS,
         }
     }
 }

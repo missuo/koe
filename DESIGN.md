@@ -804,7 +804,7 @@ hotkey:
   trigger_mode: "hold"  # hold | toggle | double_tap
 ```
 
-> **Note:** The tap/hold threshold (180ms), audio framing, and paste timing are still hardcoded. Provider credentials, local model or locale selection, hotkeys, cue sounds, and prompt file paths are user-configurable. Advanced fields such as custom ASR headers, raw keycodes, and `llm.no_reasoning_control` are currently edited in `config.yaml`.
+> **Note:** The tap/hold threshold (180ms), audio framing, and the pre-paste/post-event stabilization waits are still hardcoded; the clipboard restoration delay is configurable via `clipboard.restore_delay_ms`. Provider credentials, local model or locale selection, hotkeys, cue sounds, and prompt file paths are user-configurable. Advanced fields such as custom ASR headers, raw keycodes, and `llm.no_reasoning_control` are currently edited in `config.yaml`.
 
 ### 14.2 Configuration Rules
 
@@ -1360,10 +1360,12 @@ Recommended default:
 
 After pasting:
 
-1. Wait for 1500ms
+1. Wait for the configured `clipboard.restore_delay_ms` (default 1500ms, range 0–60000; 0 restores immediately after the paste completion callback). The effective value is validated at config load, snapshotted per session, and shared by both automatic paste flows (normal final-text and experimental ASR-first)
 2. Check whether the current clipboard still contains the content written by this application
 3. If the user copied new content during this period, do not restore, to avoid overwriting the user's new clipboard contents
 4. If the clipboard is unchanged, restore to the pre-session contents
+
+Output that is intentionally delivered via the clipboard (missing Accessibility permission, prompt-template rewrites, or an ASR-first correction that could not be applied in place) is not restored.
 
 ### 20.14 Session End
 

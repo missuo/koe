@@ -15,6 +15,8 @@ pub struct Config {
     #[serde(default)]
     pub dictionary: DictionarySection,
     #[serde(default)]
+    pub clipboard: ClipboardSection,
+    #[serde(default)]
     pub hotkey: HotkeySection,
     #[serde(default)]
     pub overlay: OverlaySection,
@@ -547,6 +549,245 @@ pub struct FeedbackSection {
 pub struct DictionarySection {
     #[serde(default = "default_dictionary_path")]
     pub path: String,
+}
+
+// ─── Clipboard Configuration ────────────────────────────────────────
+
+pub const DEFAULT_CLIPBOARD_RESTORE_DELAY_MS: u32 = 1500;
+pub const MAX_CLIPBOARD_RESTORE_DELAY_MS: u32 = 60_000;
+
+/// Clipboard behavior for automatic paste.
+#[derive(Debug, Clone)]
+pub struct ClipboardSection {
+    /// How long to wait after the automatic-paste completion callback before
+    /// restoring the pre-session clipboard contents, in milliseconds.
+    /// Valid range 0..=60000. 0 schedules restoration immediately after the
+    /// paste completion callback; it does not disable restoration.
+    pub restore_delay_ms: u32,
+}
+
+impl Default for ClipboardSection {
+    fn default() -> Self {
+        Self {
+            restore_delay_ms: DEFAULT_CLIPBOARD_RESTORE_DELAY_MS,
+        }
+    }
+}
+
+/// Tolerant deserialization: an invalid `clipboard` section or
+/// `restore_delay_ms` value falls back to the default with a warning instead
+/// of failing the whole config load, so a clipboard typo cannot poison
+/// unrelated ASR/LLM/hotkey settings. The warning never includes clipboard
+/// contents — only the key name and the accepted range. Custom visitors are
+/// required (rather than deserializing into `serde_yaml::Value`) because
+/// serde_yaml hard-errors on integers wider than u64 unless the visitor
+/// accepts i128/u128.
+impl<'de> Deserialize<'de> for ClipboardSection {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct SectionVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for SectionVisitor {
+            type Value = ClipboardSection;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a clipboard config mapping")
+            }
+
+            // `clipboard:` with no value.
+            fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
+                Ok(ClipboardSection::default())
+            }
+
+            fn visit_none<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
+                Ok(ClipboardSection::default())
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut section = ClipboardSection::default();
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "restore_delay_ms" {
+                        section.restore_delay_ms = map.next_value::<TolerantRestoreDelay>()?.0;
+                    } else {
+                        map.next_value::<serde::de::IgnoredAny>()?;
+                    }
+                }
+                Ok(section)
+            }
+
+            fn visit_bool<E: serde::de::Error>(
+                self,
+                _: bool,
+            ) -> std::result::Result<Self::Value, E> {
+                Ok(warn_clipboard_section_not_mapping())
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, _: i64) -> std::result::Result<Self::Value, E> {
+                Ok(warn_clipboard_section_not_mapping())
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, _: u64) -> std::result::Result<Self::Value, E> {
+                Ok(warn_clipboard_section_not_mapping())
+            }
+
+            fn visit_i128<E: serde::de::Error>(
+                self,
+                _: i128,
+            ) -> std::result::Result<Self::Value, E> {
+                Ok(warn_clipboard_section_not_mapping())
+            }
+
+            fn visit_u128<E: serde::de::Error>(
+                self,
+                _: u128,
+            ) -> std::result::Result<Self::Value, E> {
+                Ok(warn_clipboard_section_not_mapping())
+            }
+
+            fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<Self::Value, E> {
+                Ok(warn_clipboard_section_not_mapping())
+            }
+
+            fn visit_str<E: serde::de::Error>(
+                self,
+                _: &str,
+            ) -> std::result::Result<Self::Value, E> {
+                Ok(warn_clipboard_section_not_mapping())
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+                Ok(warn_clipboard_section_not_mapping())
+            }
+        }
+
+        deserializer.deserialize_any(SectionVisitor)
+    }
+}
+
+fn warn_clipboard_section_not_mapping() -> ClipboardSection {
+    log::warn!("config: `clipboard` section is not a mapping; using defaults");
+    ClipboardSection::default()
+}
+
+/// A `restore_delay_ms` value that never fails deserialization: any
+/// non-integer or out-of-range value becomes the default with a warning.
+struct TolerantRestoreDelay(u32);
+
+fn validate_restore_delay(value: Option<u64>) -> u32 {
+    match value {
+        Some(v) if v <= MAX_CLIPBOARD_RESTORE_DELAY_MS as u64 => v as u32,
+        _ => {
+            log::warn!(
+                "config: `clipboard.restore_delay_ms` must be an integer between 0 and \
+                 {MAX_CLIPBOARD_RESTORE_DELAY_MS}; falling back to \
+                 {DEFAULT_CLIPBOARD_RESTORE_DELAY_MS}"
+            );
+            DEFAULT_CLIPBOARD_RESTORE_DELAY_MS
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TolerantRestoreDelay {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct DelayVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for DelayVisitor {
+            type Value = TolerantRestoreDelay;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("an integer between 0 and 60000")
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> std::result::Result<Self::Value, E> {
+                Ok(TolerantRestoreDelay(validate_restore_delay(Some(v))))
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> std::result::Result<Self::Value, E> {
+                Ok(TolerantRestoreDelay(validate_restore_delay(
+                    u64::try_from(v).ok(),
+                )))
+            }
+
+            fn visit_u128<E: serde::de::Error>(
+                self,
+                v: u128,
+            ) -> std::result::Result<Self::Value, E> {
+                Ok(TolerantRestoreDelay(validate_restore_delay(
+                    u64::try_from(v).ok(),
+                )))
+            }
+
+            fn visit_i128<E: serde::de::Error>(
+                self,
+                v: i128,
+            ) -> std::result::Result<Self::Value, E> {
+                Ok(TolerantRestoreDelay(validate_restore_delay(
+                    u64::try_from(v).ok(),
+                )))
+            }
+
+            fn visit_f64<E: serde::de::Error>(self, _: f64) -> std::result::Result<Self::Value, E> {
+                Ok(TolerantRestoreDelay(validate_restore_delay(None)))
+            }
+
+            fn visit_bool<E: serde::de::Error>(
+                self,
+                _: bool,
+            ) -> std::result::Result<Self::Value, E> {
+                Ok(TolerantRestoreDelay(validate_restore_delay(None)))
+            }
+
+            fn visit_str<E: serde::de::Error>(
+                self,
+                _: &str,
+            ) -> std::result::Result<Self::Value, E> {
+                Ok(TolerantRestoreDelay(validate_restore_delay(None)))
+            }
+
+            // A missing value (`restore_delay_ms:` with nothing after it) is
+            // treated like an absent field, not an invalid one — no warning.
+            fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
+                Ok(TolerantRestoreDelay(DEFAULT_CLIPBOARD_RESTORE_DELAY_MS))
+            }
+
+            fn visit_none<E: serde::de::Error>(self) -> std::result::Result<Self::Value, E> {
+                Ok(TolerantRestoreDelay(DEFAULT_CLIPBOARD_RESTORE_DELAY_MS))
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+                Ok(TolerantRestoreDelay(validate_restore_delay(None)))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                while map
+                    .next_entry::<serde::de::IgnoredAny, serde::de::IgnoredAny>()?
+                    .is_some()
+                {}
+                Ok(TolerantRestoreDelay(validate_restore_delay(None)))
+            }
+        }
+
+        deserializer.deserialize_any(DelayVisitor)
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -1875,6 +2116,14 @@ feedback:
 dictionary:
   path: "dictionary.txt"  # relative to ~/.koe/
 
+clipboard:
+  # 自动粘贴完成后，恢复原剪贴板内容前的等待时间（毫秒）。
+  # 取值范围 0-60000；0 表示粘贴完成后立即恢复（并非禁用恢复）。
+  # 值太小可能导致慢速应用还没读取剪贴板就被恢复；值太大则旧剪贴板内容回来得更晚。
+  # 仅影响自动粘贴流程；主动保留在剪贴板中的结果（如模板改写、无辅助功能权限时）不会被恢复。
+  # 无效值会回退到 1500 并记录警告，不影响其他配置项。
+  restore_delay_ms: 1500
+
 hotkey:
   # 触发键：fn | left_option | right_option | left_command | right_command | left_control | right_control
   # 也可以填 macOS keycode 数字来使用非修饰键，例如 122 (F1)、120 (F2)、99 (F3) 等
@@ -2357,5 +2606,85 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    // ─── Clipboard Section ──────────────────────────────────────────
+
+    fn clipboard_delay_from_yaml(yaml: &str) -> u32 {
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        config.clipboard.restore_delay_ms
+    }
+
+    #[test]
+    fn clipboard_defaults_when_section_absent() {
+        assert_eq!(clipboard_delay_from_yaml("{}"), 1500);
+        assert_eq!(Config::default().clipboard.restore_delay_ms, 1500);
+    }
+
+    #[test]
+    fn clipboard_defaults_when_field_absent_or_null() {
+        assert_eq!(clipboard_delay_from_yaml("clipboard: {}"), 1500);
+        assert_eq!(clipboard_delay_from_yaml("clipboard:\n"), 1500);
+        assert_eq!(
+            clipboard_delay_from_yaml("clipboard:\n  restore_delay_ms:\n"),
+            1500
+        );
+    }
+
+    #[test]
+    fn clipboard_accepts_valid_range() {
+        assert_eq!(
+            clipboard_delay_from_yaml("clipboard:\n  restore_delay_ms: 0"),
+            0
+        );
+        assert_eq!(
+            clipboard_delay_from_yaml("clipboard:\n  restore_delay_ms: 1500"),
+            1500
+        );
+        assert_eq!(
+            clipboard_delay_from_yaml("clipboard:\n  restore_delay_ms: 60000"),
+            60000
+        );
+    }
+
+    #[test]
+    fn clipboard_invalid_values_fall_back_to_default() {
+        for invalid in [
+            "-1",
+            "1.5",
+            "\"fast\"",
+            "true",
+            "60001",
+            "99999999999999999999999999", // overflows any integer type
+            "[1500]",
+        ] {
+            assert_eq!(
+                clipboard_delay_from_yaml(&format!("clipboard:\n  restore_delay_ms: {invalid}")),
+                1500,
+                "restore_delay_ms {invalid} should fall back to the default"
+            );
+        }
+    }
+
+    #[test]
+    fn clipboard_section_with_invalid_shape_falls_back() {
+        assert_eq!(clipboard_delay_from_yaml("clipboard: fast"), 1500);
+        assert_eq!(clipboard_delay_from_yaml("clipboard: 1500"), 1500);
+    }
+
+    #[test]
+    fn clipboard_invalid_value_preserves_unrelated_sections() {
+        let yaml = r#"
+asr:
+  provider: "qwen"
+llm:
+  timeout_ms: 1234
+clipboard:
+  restore_delay_ms: "not-a-number"
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.clipboard.restore_delay_ms, 1500);
+        assert_eq!(config.asr.provider, "qwen");
+        assert_eq!(config.llm.timeout_ms, 1234);
     }
 }

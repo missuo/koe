@@ -124,6 +124,9 @@ targets:
       - path: Koe/Hotkey/SPHotkeyMonitor.m
       - path: Koe/History/SPHistoryManager.m
       - path: Koe/History/SPHistoryManagerTests.m
+      - path: Koe/Clipboard/SPClipboardManager.m
+      - path: Koe/Clipboard/SPClipboardRestorePolicy.m
+      - path: Koe/Clipboard/SPClipboardRestorePolicyTests.m
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

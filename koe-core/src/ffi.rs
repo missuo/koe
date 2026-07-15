@@ -59,8 +59,14 @@ pub struct SPCallbacks {
     /// free them. `llm_applied` is true only when LLM correction ran and its
     /// output was used (false when the LLM is disabled, fails, or its output
     /// is discarded as degenerate).
-    pub on_session_result_meta:
-        Option<extern "C" fn(token: u64, asr_text: *const c_char, asr_provider: *const c_char, llm_applied: bool)>,
+    pub on_session_result_meta: Option<
+        extern "C" fn(
+            token: u64,
+            asr_text: *const c_char,
+            asr_provider: *const c_char,
+            llm_applied: bool,
+        ),
+    >,
 }
 
 static CALLBACKS: Mutex<Option<SPCallbacks>> = Mutex::new(None);
@@ -166,7 +172,12 @@ pub fn invoke_asr_final_text(token: u64, text: &str) {
     }
 }
 
-pub fn invoke_session_result_meta(token: u64, asr_text: &str, asr_provider: &str, llm_applied: bool) {
+pub fn invoke_session_result_meta(
+    token: u64,
+    asr_text: &str,
+    asr_provider: &str,
+    llm_applied: bool,
+) {
     let f = {
         let cb = CALLBACKS.lock().unwrap();
         cb.as_ref().and_then(|cbs| cbs.on_session_result_meta)
@@ -197,6 +208,15 @@ pub struct SPFeedbackConfig {
     pub stop_sound: bool,
     pub error_sound: bool,
     pub mute_system_output: bool,
+}
+
+/// Clipboard configuration exposed to the Obj-C layer
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct SPClipboardConfig {
+    /// Delay (ms) between the automatic-paste completion callback and
+    /// clipboard restoration. Validated to 0..=60000 at config load.
+    pub restore_delay_ms: u32,
 }
 
 /// Hotkey configuration exposed to the Obj-C layer
