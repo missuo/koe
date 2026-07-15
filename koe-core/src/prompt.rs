@@ -80,6 +80,40 @@ pub fn render_user_prompt(
         .replace("{{interim_history}}", &interim_str)
 }
 
+/// Byte length of the rendered user prompt's stable prefix — everything
+/// before the first per-request placeholder (`{{asr_text}}` /
+/// `{{interim_history}}`) in the template. With the default field order the
+/// prefix covers the rendered dictionary, so providers that take explicit
+/// cache breakpoints (Anthropic `cache_control`) can mark it cacheable.
+/// Old-order templates yield only the short label ahead of the first dynamic
+/// field (harmless: below any cacheable minimum). Returns 0 when the prefix
+/// cannot be verified against the rendered prompt.
+/// cbindgen:ignore
+pub fn stable_user_prompt_prefix_len(
+    template: &str,
+    rendered_user_prompt: &str,
+    dictionary_entries: &[String],
+) -> usize {
+    let dynamic_start = ["{{asr_text}}", "{{interim_history}}"]
+        .iter()
+        .filter_map(|p| template.find(p))
+        .min();
+    let Some(split) = dynamic_start else {
+        // No dynamic fields at all — the whole prompt is stable.
+        return rendered_user_prompt.len();
+    };
+    let prefix = render_user_prompt(&template[..split], "", dictionary_entries, &[]);
+    // The split sits at a placeholder boundary, so rendering the template
+    // halves independently must reproduce the full render. Verify rather than
+    // assume, so a pathological template degrades to "no breakpoint" instead
+    // of a mis-split prompt.
+    if rendered_user_prompt.starts_with(&prefix) {
+        prefix.len()
+    } else {
+        0
+    }
+}
+
 /// Built-in default system prompt.
 /// cbindgen:ignore
 fn build_default_system_prompt() -> String {
@@ -290,6 +324,51 @@ mod tests {
         let rendered_empty = render_user_prompt(&template, "final ASR", &[], &[]);
         assert!(rendered_empty.contains("用户词典：\n（无）"));
         assert!(rendered_empty.contains("ASR 中间修订历史：\n（无）"));
+    }
+
+    #[test]
+    fn stable_prefix_covers_dictionary_in_default_template() {
+        let template = build_default_user_prompt_template();
+        let dictionary = vec!["StableTerm".to_string(), "cc-connect".to_string()];
+        let rendered = render_user_prompt(&template, "final ASR", &dictionary, &[]);
+
+        let len = stable_user_prompt_prefix_len(&template, &rendered, &dictionary);
+        assert!(len > 0);
+        let prefix = &rendered[..len];
+        assert!(prefix.contains("用户词典："));
+        assert!(prefix.contains("StableTerm"));
+        // Static labels are stable and may appear, but no rendered
+        // per-request content can.
+        assert!(!prefix.contains("final ASR"));
+        assert!(!prefix.contains("1. "));
+
+        // The prefix must not depend on per-request fields.
+        let rendered_other =
+            render_user_prompt(&template, "different ASR", &dictionary, &["rev".into()]);
+        assert_eq!(&rendered_other[..len], prefix);
+    }
+
+    #[test]
+    fn stable_prefix_of_asr_first_template_excludes_dictionary() {
+        let template = "ASR 原文：\n{{asr_text}}\n\n用户词典：\n{{dictionary_entries}}";
+        let dictionary = vec!["Term".to_string()];
+        let rendered = render_user_prompt(template, "final ASR", &dictionary, &[]);
+        // Only the static label ahead of the ASR field is stable.
+        assert_eq!(
+            stable_user_prompt_prefix_len(template, &rendered, &dictionary),
+            "ASR 原文：\n".len()
+        );
+    }
+
+    #[test]
+    fn stable_prefix_covers_whole_prompt_without_dynamic_fields() {
+        let template = "用户词典：\n{{dictionary_entries}}";
+        let dictionary = vec!["Term".to_string()];
+        let rendered = render_user_prompt(template, "unused", &dictionary, &[]);
+        assert_eq!(
+            stable_user_prompt_prefix_len(template, &rendered, &dictionary),
+            rendered.len()
+        );
     }
 
     fn dict() -> Vec<String> {

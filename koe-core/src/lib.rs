@@ -637,12 +637,15 @@ pub unsafe extern "C" fn sp_core_rewrite_with_template(
         );
         let user_prompt =
             prompt::render_user_prompt(&user_prompt_template, &asr_text, &candidates, &[]);
+        let user_prompt_stable_prefix_len =
+            prompt::stable_user_prompt_prefix_len(&user_prompt_template, &user_prompt, &candidates);
 
         let request = CorrectionRequest {
             asr_text: asr_text.clone(),
             dictionary_entries: candidates,
             system_prompt: template_system_prompt,
             user_prompt,
+            user_prompt_stable_prefix_len,
         };
 
         match llm.correct(&request).await {
@@ -1020,12 +1023,15 @@ async fn run_session(
         let user_prompt =
             prompt::render_user_prompt(&user_prompt_template, &asr_text, &candidates, history);
         log::debug!("[{session_id}] LLM user prompt:\n{}", user_prompt);
+        let user_prompt_stable_prefix_len =
+            prompt::stable_user_prompt_prefix_len(&user_prompt_template, &user_prompt, &candidates);
 
         let request = CorrectionRequest {
             asr_text: asr_text.clone(),
             dictionary_entries: candidates,
             system_prompt,
             user_prompt,
+            user_prompt_stable_prefix_len,
         };
 
         match llm.correct(&request).await {
@@ -1819,11 +1825,14 @@ pub unsafe extern "C" fn sp_llm_test_profile_json(profile_json: *const c_char) -
         }
     };
 
+    let user_prompt_stable_prefix_len =
+        prompt::stable_user_prompt_prefix_len(&user_prompt_template, &user_prompt, &candidates);
     let request = CorrectionRequest {
         asr_text: String::new(),
         dictionary_entries: candidates,
         system_prompt,
         user_prompt,
+        user_prompt_stable_prefix_len,
     };
     let start = Instant::now();
     let result = match profile.provider.as_str() {

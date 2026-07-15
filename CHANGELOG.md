@@ -7,6 +7,7 @@ All notable user-facing changes to Koe are documented here.
 ### Changed
 
 - Reordered the built-in user prompt so stable dictionary context precedes per-request ASR content, improving exact-prefix cache reuse for compatible LLM providers when the rendered dictionary remains unchanged. Existing custom `user_prompt.txt` files are not overwritten.
+- The Anthropic protocol now sends `cache_control` prompt-caching breakpoints on the system prompt and on the stable dictionary prefix of the user prompt, so Anthropic models benefit from prefix caching as well.
 
 ## 1.0.17 - 2026-07-14
 

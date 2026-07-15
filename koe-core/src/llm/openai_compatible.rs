@@ -218,6 +218,7 @@ pub async fn test_correction(
         dictionary_entries: vec![],
         system_prompt: system_prompt.to_string(),
         user_prompt: user_prompt.to_string(),
+        user_prompt_stable_prefix_len: 0,
     };
 
     let start = Instant::now();
@@ -305,13 +306,37 @@ pub fn build_anthropic_messages_body(
     max_output_tokens: u32,
     request: &CorrectionRequest,
 ) -> Value {
+    // Anthropic prompt caching is opt-in: `cache_control` breakpoints mark the
+    // end of each stable span. One breakpoint on the system prompt and one on
+    // the stable head of the user prompt (the rendered dictionary) let repeat
+    // dictation requests reuse the cached prefix. Below the model's minimum
+    // cacheable length the markers are silently ignored, so they are safe to
+    // send unconditionally.
+    let system = json!([{
+        "type": "text",
+        "text": request.system_prompt,
+        "cache_control": {"type": "ephemeral"},
+    }]);
+    let split = request.user_prompt_stable_prefix_len;
+    let content = if split > 0
+        && split < request.user_prompt.len()
+        && request.user_prompt.is_char_boundary(split)
+    {
+        let (stable, dynamic) = request.user_prompt.split_at(split);
+        json!([
+            {"type": "text", "text": stable, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": dynamic},
+        ])
+    } else {
+        json!(request.user_prompt)
+    };
     let mut body = json!({
         "model": profile.model,
         "max_tokens": max_output_tokens,
-        "system": request.system_prompt,
+        "system": system,
         "messages": [{
             "role": "user",
-            "content": request.user_prompt,
+            "content": content,
         }],
     });
     // Anthropic recommends changing temperature or top_p, not both. Use the
@@ -528,6 +553,7 @@ mod tests {
             dictionary_entries: vec![],
             system_prompt: "system".into(),
             user_prompt: "user".into(),
+            user_prompt_stable_prefix_len: 0,
         }
     }
 
@@ -642,12 +668,47 @@ mod tests {
         let body = build_anthropic_messages_body(&profile, 0.2, 2048, &request());
 
         assert_eq!(body["model"], "test-model");
-        assert_eq!(body["system"], "system");
+        assert_eq!(body["system"][0]["type"], "text");
+        assert_eq!(body["system"][0]["text"], "system");
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
         assert_eq!(body["messages"][0]["role"], "user");
+        // No stable prefix — the user prompt stays a plain string.
         assert_eq!(body["messages"][0]["content"], "user");
         assert_eq!(body["max_tokens"], 2048);
         assert_eq!(body["temperature"], 0.2);
         assert!(body.get("top_p").is_none());
+    }
+
+    #[test]
+    fn anthropic_body_splits_user_prompt_at_stable_prefix() {
+        let profile = profile(LlmApiProtocol::AnthropicMessages);
+        let mut req = request();
+        req.user_prompt = "用户词典：\nStableTerm\n\nASR 原文：\nfinal ASR".into();
+        req.user_prompt_stable_prefix_len = "用户词典：\nStableTerm\n".len();
+        let body = build_anthropic_messages_body(&profile, 0.2, 2048, &req);
+
+        let content = &body["messages"][0]["content"];
+        assert_eq!(content[0]["text"], "用户词典：\nStableTerm\n");
+        assert_eq!(content[0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(content[1]["text"], "\nASR 原文：\nfinal ASR");
+        assert!(content[1].get("cache_control").is_none());
+    }
+
+    #[test]
+    fn anthropic_body_ignores_invalid_stable_prefix_len() {
+        let profile = profile(LlmApiProtocol::AnthropicMessages);
+        let mut req = request();
+        req.user_prompt = "用户词典".into();
+        // Not a char boundary — must fall back to an unsplit string.
+        req.user_prompt_stable_prefix_len = 1;
+        let body = build_anthropic_messages_body(&profile, 0.2, 2048, &req);
+        assert_eq!(body["messages"][0]["content"], "用户词典");
+
+        // Prefix covering the whole prompt also falls back (nothing dynamic
+        // to separate; the degenerate template case).
+        req.user_prompt_stable_prefix_len = req.user_prompt.len();
+        let body = build_anthropic_messages_body(&profile, 0.2, 2048, &req);
+        assert_eq!(body["messages"][0]["content"], "用户词典");
     }
 
     #[test]
