@@ -49,6 +49,10 @@ pub struct CorrectionRequest {
     pub dictionary_entries: Vec<String>,
     pub system_prompt: String,
     pub user_prompt: String,
+    /// Byte length of the prefix of `user_prompt` that stays identical across
+    /// requests (see `prompt::stable_user_prompt_prefix_len`). 0 disables the
+    /// per-prompt cache breakpoint for providers that use explicit caching.
+    pub user_prompt_stable_prefix_len: usize,
 }
 
 /// Trait for LLM correction providers.

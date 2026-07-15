@@ -484,9 +484,14 @@ dictionary for each transcript, the rendered dictionary itself becomes dynamic
 and the cache benefit may be smaller.
 
 DeepSeek enables exact-prefix caching automatically. OpenAI applies prompt
-caching only for eligible models and requests. Anthropic prompt caching requires
-provider-specific cache controls that Koe does not currently send, and local MLX
-models do not use a remote prompt cache.
+caching only for eligible models and requests. For the Anthropic protocol, Koe
+sends `cache_control` breakpoints automatically: one on the system prompt and
+one at the end of the stable head of the user prompt (everything before the
+first `{{asr_text}}` / `{{interim_history}}` placeholder, which covers the
+dictionary in the default field order). Anthropic silently skips caching when
+the prefix is below the model's minimum cacheable length, and cache writes are
+billed at a small premium over plain input tokens, so short prompts simply
+behave as before. Local MLX models do not use a remote prompt cache.
 
 Koe never overwrites an existing `~/.koe/user_prompt.txt`. Existing users who
 want this ordering must update that file manually so the fields appear as
