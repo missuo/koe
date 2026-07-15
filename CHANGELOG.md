@@ -2,6 +2,13 @@
 
 All notable user-facing changes to Koe are documented here.
 
+## 1.0.20 - 2026-07-16
+
+### Fixed
+
+- Fixed a regression introduced in 1.0.19 where a quick tap of the trigger key (Fn, Option, …) started dictation and immediately ended it — the trigger only survived if held noticeably long. Fast taps now reliably start and stop recording.
+- Trigger handling no longer freezes while a modal dialog (such as a Sparkle update prompt) is on screen.
+
 ## 1.0.19 - 2026-07-16
 
 ### Added
