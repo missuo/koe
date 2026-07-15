@@ -2,11 +2,16 @@
 
 All notable user-facing changes to Koe are documented here.
 
-## Unreleased
+## 1.0.18 - 2026-07-16
 
 ### Added
 
+- Added an optional "Press Return after paste" setting (`paste.auto_return`, off by default) in the Controls pane. When enabled, Koe presses Return automatically after the dictated text is pasted, so messages to chat-style apps (Claude Code, Codex, IM inputs) are sent hands-free the moment you release the trigger key.
+- Added an experimental paste-ASR-first mode (`experimental.paste_asr_first`, off by default): the raw ASR text is pasted the moment recognition finishes, and the LLM correction is applied in place once it returns — eliminating the wait for correction. In-place replacement only happens when it is provably safe (same focused element, caret untouched, raw text still present); otherwise the raw text is left alone and the correction is delivered via the clipboard.
 - The clipboard restoration delay after automatic paste is now configurable via `clipboard.restore_delay_ms` in `config.yaml` (default 1500, range 0–60000; 0 restores immediately after the paste completes). Both the normal paste flow and the experimental ASR-first flow honor the setting; invalid values fall back to 1500 with a warning without affecting other configuration.
+- History now records the raw ASR transcript, the ASR provider, and whether LLM correction was actually applied, alongside the final text. Existing history databases are migrated in place.
+- Added `koe dict suggest`, which mines dictionary candidates from the raw-ASR/corrected pairs in history: recurring corrections are ranked with proper nouns, acronyms, and camelCase terms first, shown with their misheard forms and an example sentence. Nothing is added automatically — confirm entries with `koe dict add <term>`.
+- Added `koe benchmark <corpus-dir>`, which runs configured ASR providers over an audio corpus with reference transcripts and reports token error rate (WER/CER/mixed), latency, and real-time factor as Markdown or JSON. `koe transcribe` gains a `--provider` flag.
 
 ### Changed
 
