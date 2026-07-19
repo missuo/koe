@@ -614,6 +614,15 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     [self addSubview:self.textScrollView];
 }
 
+- (void)setInterimText:(NSString *)interimText {
+    // ASR/LLM output occasionally carries trailing whitespace or newlines;
+    // rendered verbatim they show up as blank rows in the pill. Whitespace-only
+    // text is treated as no text at all so the status line shows instead.
+    NSString *trimmed = [interimText stringByTrimmingCharactersInSet:
+                            [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    _interimText = trimmed.length > 0 ? [trimmed copy] : nil;
+}
+
 - (NSString *)displayText {
     return (self.interimText.length > 0) ? self.interimText : self.statusText;
 }
@@ -672,8 +681,25 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
     NSRect textFrame = [self textViewportFrame];
     self.textScrollView.frame = textFrame;
-    self.textView.frame = NSMakeRect(0, 0, textFrame.size.width, MAX(textFrame.size.height, self.textView.frame.size.height));
     self.textView.textContainer.containerSize = NSMakeSize(textFrame.size.width, CGFLOAT_MAX);
+
+    // Size the document to the live content, never to a stale taller frame.
+    // A monotonic document height combined with the bottom-pinned scroll
+    // offset rendered the leftover space as blank rows inside the viewport
+    // whenever the transcript shrank.
+    [self.textView.layoutManager ensureLayoutForTextContainer:self.textView.textContainer];
+    CGFloat contentHeight = ceil([self.textView.layoutManager usedRectForTextContainer:self.textView.textContainer].size.height);
+    CGFloat documentHeight = MAX(textFrame.size.height, contentHeight);
+    self.textView.frame = NSMakeRect(0, 0, textFrame.size.width, documentHeight);
+
+    // Keep the scroll offset in the valid range so a shrinking document can
+    // never leave blank rows pinned into view.
+    NSClipView *clipView = self.textScrollView.contentView;
+    CGFloat maxOffsetY = MAX(0.0, documentHeight - textFrame.size.height);
+    if (clipView.bounds.origin.y > maxOffsetY) {
+        [clipView setBoundsOrigin:NSMakePoint(0.0, maxOffsetY)];
+        [self.textScrollView reflectScrolledClipView:clipView];
+    }
 }
 
 - (void)updateTextAttributes {
@@ -696,11 +722,8 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     }
     [self updateTextLayout];
 
-    [self.textView.layoutManager ensureLayoutForTextContainer:self.textView.textContainer];
-    CGFloat contentHeight = ceil([self.textView.layoutManager usedRectForTextContainer:self.textView.textContainer].size.height);
     CGFloat viewportHeight = NSHeight(self.textScrollView.frame);
-    CGFloat documentHeight = MAX(viewportHeight, contentHeight);
-    self.textView.frame = NSMakeRect(0, 0, NSWidth(self.textScrollView.frame), documentHeight);
+    CGFloat documentHeight = NSHeight(self.textView.frame);
 
     CGFloat targetOffsetY = MAX(0.0, documentHeight - viewportHeight);
     NSPoint targetPoint = NSMakePoint(0.0, targetOffsetY);
@@ -1375,6 +1398,12 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 
 - (void)updateDisplayText:(NSString *)text {
     [self cancelDiffAnimation];
+
+    // Normalize up front: the diff animation writes the raw string into the
+    // text storage directly (bypassing the interimText setter), so a trailing
+    // newline here would render as a blank row mid-animation.
+    text = [text stringByTrimmingCharactersInSet:
+               [NSCharacterSet whitespaceAndNewlineCharacterSet]] ?: @"";
 
     NSString *oldText = self.contentView.interimText ?: @"";
     BOOL hasExistingText = oldText.length > 0;
