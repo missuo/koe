@@ -2,6 +2,19 @@
 
 All notable user-facing changes to Koe are documented here.
 
+## Unreleased
+
+### Added
+
+- Added an LLM auto-paste toggle (`llm.auto_paste_processed_text`, on by default) in the LLM pane. When off, the processed text is copied to the clipboard and the overlay shows it with a "✓ Copied" badge instead of pasting into the focused app — for workflows where you want to review before inserting.
+- While the LLM correction is running ("Thinking…"), you can now accept the raw ASR transcript immediately by pressing Return or clicking the overlay. The correction is cancelled and the raw text is delivered right away — useful when the correction is slow and the transcript is already good enough.
+- The overlay now transitions from the raw transcript to the corrected text with an inline diff animation: changed characters are briefly highlighted, then fade into the final text, so you can see what the correction changed at a glance.
+- The overlay dismisses as soon as you resume typing after a paste, instead of lingering over your work.
+
+### Fixed
+
+- The overlay pill no longer shows blank rows during voice input. Two causes fixed: the transcript document kept a stale (taller) height when the live transcript shrank, pinning the leftover space into view; and trailing whitespace/newlines in ASR or LLM output rendered as phantom empty lines.
+
 ## 1.0.21 - 2026-07-16
 
 ### Fixed
