@@ -27,6 +27,13 @@ pub struct GlmAsrProvider {
         Option<Pin<Box<dyn Stream<Item = std::result::Result<Bytes, reqwest::Error>> + Send>>>,
     finished: bool,
     connected: bool,
+    /// SSE line-reassembly buffer. Must persist across next_event() calls:
+    /// one read can carry several SSE lines and next_event() returns on the
+    /// first interim, so a local buffer would drop the unprocessed remainder.
+    line_buffer: String,
+    /// Last interim delivered. Persists across next_event() calls to dedupe
+    /// repeats and to synthesize the Final event at stream end.
+    last_text: String,
 }
 
 use bytes::Bytes;
@@ -46,6 +53,8 @@ impl GlmAsrProvider {
             response_stream: None,
             finished: false,
             connected: false,
+            line_buffer: String::new(),
+            last_text: String::new(),
         }
     }
 }
@@ -289,6 +298,8 @@ impl AsrProvider for GlmAsrProvider {
 
         // Store response stream for next_event()
         self.response_stream = Some(Box::pin(response.bytes_stream()));
+        self.line_buffer.clear();
+        self.last_text.clear();
         self.pending_events.push_back(AsrEvent::Connected);
 
         Ok(())
@@ -314,26 +325,20 @@ impl AsrProvider for GlmAsrProvider {
             }
         }
 
-        let stream = match self.response_stream.as_mut() {
-            Some(s) => s,
-            None => {
-                return Ok(AsrEvent::Closed(None));
-            }
-        };
-
-        let mut line_buffer = String::new();
-        let mut last_text = String::new();
-
         loop {
-            match stream.next().await {
+            let chunk = match self.response_stream.as_mut() {
+                Some(stream) => stream.next().await,
+                None => return Ok(AsrEvent::Closed(None)),
+            };
+            match chunk {
                 Some(Ok(chunk)) => {
                     let text = String::from_utf8_lossy(&chunk);
-                    line_buffer.push_str(&text);
+                    self.line_buffer.push_str(&text);
 
                     // Process complete lines
-                    while let Some(newline_pos) = line_buffer.find('\n') {
-                        let line = line_buffer[..newline_pos].to_string();
-                        line_buffer = line_buffer[newline_pos + 1..].to_string();
+                    while let Some(newline_pos) = self.line_buffer.find('\n') {
+                        let line = self.line_buffer[..newline_pos].to_string();
+                        self.line_buffer = self.line_buffer[newline_pos + 1..].to_string();
 
                         let trimmed = line.trim();
                         if trimmed.is_empty() {
@@ -349,9 +354,10 @@ impl AsrProvider for GlmAsrProvider {
 
                         // Stream end marker
                         if data == "[DONE]" {
-                            if !last_text.is_empty() {
-                                log::info!("[GLM ASR] Final: {}", last_text);
-                                return Ok(AsrEvent::Final(last_text));
+                            if !self.last_text.is_empty() {
+                                let final_text = std::mem::take(&mut self.last_text);
+                                log::info!("[GLM ASR] Final: {}", final_text);
+                                return Ok(AsrEvent::Final(final_text));
                             }
                             return Ok(AsrEvent::Closed(None));
                         }
@@ -360,9 +366,9 @@ impl AsrProvider for GlmAsrProvider {
                         if let Some(event) = parse_sse_line(&line) {
                             match &event {
                                 AsrEvent::Interim(text) => {
-                                    if text != &last_text {
+                                    if text != &self.last_text {
                                         log::debug!("[GLM ASR] Interim: {}", text);
-                                        last_text = text.clone();
+                                        self.last_text = text.clone();
                                         return Ok(event);
                                     }
                                 }
@@ -379,9 +385,10 @@ impl AsrProvider for GlmAsrProvider {
                 }
                 None => {
                     // Stream ended
-                    if !last_text.is_empty() {
-                        log::info!("[GLM ASR] Final: {}", last_text);
-                        return Ok(AsrEvent::Final(last_text));
+                    if !self.last_text.is_empty() {
+                        let final_text = std::mem::take(&mut self.last_text);
+                        log::info!("[GLM ASR] Final: {}", final_text);
+                        return Ok(AsrEvent::Final(final_text));
                     }
                     return Ok(AsrEvent::Closed(None));
                 }
@@ -394,6 +401,8 @@ impl AsrProvider for GlmAsrProvider {
         self.response_stream = None;
         self.audio_buffer.clear();
         self.pending_events.clear();
+        self.line_buffer.clear();
+        self.last_text.clear();
         self.connected = false;
         Ok(())
     }
