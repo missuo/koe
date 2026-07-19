@@ -101,23 +101,22 @@ fn final_after_definite_replaces_cleanly_when_revised_mid_string() {
 
 #[test]
 fn live_preview_keeps_updating_when_new_segment_shares_a_char_with_prior_final() {
-    // Reproduces the "live caption freezes after a pause" bug. Two segments
-    // were finalized cumulatively, then a third segment begins whose first
-    // character happens to match a position inside the cumulative final.
-    // The provider must emit interims that include the full running
-    // transcript; live_preview must then surface the latest interim rather
-    // than the stale committed final.
+    // Aggregator contract for the "live caption freezes after a pause" case:
+    // two segments were finalized cumulatively, then a third segment begins
+    // whose first character happens to match a position inside the cumulative
+    // final. WHEN a provider emits interims that include the full running
+    // transcript, live_preview must surface the latest interim rather than
+    // the stale committed final. (Providers that emit only per-segment
+    // interims can still freeze the preview here — that is a provider
+    // limitation, not an aggregator one; see the reverted v1.0.22 DoubaoIME
+    // bake for why fixing it provider-side is not straightforward.)
     let mut agg = TranscriptAggregator::new();
 
     agg.update_final("今天天气不错");
     agg.update_final("今天天气不错我们去公园");
 
     // New segment 3 begins with the character "我" — which also happens to be
-    // the first character of segment 2 ("我们去公园"). Without the DoubaoIME
-    // fix that bakes finalized segments into confirmed_text, the interim
-    // would have been the truncated "今天天气不错我" — a coincidental prefix
-    // of the cumulative final — and live_preview would have returned the
-    // committed text, freezing the display.
+    // the first character of segment 2 ("我们去公园").
     agg.update_interim("今天天气不错我们去公园我");
     assert_eq!(agg.live_preview(), "今天天气不错我们去公园我");
 

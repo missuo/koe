@@ -1120,15 +1120,13 @@ impl AsrProvider for DoubaoImeProvider {
                 // Non-streaming (third-pass) or definite (second-pass) result
                 if nonstream_result || (!is_interim && is_vad_finished) {
                     log::info!("[DoubaoIME] Final: {full}");
-                    // Bake the just-finalized segment into confirmed_text so
-                    // the next segment's interims are prepended with the full
-                    // running transcript. Without this, the length-based
-                    // segment-reset heuristic can miss a new segment whose
-                    // first character happens to match the previous segment
-                    // (e.g., both start with "我"), and the live preview
-                    // would freeze on the stale cumulative final.
-                    self.confirmed_text = full.clone();
-                    self.last_segment_text.clear();
+                    // Do NOT bake `full` into confirmed_text here (tried in
+                    // v1.0.22, reverted): the server's results array often
+                    // still carries the earlier confirmed segments, so `text`
+                    // is already cumulative. confirmed_text must only grow via
+                    // the segment-reset heuristic above — baking finals made
+                    // every later message double the transcript
+                    // (confirmed + already-cumulative text).
                     return Ok(AsrEvent::Final(full));
                 }
 
