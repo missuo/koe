@@ -2,7 +2,7 @@
 
 All notable user-facing changes to Koe are documented here.
 
-## Unreleased
+## 1.0.22 - 2026-07-19
 
 ### Added
 
@@ -13,6 +13,7 @@ All notable user-facing changes to Koe are documented here.
 
 - The overlay pill no longer shows blank rows during voice input. Two causes fixed: the transcript document kept a stale (taller) height when the live transcript shrank, pinning the leftover space into view; and trailing whitespace/newlines in ASR or LLM output rendered as phantom empty lines.
 - The live caption no longer freezes after a speech pause when a new sentence happens to begin with the same character as the previous one (DoubaoIME segment tracking).
+- GLM and MiMo transcriptions no longer lose results at stream end: internal streaming state was reset between reads, which could drop the final transcript (and any updates buffered in the same network read) — most visible as a session ending with no text despite a successful recognition.
 
 ## 1.0.21 - 2026-07-16
 
