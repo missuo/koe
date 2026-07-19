@@ -5,6 +5,24 @@
     <description>Updates for the app with on-device MLX model support (Apple Silicon).</description>
     <language>en</language>
     <item>
+      <title>Version 1.0.23</title>
+      <link>https://github.com/missuo/koe/releases/tag/v1.0.23</link>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li><strong>Fixed DoubaoIME producing duplicated, ever-growing transcripts (regression in 1.0.22).</strong> A change meant to fix the live-caption freeze after a speech pause assumed the server only sends per-segment text, but DoubaoIME responses often carry the full cumulative transcript — the committed-text prefix then doubled the output at every finalized segment. The change is reverted; DoubaoIME behaves as in 1.0.21 again (including the cosmetic caption-freeze quirk, which needs a different fix).</li>
+</ul>
+      ]]></description>
+      <sparkle:version>24</sparkle:version>
+      <sparkle:shortVersionString>1.0.23</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Sun, 19 Jul 2026 12:03:32 GMT</pubDate>
+      <enclosure url="https://github.com/missuo/koe/releases/download/v1.0.23/Koe-MLX-macOS-arm64.zip"
+        sparkle:edSignature="+7QT3Vvj+Ms5QHZ+1o48rWHhsEhsi48YwdXO++6uPy930+XwsFj73JV54wvOWU8G49/o2+J/UFNhgxcE4D5+Cg=="
+        length="32638111"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 1.0.22</title>
       <link>https://github.com/missuo/koe/releases/tag/v1.0.22</link>
       <description><![CDATA[
