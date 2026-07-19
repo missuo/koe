@@ -45,5 +45,5 @@ Scope is auto-detected from file paths (e.g., `asr`, `llm`, `ui`, `config`). Bre
 - Ensure the app still builds (`make build`)
 - Verify hold-to-talk and tap-to-toggle both work
 - Update docs if you changed any user-facing behavior
-- For release-worthy user-facing changes, update both `CHANGELOG.md` and `docs/update-feed.json`
+- For release-worthy user-facing changes, add an entry to the `Unreleased` section of `CHANGELOG.md` (the Sparkle appcasts and legacy `docs/update-feed.json` are updated automatically by the release workflow — don't edit them by hand)
 - See the [Contributing Guide](https://koe.li/docs/contributing) for the full contributor workflow

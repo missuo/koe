@@ -43,26 +43,6 @@
 "statusBar.menu.launchAtLogin" = "Launch at Login";
 "statusBar.menu.quit" = "Quit Koe";
 
-/* ─── Update Manager ─── */
-"update.unavailable.title" = "Updates Unavailable";
-"update.unavailable.message" = "This build does not have an update feed configured.";
-"update.checking.title" = "Already Checking";
-"update.checking.message" = "Koe is already checking for updates.";
-"update.failed.title" = "Unable to Check for Updates";
-"update.failed.http" = "The update feed returned HTTP %ld.";
-"update.invalidFeed.title" = "Invalid Update Feed";
-"update.notCompatible.title" = "Update Not Compatible";
-"update.notCompatible.message" = "Version %@ requires macOS %@ or later.";
-"update.upToDate.title" = "You're Up to Date";
-"update.upToDate.message" = "Koe %@ (%ld) is currently the newest version available.";
-"update.available.title" = "Update Available";
-"update.available.message" = "Koe %@";
-"update.available.buildSuffix" = " (%ld)";
-"update.available.body" = " is available.\n\nYou have %@ (%ld).";
-"update.button.download" = "Download";
-"update.button.later" = "Later";
-"update.button.skip" = "Skip This Version";
-"update.button.ok" = "OK";
 
 /* ─── Notifications ─── */
 "notification.error.title" = "Koe Error";

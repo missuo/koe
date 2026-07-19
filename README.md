@@ -25,7 +25,9 @@ Koe takes a different approach:
 
 ## How It Works
 
-1. Press the trigger shortcut (default: **Fn**, configurable). In `hold` mode you press-and-hold to record; in `toggle` mode you tap once to start and tap again to stop.
+1. Press the trigger shortcut (default: **Fn**, configurable). Use `hold` to
+   press-and-hold, `toggle` to tap once to start/stop, or `double_tap` to
+   double-tap to start and single-tap to stop.
 2. Audio streams in real-time to a cloud ASR service (Doubao/豆包 by ByteDance)
 3. A floating status pill shows real-time interim recognition text as you speak
 4. The overlay stays visible through ASR finalization and LLM correction, so you can see both the final transcript and corrected result
@@ -36,13 +38,15 @@ ASR provider support:
 
 - **Cloud**: **Doubao (豆包)** and **Qwen (通义)** streaming ASR
 - **Local**: **Apple Speech** (macOS 26+, zero-config on-device), **MLX** (Apple Silicon, Qwen3-ASR models), and **sherpa-onnx** (CPU, streaming zipformer models)
-- **LLM**: any **OpenAI-compatible API**, or **MLX** local models (Apple Silicon, fully offline) for text correction
+- **LLM**: **OpenAI Chat Completions**, **OpenAI Responses**, **Anthropic Messages**, compatible gateways, or **MLX** local models
 - **Planned**: future ASR support may include the **OpenAI Transcriptions API**
 
 ## Installation
 
-Koe's standard prebuilt path is still **Apple Silicon first**, but Intel Macs
-can now build from source with the dedicated `x86_64` target.
+Koe is **Apple Silicon only**. Two prebuilt apps are published per release:
+**Koe** (the standard app; cloud + Apple Speech providers) and **Koe MLX**
+(adds on-device MLX model support). Both are signed, notarized, and update
+themselves via Sparkle.
 
 ### Homebrew
 
@@ -59,35 +63,28 @@ You can also download the latest release directly from GitHub:
 
 ### App Updates
 
-Koe can check a JSON update feed hosted directly in this repository. The app reads
-the raw GitHub URL below and compares the published version with the running build:
+Koe updates itself in-app via [Sparkle](https://sparkle-project.org/). Each build
+variant checks its own appcast feed hosted in this repository:
 
-- `APP_UPDATE_FEED_URL`: `https://raw.githubusercontent.com/missuo/koe/main/docs/update-feed.json`
+- **Koe** (standard): `https://raw.githubusercontent.com/missuo/koe/main/docs/appcast.xml`
+- **Koe MLX**: `https://raw.githubusercontent.com/missuo/koe/main/docs/appcast-mlx.xml`
 
-The feed file lives at `docs/update-feed.json` and should contain at least:
+Updates are checked automatically every 6 hours (and on demand from the menu bar
+with `Check for Updates...`). When a new version is available, Sparkle downloads
+the signed, notarized zip, verifies its EdDSA signature against the public key
+embedded in the app, and installs it in place — no browser round-trip.
 
-```json
-{
-  "version": "1.0.14",
-  "build": 15,
-  "minimum_system_version": "14.0",
-  "download_url": "https://github.com/missuo/koe/releases/download/v1.0.14/Koe-macOS-arm64.zip"
-}
-```
-
-Optional fields such as `minimum_system_version`, `release_notes_url`, `published_at`,
-and `notes` can also be included. On launch, Koe checks this raw feed automatically,
-checks again periodically, and you can also trigger a manual check from the menu bar
-with `Check for Updates...`. The current implementation performs the first automatic
-check shortly after launch and then re-checks every 6 hours. When an update is found,
-Koe opens the release download URL instead of patching the installed app in place.
+The appcasts (and the legacy `docs/update-feed.json` used by pre-Sparkle builds)
+are updated automatically by the release workflow on every tagged release; they
+are not edited by hand. See [docs/release-signing.md](docs/release-signing.md)
+for the full release pipeline.
 
 ### Build from Source
 
 #### Prerequisites
 
-- macOS 14.0+ (13.0+ without MLX support)
-- Apple Silicon or Intel Mac
+- macOS 14.0+
+- Apple Silicon Mac
 - Rust toolchain (`rustup`)
 - Xcode with command line tools
 - [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
@@ -101,11 +98,11 @@ cd koe
 # Generate Xcode project
 cd KoeApp && xcodegen && cd ..
 
-# Build Apple Silicon
+# Build the standard app (cloud + Apple Speech)
 make build
 
-# Build Intel
-make build-x86_64
+# Build the MLX app (adds on-device MLX models)
+make build-mlx
 ```
 
 #### Run
@@ -268,13 +265,20 @@ After ASR, the transcript is sent to an LLM for correction (capitalization,
 spacing, terminology, filler word removal). Koe stores multiple LLM profiles and
 uses `llm.active_profile` to choose the endpoint for correction.
 
-- **OpenAI-compatible APIs** — any cloud or self-hosted endpoint that implements the OpenAI chat completions API
+- **OpenAI Chat Completions** — OpenAI and compatible cloud/self-hosted endpoints
+- **OpenAI Responses** — the native Responses API used by current OpenAI text and reasoning models
+- **Anthropic Messages** — the native Claude Messages API, including Anthropic-compatible gateways
 - **APFEL** — an OpenAI-compatible local endpoint preset at `http://127.0.0.1:11434/v1`
 - **MLX** (Apple Silicon only) — fully offline local inference using Qwen3 models, no API key required
 
-OpenAI-compatible profiles, including APFEL, share the LLM HTTP client across
-sessions with HTTP/2 support and connection pooling for lower latency. MLX
-profiles run on-device via the KoeMLX Swift package.
+All remote profiles, including APFEL, share the LLM HTTP client across sessions
+with HTTP/2 support and connection pooling for lower latency. Requests and
+authentication are encoded using the selected protocol; responses collect only
+visible text and ignore reasoning, thinking, and tool blocks. Model IDs are not
+hard-coded, so any text-output model accepted by the selected API can be entered
+or chosen from its `/models` endpoint. Specialized image, audio, embedding, and
+moderation models are not text-correction models. MLX profiles run on-device via
+the KoeMLX Swift package.
 
 Koe does not install, start, restart, or choose a port for APFEL. Install and
 start APFEL separately with `apfel --serve` or `apfel service install/start`,
@@ -285,7 +289,7 @@ llm:
   # Set to false to skip LLM correction and paste raw ASR output directly.
   enabled: true
 
-  # Active LLM profile id. Built-in defaults include "openai", "apfel", and "mlx".
+  # Built-ins: openai, openai-responses, anthropic, apfel, and mlx.
   active_profile: "openai"
 
   # LLM sampling parameters. temperature: 0 = deterministic, best for correction tasks.
@@ -311,20 +315,46 @@ llm:
 
   profiles:
     openai:
-      name: "OpenAI Compatible"
+      name: "OpenAI Chat Completions"
       provider: "openai"
+      api_protocol: "openai_chat"
       base_url: "https://api.openai.com/v1"
       api_key: ""          # supports ${LLM_API_KEY}
       model: "gpt-5.4-nano"
+      endpoint_path: "/chat/completions"
       max_token_parameter: "max_completion_tokens"
-      no_reasoning_control: "reasoning_effort"
+      no_reasoning_control: "none"
+
+    openai-responses:
+      name: "OpenAI Responses"
+      provider: "openai"
+      api_protocol: "openai_responses"
+      base_url: "https://api.openai.com/v1"
+      api_key: ""          # supports ${LLM_API_KEY}
+      model: "gpt-5.4-nano"
+      endpoint_path: "/responses"
+      max_token_parameter: "max_completion_tokens"
+      no_reasoning_control: "none"
+
+    anthropic:
+      name: "Anthropic Messages"
+      provider: "anthropic"
+      api_protocol: "anthropic_messages"
+      base_url: "https://api.anthropic.com/v1"
+      api_key: ""          # supports ${ANTHROPIC_API_KEY}
+      model: ""            # choose or enter any text-capable Claude model
+      endpoint_path: "/messages"
+      max_token_parameter: "max_tokens"
+      no_reasoning_control: "none"
 
     apfel:
       name: "APFEL"
-      provider: "openai"
+      provider: "apfel"
+      api_protocol: "openai_chat"
       base_url: "http://127.0.0.1:11434/v1"
       api_key: ""          # APFEL does not require an API key by default
       model: "apple-foundationmodel"
+      endpoint_path: "/chat/completions"
       max_token_parameter: "max_tokens"
       no_reasoning_control: "none"
 
@@ -353,7 +383,7 @@ hotkey:
   # You can also use a raw macOS keycode number such as 96 (F5) or 122 (F1),
   # or a normalized key combo such as "command+shift+49".
   trigger_key: "fn"
-  trigger_mode: "hold"  # "hold" | "toggle"
+  trigger_mode: "hold"  # "hold" | "toggle" | "double_tap"
 ```
 
 | Option | Key | Notes |
@@ -371,6 +401,9 @@ single trigger shortcut model:
 
 - `hold`: press-and-hold to record, release to stop
 - `toggle`: tap once to start, tap again to stop
+- `double_tap`: double-tap to start, then tap once to stop. This is especially
+  useful with `left_command` or `right_command`; Command-key combinations such
+  as Command-C do not count toward the double-tap gesture.
 
 You can choose a named modifier key, a raw macOS keycode, or record a custom
 shortcut combination directly in the Controls pane. Recorded combinations are
@@ -439,6 +472,31 @@ Available template placeholders in `user_prompt.txt`:
 | `{{asr_text}}` | The final ASR transcript text |
 | `{{interim_history}}` | ASR interim revision history — shows how the transcript changed over time, helping the LLM identify uncertain words |
 | `{{dictionary_entries}}` | Filtered dictionary entries for LLM context |
+
+#### Prefix-cache-friendly ordering
+
+The built-in user prompt places the dictionary before interim history and the
+final ASR transcript. For providers that reuse exact prompt prefixes, this can
+extend cache reuse when the rendered dictionary block stays unchanged. The
+benefit is strongest with the default `dictionary_max_candidates: 0` and a
+stable dictionary. If a positive candidate limit filters and reorders a larger
+dictionary for each transcript, the rendered dictionary itself becomes dynamic
+and the cache benefit may be smaller.
+
+DeepSeek enables exact-prefix caching automatically. OpenAI applies prompt
+caching only for eligible models and requests. For the Anthropic protocol, Koe
+sends `cache_control` breakpoints automatically: one on the system prompt and
+one at the end of the stable head of the user prompt (everything before the
+first `{{asr_text}}` / `{{interim_history}}` placeholder, which covers the
+dictionary in the default field order). Anthropic silently skips caching when
+the prefix is below the model's minimum cacheable length, and cache writes are
+billed at a small premium over plain input tokens, so short prompts simply
+behave as before. Local MLX models do not use a remote prompt cache.
+
+Koe never overwrites an existing `~/.koe/user_prompt.txt`. Existing users who
+want this ordering must update that file manually so the fields appear as
+dictionary, interim history, then final ASR transcript. Koe will use the new
+order automatically only when creating a missing prompt file.
 
 The default prompts are tuned for software developers working in mixed Chinese-English, but you can adapt them for any language or domain.
 If either prompt file is missing or empty, Koe falls back to the built-in defaults
@@ -520,9 +578,9 @@ Koe supports three on-device speech recognition providers:
 MLX and sherpa-onnx models are managed through `.koe-manifest.json` files under `~/.koe/models/`. You can manage them in two ways:
 
 1. **Setup Wizard** — select a local provider in the ASR tab, pick a model from the dropdown, and click the download button. Progress is shown inline with a progress bar.
-2. **koe CLI** — command-line model management (see below).
+2. **Koe CLI** — command-line model management (see below).
 
-### koe CLI
+### Koe CLI
 
 The `koe` CLI tool manages local models:
 
@@ -616,26 +674,22 @@ This is especially useful for first-time users who want a guided, interactive se
 
 ## Build Variants
 
-Koe ships multiple Xcode schemes for different use cases:
+Koe ships two Xcode schemes (both Apple Silicon):
 
 | Scheme | App | Zip | Idle Memory | Description |
 |--------|-----|-----|--------|-------------|
-| **Koe** | ~86 MB | ~24 MB | ~40 MB | Full build (arm64). All providers. |
-| **Koe-lite** | ~19 MB | ~7 MB | ~13 MB | Lightweight (arm64). Cloud + Apple Speech only. |
-| **Koe-x86** | — | — | — | Intel build (x86_64). No MLX. |
+| **Koe** | ~19 MB | ~7 MB | ~13 MB | Standard app. Cloud + Apple Speech only. |
+| **Koe-MLX** | ~86 MB | ~24 MB | ~40 MB | Adds on-device MLX model support. All providers. |
 
 ```bash
-# Full build (default, Apple Silicon)
+# Standard app (default; cloud + Apple Speech only)
 make build
 
-# Lite build (cloud + Apple Speech only, ~78% smaller)
-make build-lite
-
-# Intel build
-make build-x86_64
+# MLX app (adds local MLX models)
+make build-mlx
 ```
 
-The lite build excludes MLX and sherpa-onnx, producing a smaller app that doesn't require downloading on-device ASR models (~189 MB–1.5 GB). Cloud providers (Doubao, Qwen) work on all macOS versions; Apple Speech requires macOS 26+.
+The standard app excludes MLX and sherpa-onnx, producing a smaller app that doesn't require downloading on-device ASR models (~189 MB–1.5 GB) — for most users this is the right choice. Cloud providers (Doubao, Qwen) work on supported macOS versions; Apple Speech requires macOS 26+.
 
 Local ASR providers are controlled by Rust feature flags in `koe-core/Cargo.toml`: `mlx`, `apple-speech`, `sherpa-onnx` (all enabled by default). Each Xcode scheme passes the appropriate `--features` flags to `cargo build`.
 
@@ -644,7 +698,7 @@ Local ASR providers are controlled by Rust feature flags in `koe-core/Cargo.toml
 Koe is built as a native macOS app with two layers:
 
 - **Objective-C shell** — handles macOS integration: hotkey detection, audio capture, clipboard management, paste simulation, menu bar UI, and usage statistics (SQLite)
-- **Rust core library** — handles ASR (cloud WebSocket streaming + local MLX/sherpa-onnx/Apple Speech), LLM correction (OpenAI-compatible profile endpoints + local MLX), config management, model management, transcript aggregation, and session orchestration
+- **Rust core library** — handles ASR, OpenAI Chat/Responses and Anthropic Messages LLM correction, local MLX inference, config/model management, transcript aggregation, and session orchestration
 - **Swift KoeMLX package** — bridges MLX inference to Rust via C FFI for on-device ASR (Qwen3-ASR) and LLM text correction (Qwen3) on Apple Silicon
 - **Swift KoeAppleSpeech package** — bridges Apple's SpeechAnalyzer to Rust via C FFI for zero-config on-device ASR (macOS 26+)
 

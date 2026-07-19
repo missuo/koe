@@ -104,6 +104,13 @@ impl LlmProvider for MlxLlmProvider {
 
         // Apply the same output cleaning as the OpenAI provider
         let text = result?;
+
+        // Strip any leading <think>...</think> reasoning block.  Must run
+        // before the empty-content guard so an unterminated <think> returns ""
+        // and triggers ASR fallback rather than pasting a partial monologue.
+        let text = crate::llm::strip_reasoning(&text);
+
+        // Basic output cleaning: trim whitespace, remove wrapping quotes
         let cleaned = text.trim();
         let cleaned = cleaned
             .strip_prefix('"')
@@ -113,6 +120,12 @@ impl LlmProvider for MlxLlmProvider {
             .strip_prefix('\u{201c}')
             .and_then(|s| s.strip_suffix('\u{201d}'))
             .unwrap_or(cleaned);
+
+        // Reject empty or whitespace-only output so callers fall back to raw
+        // ASR text instead of silently erasing the user's utterance.
+        if cleaned.trim().is_empty() {
+            return Err(KoeError::LlmFailed("empty content in response".into()));
+        }
 
         Ok(cleaned.to_string())
     }

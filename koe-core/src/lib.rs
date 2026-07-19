@@ -1,3 +1,4 @@
+pub mod asr_factory;
 pub mod audio_buffer;
 pub mod config;
 pub mod dictionary;
@@ -12,28 +13,20 @@ pub mod telemetry;
 use crate::config::Config;
 use crate::ffi::{
     cstr_to_str, invoke_asr_final_text, invoke_final_text_ready, invoke_interim_text,
-    invoke_rewrite_text_ready, invoke_session_error, invoke_session_ready, invoke_session_warning,
-    invoke_state_changed, SPCallbacks, SPFeedbackConfig, SPHotkeyConfig, SPSessionContext,
-    SPSessionMode,
+    invoke_rewrite_text_ready, invoke_session_error, invoke_session_ready,
+    invoke_session_result_meta, invoke_session_warning, invoke_state_changed, SPCallbacks,
+    SPClipboardConfig, SPFeedbackConfig, SPHotkeyConfig, SPSessionContext, SPSessionMode,
 };
 #[cfg(feature = "mlx")]
 use crate::llm::mlx::MlxLlmProvider;
 use crate::llm::openai_compatible::{
-    build_http_client, list_models as llm_list_models, OpenAiCompatibleProvider,
+    build_http_client, list_models as llm_list_models,
+    list_models_for_profile as llm_list_models_for_profile, OpenAiCompatibleProvider,
     LLM_HTTP_POOL_IDLE_TIMEOUT,
 };
 use crate::llm::{CorrectionRequest, LlmProvider};
 use crate::session::{Session, SessionState};
-#[cfg(feature = "apple-speech")]
-use koe_asr::{AppleSpeechConfig, AppleSpeechProvider};
-use koe_asr::{
-    AsrConfig, AsrEvent, AsrProvider, DoubaoImeProvider, DoubaoWsProvider, GlmAsrProvider,
-    QwenAsrProvider, TranscriptAggregator,
-};
-#[cfg(feature = "mlx")]
-use koe_asr::{MlxConfig, MlxProvider};
-#[cfg(feature = "sherpa-onnx")]
-use koe_asr::{SherpaOnnxConfig, SherpaOnnxProvider};
+use koe_asr::{AsrConfig, AsrEvent, AsrProvider, TranscriptAggregator};
 use reqwest::Client;
 
 use std::collections::HashSet;
@@ -309,209 +302,14 @@ pub extern "C" fn sp_core_session_begin(context: SPSessionContext) -> i32 {
     let cfg = &core.config;
     let asr_provider_name = cfg.asr.provider.clone();
 
-    // Build provider-specific AsrConfig and create the provider instance.
-    //
-    // Previously, the provider was created inside run_session. It is now
-    // created here so that local providers (e.g. mlx) can receive their
-    // typed config via the constructor, while cloud providers (doubao, qwen)
-    // continue to receive config via connect(&AsrConfig).
-    //
-    // Provider lifecycle is unchanged:
-    //
-    //   Before:
-    //     sp_core_session_begin()
-    //       → runtime.spawn(async move {
-    //           run_session(...)
-    //             → new()              // created here
-    //             → connect()
-    //             → send_audio() ...
-    //             → close()
-    //             → function returns, provider dropped
-    //         })
-    //
-    //   After:
-    //     sp_core_session_begin()
-    //       → new()                    // created here (moved earlier)
-    //       → runtime.spawn(async move {  // ownership transferred via move
-    //           run_session(..., asr)
-    //             → connect()
-    //             → send_audio() ...
-    //             → close()
-    //             → function returns, provider dropped (same as before)
-    //         })
-    //
-    // - Created once per session: sp_core_session_begin is called once per
-    //   voice input session, so the provider is created exactly once.
-    // - Drop timing unchanged: ownership moves into the async closure, then
-    //   into run_session; the provider is dropped when run_session returns.
-    // - The only difference: new() now runs in a sync context instead of an
-    //   async context, but new() only initializes struct fields with no async
-    //   operations, so this has no effect.
-    let (asr_config, asr): (AsrConfig, Box<dyn AsrProvider>) = match asr_provider_name.as_str() {
-        "doubaoime" => {
-            let ime = &cfg.asr.doubaoime;
-            let credential_path = if std::path::Path::new(&ime.credential_path).is_absolute() {
-                ime.credential_path.clone()
-            } else {
-                config::config_dir()
-                    .join(&ime.credential_path)
-                    .to_string_lossy()
-                    .to_string()
-            };
-            let mut custom_headers = std::collections::HashMap::new();
-            custom_headers.insert("credential_path".to_string(), credential_path);
-            let config = AsrConfig {
-                url: String::new(),
-                app_key: String::new(),
-                access_key: String::new(),
-                api_key: String::new(),
-                resource_id: String::new(),
-                sample_rate_hz: 16000,
-                connect_timeout_ms: ime.connect_timeout_ms,
-                final_wait_timeout_ms: ime.final_wait_timeout_ms,
-                enable_ddc: false,
-                enable_itn: false,
-                enable_punc: true,
-                enable_nonstream: false,
-                hotwords: Vec::new(),
-                language: None,
-                custom_headers,
-                end_window_size: None,
-                force_to_speech_time: None,
-                vad_segment_duration: None,
-                output_zh_variant: None,
-                enable_accelerate_text: false,
-                accelerate_score: None,
-                context_messages: Vec::new(),
-            };
-            (config, Box::new(DoubaoImeProvider::new()))
-        }
-        "qwen" => {
-            let qwen = &cfg.asr.qwen;
-            let config = AsrConfig {
-                url: qwen.url.clone(),
-                app_key: qwen.model.clone(),
-                access_key: qwen.api_key.clone(),
-                api_key: String::new(),
-                resource_id: String::new(),
-                sample_rate_hz: 16000,
-                connect_timeout_ms: qwen.connect_timeout_ms,
-                final_wait_timeout_ms: qwen.final_wait_timeout_ms,
-                enable_ddc: false,
-                enable_itn: false,
-                enable_punc: false,
-                enable_nonstream: false,
-                hotwords: Vec::new(),
-                language: Some(qwen.language.clone()),
-                custom_headers: qwen.headers.clone(),
-                end_window_size: None,
-                force_to_speech_time: None,
-                vad_segment_duration: None,
-                output_zh_variant: None,
-                enable_accelerate_text: false,
-                accelerate_score: None,
-                context_messages: Vec::new(),
-            };
-            (config, Box::new(QwenAsrProvider::new()))
-        }
-        "glm" => {
-            let glm = &cfg.asr.glm;
-            let config = AsrConfig {
-                url: glm.url.clone(),
-                app_key: glm.model.clone(),
-                access_key: glm.api_key.clone(),
-                api_key: glm.api_key.clone(),
-                resource_id: String::new(),
-                sample_rate_hz: 16000,
-                connect_timeout_ms: glm.connect_timeout_ms,
-                final_wait_timeout_ms: glm.final_wait_timeout_ms,
-                enable_ddc: false,
-                enable_itn: false,
-                enable_punc: false,
-                enable_nonstream: false,
-                hotwords: Vec::new(),
-                language: glm.prompt.clone(),
-                custom_headers: std::collections::HashMap::new(),
-                end_window_size: None,
-                force_to_speech_time: None,
-                vad_segment_duration: None,
-                output_zh_variant: None,
-                enable_accelerate_text: false,
-                accelerate_score: None,
-                context_messages: Vec::new(),
-            };
-            (config, Box::new(GlmAsrProvider::new()))
-        }
-        #[cfg(feature = "mlx")]
-        "mlx" => {
-            let mlx = &cfg.asr.mlx;
-            let model_path = config::resolve_model_dir(&mlx.model)
-                .to_string_lossy()
-                .to_string();
-            let mlx_config = MlxConfig {
-                model_path,
-                language: mlx.language.clone(),
-                delay_preset: mlx.delay_preset.clone(),
-            };
-            (AsrConfig::default(), Box::new(MlxProvider::new(mlx_config)))
-        }
-        #[cfg(feature = "sherpa-onnx")]
-        "sherpa-onnx" => {
-            let s = &cfg.asr.sherpa_onnx;
-            let model_dir = config::resolve_model_dir(&s.model);
-            let sherpa_config = SherpaOnnxConfig {
-                model_dir,
-                num_threads: s.num_threads,
-                hotwords: core.dictionary.clone(),
-                hotwords_score: s.hotwords_score,
-                endpoint_silence: s.endpoint_silence,
-            };
-            (
-                AsrConfig::default(),
-                Box::new(SherpaOnnxProvider::new(sherpa_config)),
-            )
-        }
-        #[cfg(feature = "apple-speech")]
-        "apple-speech" => {
-            let as_cfg = &cfg.asr.apple_speech;
-            let apple_config = AppleSpeechConfig {
-                locale: as_cfg.locale.clone(),
-                contextual_strings: core.dictionary.clone(),
-            };
-            (
-                AsrConfig::default(),
-                Box::new(AppleSpeechProvider::new(apple_config)),
-            )
-        }
-        _ => {
-            let doubao = &cfg.asr.doubao;
-            let config = AsrConfig {
-                url: doubao.url.clone(),
-                app_key: doubao.app_key.clone(),
-                access_key: doubao.access_key.clone(),
-                api_key: doubao.api_key.clone(),
-                resource_id: doubao.resource_id.clone(),
-                sample_rate_hz: 16000,
-                connect_timeout_ms: doubao.connect_timeout_ms,
-                final_wait_timeout_ms: doubao.final_wait_timeout_ms,
-                enable_ddc: doubao.enable_ddc,
-                enable_itn: doubao.enable_itn,
-                enable_punc: doubao.enable_punc,
-                enable_nonstream: doubao.enable_nonstream,
-                hotwords: core.dictionary.clone(),
-                language: doubao.language.clone(),
-                custom_headers: doubao.headers.clone(),
-                end_window_size: doubao.end_window_size,
-                force_to_speech_time: doubao.force_to_speech_time,
-                vad_segment_duration: doubao.vad_segment_duration,
-                output_zh_variant: doubao.output_zh_variant.clone(),
-                enable_accelerate_text: doubao.enable_accelerate_text,
-                accelerate_score: doubao.accelerate_score,
-                context_messages: Vec::new(),
-            };
-            (config, Box::new(DoubaoWsProvider::new()))
-        }
-    };
+    // Build the provider outside the async task so that local providers
+    // (e.g. mlx) receive their typed config via the constructor, while cloud
+    // providers continue to receive config via connect(&AsrConfig). Provider
+    // construction lives in asr_factory so koe-cli can reuse it. Ownership
+    // moves into the async closure below; the provider is dropped when
+    // run_session returns — created exactly once per session.
+    let (asr_config, asr): (AsrConfig, Box<dyn AsrProvider>) =
+        asr_factory::create_asr_provider(cfg, &asr_provider_name, &core.dictionary);
     let llm_config = cfg.llm.clone();
     let llm_http_client = core.llm_http_client.clone();
     let llm_warmup_state = core.llm_warmup_state.clone();
@@ -807,6 +605,15 @@ pub unsafe extern "C" fn sp_core_rewrite_with_template(
 
     drop(global); // Release lock before spawning
 
+    // Trim-aware empty guard: a whitespace-only input carries no content, and
+    // feeding it to the LLM makes the model regurgitate the prompt's dictionary
+    // section instead of rewriting. Echo the original back and skip the call.
+    if asr_text.trim().is_empty() {
+        log::info!("sp_core_rewrite_with_template: empty ASR text, skipping LLM");
+        invoke_rewrite_text_ready(session_token, &asr_text);
+        return 0;
+    }
+
     runtime_handle.spawn(async move {
         log::info!(
             "rewrite: using template '{}' with {} chars of ASR text",
@@ -838,17 +645,12 @@ pub unsafe extern "C" fn sp_core_rewrite_with_template(
                     llm_config.timeout_ms,
                 ))
             }
-            _ => Box::new(OpenAiCompatibleProvider::new(
+            _ => Box::new(OpenAiCompatibleProvider::from_profile(
                 llm_http_client,
-                active_profile.base_url.clone(),
-                active_profile.chat_completions_path.clone(),
-                active_profile.api_key.clone(),
-                active_profile.model.clone(),
+                active_profile.clone(),
                 llm_config.temperature,
                 llm_config.top_p,
                 llm_config.max_output_tokens,
-                active_profile.max_token_parameter,
-                active_profile.no_reasoning_control,
             )),
         };
 
@@ -859,22 +661,38 @@ pub unsafe extern "C" fn sp_core_rewrite_with_template(
         );
         let user_prompt =
             prompt::render_user_prompt(&user_prompt_template, &asr_text, &candidates, &[]);
+        let user_prompt_stable_prefix_len =
+            prompt::stable_user_prompt_prefix_len(&user_prompt_template, &user_prompt, &candidates);
 
         let request = CorrectionRequest {
             asr_text: asr_text.clone(),
             dictionary_entries: candidates,
             system_prompt: template_system_prompt,
             user_prompt,
+            user_prompt_stable_prefix_len,
         };
 
         match llm.correct(&request).await {
             Ok(result) => {
-                log::info!(
-                    "rewrite: template '{}' produced {} chars",
-                    template.name,
-                    result.len()
-                );
-                invoke_rewrite_text_ready(session_token, &result);
+                if prompt::looks_like_degenerate_rewrite(
+                    &result,
+                    &request.asr_text,
+                    &request.dictionary_entries,
+                ) {
+                    log::warn!(
+                        "rewrite: template '{}' output looks degenerate ({} chars); falling back to ASR text",
+                        template.name,
+                        result.len()
+                    );
+                    invoke_rewrite_text_ready(session_token, &asr_text);
+                } else {
+                    log::info!(
+                        "rewrite: template '{}' produced {} chars",
+                        template.name,
+                        result.len()
+                    );
+                    invoke_rewrite_text_ready(session_token, &result);
+                }
             }
             Err(e) => {
                 log::error!("rewrite: template '{}' failed: {e}", template.name);
@@ -897,28 +715,52 @@ pub extern "C" fn sp_core_get_feedback_config() -> SPFeedbackConfig {
             start_sound: core.config.feedback.start_sound,
             stop_sound: core.config.feedback.stop_sound,
             error_sound: core.config.feedback.error_sound,
+            mute_system_output: core.config.feedback.mute_system_output,
         }
     } else {
         SPFeedbackConfig {
             start_sound: false,
             stop_sound: false,
             error_sound: false,
+            mute_system_output: false,
+        }
+    }
+}
+
+/// Query current clipboard configuration.
+/// Returns the validated restoration delay from the cached config — never the
+/// raw YAML scalar — so field validation, defaults, and session snapshot
+/// semantics apply. Callers snapshot this once per session.
+#[no_mangle]
+pub extern "C" fn sp_core_get_clipboard_config() -> SPClipboardConfig {
+    let global = CORE.lock().unwrap();
+    if let Some(ref core) = *global {
+        SPClipboardConfig {
+            restore_delay_ms: core.config.clipboard.restore_delay_ms,
+        }
+    } else {
+        SPClipboardConfig {
+            restore_delay_ms: config::DEFAULT_CLIPBOARD_RESTORE_DELAY_MS,
         }
     }
 }
 
 /// Query current hotkey configuration.
 /// Returns key codes and modifier flags for the configured trigger key.
+fn hotkey_trigger_mode_code(trigger_mode: &str) -> u8 {
+    match trigger_mode {
+        "toggle" => 1,
+        "double_tap" => 2,
+        _ => 0,
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn sp_core_get_hotkey_config() -> SPHotkeyConfig {
     let global = CORE.lock().unwrap();
     if let Some(ref core) = *global {
         let params = core.config.hotkey.resolve();
-        let trigger_mode: u8 = if core.config.hotkey.trigger_mode == "toggle" {
-            1
-        } else {
-            0
-        };
+        let trigger_mode = hotkey_trigger_mode_code(&core.config.hotkey.trigger_mode);
         SPHotkeyConfig {
             trigger_key_code: params.key_code,
             trigger_alt_key_code: params.alt_key_code,
@@ -1115,9 +957,12 @@ async fn run_session(
     }
 
     let asr_text = aggregator.best_text().to_string();
-    if asr_text.is_empty() {
+    if asr_text.trim().is_empty() {
         // A silent recording is a valid no-op, not a user-visible failure.
         // Exit quietly so the app returns to idle without error sounds or alerts.
+        // NOTE: must be trim-aware — a whitespace-only ASR result is non-empty
+        // but carries no content, and feeding it to the LLM makes the model
+        // regurgitate the prompt's dictionary section instead of producing text.
         log::info!(
             "[{session_id}] no ASR text available: treating silent recording as empty result"
         );
@@ -1158,7 +1003,7 @@ async fn run_session(
 
     let llm_enabled = llm_enabled_for_session(&llm_config);
 
-    let final_text = if llm_enabled {
+    let (final_text, llm_applied) = if llm_enabled {
         {
             let mut s = session_arc.lock().unwrap();
             if let Some(ref mut session) = *s {
@@ -1186,17 +1031,12 @@ async fn run_session(
                     llm_config.timeout_ms,
                 ))
             }
-            _ => Box::new(OpenAiCompatibleProvider::new(
+            _ => Box::new(OpenAiCompatibleProvider::from_profile(
                 llm_http_client,
-                active_profile.base_url,
-                active_profile.chat_completions_path,
-                active_profile.api_key,
-                active_profile.model,
+                active_profile.clone(),
                 llm_config.temperature,
                 llm_config.top_p,
                 llm_config.max_output_tokens,
-                active_profile.max_token_parameter,
-                active_profile.no_reasoning_control,
             )),
         };
 
@@ -1226,12 +1066,15 @@ async fn run_session(
         let user_prompt =
             prompt::render_user_prompt(&user_prompt_template, &asr_text, &candidates, history);
         log::debug!("[{session_id}] LLM user prompt:\n{}", user_prompt);
+        let user_prompt_stable_prefix_len =
+            prompt::stable_user_prompt_prefix_len(&user_prompt_template, &user_prompt, &candidates);
 
         let request = CorrectionRequest {
             asr_text: asr_text.clone(),
             dictionary_entries: candidates,
             system_prompt,
             user_prompt,
+            user_prompt_stable_prefix_len,
         };
 
         let correction = llm.correct(&request);
@@ -1242,13 +1085,26 @@ async fn run_session(
                 match result {
                     Ok(corrected) => {
                         mark_llm_connection_touched(&llm_warmup_state);
-                        log::info!("[{session_id}] LLM corrected: {} chars", corrected.len());
-                        corrected
+                        if prompt::looks_like_degenerate_rewrite(
+                            &corrected,
+                            &request.asr_text,
+                            &request.dictionary_entries,
+                        ) {
+                            log::warn!(
+                                "[{session_id}] LLM output looks degenerate ({} chars from {} chars ASR); falling back to raw ASR text",
+                                corrected.len(),
+                                request.asr_text.len()
+                            );
+                            (asr_text.clone(), false)
+                        } else {
+                            log::info!("[{session_id}] LLM corrected: {} chars", corrected.len());
+                            (corrected, true)
+                        }
                     }
                     Err(e) => {
                         log::warn!("[{session_id}] LLM failed, falling back to ASR text: {e}");
                         invoke_session_warning(session_token, &format!("LLM correction failed: {e}"));
-                        asr_text
+                        (asr_text.clone(), false)
                     }
                 }
             }
@@ -1258,7 +1114,7 @@ async fn run_session(
                 } else {
                     log::debug!("[{session_id}] ASR accept channel closed; falling back to raw ASR text");
                 }
-                asr_text
+                (asr_text.clone(), false)
             }
         }
     } else {
@@ -1267,7 +1123,7 @@ async fn run_session(
         } else {
             log::info!("[{session_id}] LLM not configured, using raw ASR text");
         }
-        asr_text
+        (asr_text.clone(), false)
     };
 
     // Check cancellation after LLM (which may have taken seconds) to avoid
@@ -1291,6 +1147,11 @@ async fn run_session(
     invoke_state_changed(session_token, "preparing_paste");
 
     // --- Deliver result to Obj-C ---
+    // Metadata must go out before the final text: the Obj-C side records
+    // history (raw ASR text, provider, LLM outcome) when the final text
+    // arrives, using the metadata delivered here.
+    invoke_session_result_meta(session_token, &asr_text, &asr_provider, llm_applied);
+
     // The Obj-C side owns all state transitions from here (pasting → idle).
     // Rust must NOT emit completed/idle state changes — they would be
     // dispatched to the main queue and overwrite the pasting state that
@@ -1435,17 +1296,12 @@ fn start_llm_warmup_if_needed(
                 return;
             }
         };
-        let llm = OpenAiCompatibleProvider::new(
+        let llm = OpenAiCompatibleProvider::from_profile(
             llm_http_client,
-            warmup_profile.base_url,
-            warmup_profile.chat_completions_path,
-            warmup_profile.api_key,
-            warmup_profile.model,
+            warmup_profile,
             warmup_cfg.temperature,
             warmup_cfg.top_p,
             warmup_cfg.max_output_tokens,
-            warmup_profile.max_token_parameter,
-            warmup_profile.no_reasoning_control,
         );
 
         let warmup_ok = match llm.warmup().await {
@@ -1669,12 +1525,13 @@ pub unsafe extern "C" fn sp_llm_test(
         id: "test".into(),
         name: "Test".into(),
         provider: "openai".into(),
+        api_protocol: config::LlmApiProtocol::OpenaiChat,
         base_url,
         api_key,
         model,
-        chat_completions_path: "/chat/completions".into(),
+        endpoint_path: "/chat/completions".into(),
         max_token_parameter,
-        no_reasoning_control: config::LlmNoReasoningControl::ReasoningEffort,
+        no_reasoning_control: config::LlmNoReasoningControl::None,
         mlx: Default::default(),
     };
 
@@ -1838,6 +1695,106 @@ pub unsafe extern "C" fn sp_llm_list_models_json(
         .into_raw()
 }
 
+/// List remote models using the authentication rules from a complete LLM
+/// profile. This supports both OpenAI-compatible and Anthropic `/models`
+/// endpoints while preserving `sp_llm_list_models_json` for older clients.
+///
+/// # Safety
+/// `profile_json` must be a valid null-terminated C string.
+/// Caller must free the returned pointer with `sp_core_free_string()`.
+#[no_mangle]
+pub unsafe extern "C" fn sp_llm_list_models_for_profile_json(
+    profile_json: *const c_char,
+) -> *mut c_char {
+    let Some(profile_json) = (unsafe { cstr_to_str(profile_json) }) else {
+        return CString::new(
+            serde_json::json!({
+                "success": false,
+                "models": [],
+                "message": "Missing profile JSON",
+            })
+            .to_string(),
+        )
+        .unwrap_or_default()
+        .into_raw();
+    };
+    let profile: config::LlmProfileRuntimeConfig = match serde_json::from_str(profile_json) {
+        Ok(profile) => profile,
+        Err(e) => {
+            return CString::new(
+                serde_json::json!({
+                    "success": false,
+                    "models": [],
+                    "message": format!("Invalid profile JSON: {e}"),
+                })
+                .to_string(),
+            )
+            .unwrap_or_default()
+            .into_raw();
+        }
+    };
+    if profile.base_url.trim().is_empty() {
+        return CString::new(
+            serde_json::json!({
+                "success": false,
+                "models": [],
+                "message": "Base URL is required",
+            })
+            .to_string(),
+        )
+        .unwrap_or_default()
+        .into_raw();
+    }
+
+    let cfg = config::load_config().unwrap_or_default();
+    let client = match build_http_client(cfg.llm.timeout_ms) {
+        Ok(client) => client,
+        Err(e) => {
+            return CString::new(
+                serde_json::json!({
+                    "success": false,
+                    "models": [],
+                    "message": format!("Failed to create HTTP client: {e}"),
+                })
+                .to_string(),
+            )
+            .unwrap_or_default()
+            .into_raw();
+        }
+    };
+    let runtime = match Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            return CString::new(
+                serde_json::json!({
+                    "success": false,
+                    "models": [],
+                    "message": format!("Failed to create async runtime: {e}"),
+                })
+                .to_string(),
+            )
+            .unwrap_or_default()
+            .into_raw();
+        }
+    };
+    let result = runtime.block_on(llm_list_models_for_profile(client, &profile));
+    let json = match result {
+        Ok(models) => serde_json::json!({
+            "success": true,
+            "models": models,
+            "message": "Models fetched",
+        }),
+        Err(e) => serde_json::json!({
+            "success": false,
+            "models": [],
+            "message": format!("{e}"),
+        }),
+    };
+    CString::new(json.to_string())
+        .unwrap_or_default()
+        .into_raw()
+}
+
 /// Return the active LLM profile id and saved profile map as JSON.
 #[no_mangle]
 pub extern "C" fn sp_llm_profiles_json() -> *mut c_char {
@@ -1940,11 +1897,14 @@ pub unsafe extern "C" fn sp_llm_test_profile_json(profile_json: *const c_char) -
         }
     };
 
+    let user_prompt_stable_prefix_len =
+        prompt::stable_user_prompt_prefix_len(&user_prompt_template, &user_prompt, &candidates);
     let request = CorrectionRequest {
         asr_text: String::new(),
         dictionary_entries: candidates,
         system_prompt,
         user_prompt,
+        user_prompt_stable_prefix_len,
     };
     let start = Instant::now();
     let result = match profile.provider.as_str() {
@@ -1982,17 +1942,12 @@ pub unsafe extern "C" fn sp_llm_test_profile_json(profile_json: *const c_char) -
                     .into_raw();
                 }
             };
-            let llm = OpenAiCompatibleProvider::new(
+            let llm = OpenAiCompatibleProvider::from_profile(
                 client,
-                profile.base_url,
-                profile.chat_completions_path,
-                profile.api_key,
-                profile.model,
+                profile,
                 cfg.llm.temperature,
                 cfg.llm.top_p,
                 cfg.llm.max_output_tokens,
-                profile.max_token_parameter,
-                profile.no_reasoning_control,
             );
             rt.block_on(llm.correct(&request))
         }
@@ -2186,6 +2141,14 @@ mod tests {
     use super::*;
     use koe_asr::{AsrError, AsrEvent, AsrProvider, TranscriptAggregator};
     use std::collections::VecDeque;
+
+    #[test]
+    fn hotkey_trigger_modes_map_to_native_codes() {
+        assert_eq!(hotkey_trigger_mode_code("hold"), 0);
+        assert_eq!(hotkey_trigger_mode_code("toggle"), 1);
+        assert_eq!(hotkey_trigger_mode_code("double_tap"), 2);
+        assert_eq!(hotkey_trigger_mode_code("unknown"), 0);
+    }
 
     /// Mock ASR provider that yields a pre-configured sequence of events.
     struct MockAsrProvider {

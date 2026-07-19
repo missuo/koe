@@ -93,6 +93,7 @@ impl Session {
                 | (RecordingToggle, FinalizingAsr)
                 | (RecordingToggle, Failed)
                 | (FinalizingAsr, Correcting)
+                | (FinalizingAsr, PreparingPaste)
                 | (FinalizingAsr, Failed)
                 | (Correcting, PreparingPaste)
                 | (Correcting, Failed)

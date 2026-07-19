@@ -46,6 +46,7 @@ pub mod doubaoime;
 pub mod error;
 pub mod event;
 pub mod glm;
+pub mod mimo;
 #[cfg(feature = "mlx")]
 pub mod mlx;
 pub mod provider;
@@ -62,6 +63,7 @@ pub use doubaoime::DoubaoImeProvider;
 pub use error::AsrError;
 pub use event::AsrEvent;
 pub use glm::GlmAsrProvider;
+pub use mimo::MimoAsrProvider;
 #[cfg(feature = "mlx")]
 pub use mlx::{MlxConfig, MlxProvider};
 pub use provider::AsrProvider;

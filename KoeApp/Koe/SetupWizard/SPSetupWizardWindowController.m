@@ -23,6 +23,11 @@ static NSString *const kSystemPromptFile = @"system_prompt.txt";
 static NSString *const kTemplateEditablePromptKey = @"__editable_prompt";
 static NSString *const kTemplateOriginalPromptKey = @"__original_prompt";
 static NSString *const kDefaultLlmChatCompletionsPath = @"/chat/completions";
+static NSString *const kDefaultLlmResponsesPath = @"/responses";
+static NSString *const kDefaultLlmAnthropicMessagesPath = @"/messages";
+static NSString *const kLlmProtocolOpenAIChat = @"openai_chat";
+static NSString *const kLlmProtocolOpenAIResponses = @"openai_responses";
+static NSString *const kLlmProtocolAnthropicMessages = @"anthropic_messages";
 static NSString *const kOverlayFontFamilyDefault = @"system";
 static NSString *const kOverlayFontFamilySystemLabel = @"System Default";
 static const NSInteger kOverlayFontSizeDefault = 13;
@@ -168,13 +173,13 @@ static NSInteger clampedOverlayMaxVisibleLinesValue(NSInteger value) {
              MIN(kOverlayMaxVisibleLinesMax, value));
 }
 
-static BOOL overlayLimitVisibleLinesEnabledValue(NSString *value) {
+static BOOL configBooleanValue(NSString *value, BOOL fallback) {
   NSString *normalized = [[[value ?: @""
       stringByTrimmingCharactersInSet:[NSCharacterSet
                                           whitespaceAndNewlineCharacterSet]]
       lowercaseString] copy];
   if (normalized.length == 0) {
-    return kOverlayLimitVisibleLinesDefault;
+    return fallback;
   }
 
   if ([normalized isEqualToString:@"1"] ||
@@ -191,7 +196,7 @@ static BOOL overlayLimitVisibleLinesEnabledValue(NSString *value) {
     return NO;
   }
 
-  return kOverlayLimitVisibleLinesDefault;
+  return fallback;
 }
 
 static NSString *normalizedOverlayFontFamilyValue(NSString *value) {
@@ -583,6 +588,41 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 }
 @end
 
+// Status label whose text is set from many call sites at runtime (test
+// results, model download states). Keeps long text readable without any
+// caller cooperation: in growing mode it re-measures its wrapped height on
+// every text change (top edge fixed, grows downward); otherwise it stays a
+// single truncating line and mirrors the full text into its tooltip.
+@interface SPStatusLabel : NSTextField
+@property(nonatomic, assign) BOOL growsDownward;
+@end
+
+@implementation SPStatusLabel
+
+- (void)setStringValue:(NSString *)stringValue {
+  [super setStringValue:stringValue];
+  if (self.growsDownward) {
+    [self sp_remeasureHeight];
+  } else {
+    self.toolTip = stringValue.length > 0 ? stringValue : nil;
+  }
+}
+
+- (void)sp_remeasureHeight {
+  CGFloat width = self.frame.size.width;
+  if (width <= 0.0)
+    return;
+  NSTextFieldCell *cell = (NSTextFieldCell *)self.cell;
+  NSSize size = [cell cellSizeForBounds:NSMakeRect(0, 0, width, CGFLOAT_MAX)];
+  CGFloat height = ceil(MAX(18.0, size.height));
+  NSRect frame = self.frame;
+  frame.origin.y = NSMaxY(frame) - height;
+  frame.size.height = height;
+  self.frame = frame;
+}
+
+@end
+
 @interface SPTemplateRowView : NSTableRowView
 @end
 
@@ -666,6 +706,9 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property(nonatomic, strong) NSSecureTextField *asrGlmApiKeySecureField;
 @property(nonatomic, strong) NSTextField *asrGlmApiKeyField;
 @property(nonatomic, strong) NSButton *asrGlmApiKeyToggle;
+@property(nonatomic, strong) NSSecureTextField *asrMimoApiKeySecureField;
+@property(nonatomic, strong) NSTextField *asrMimoApiKeyField;
+@property(nonatomic, strong) NSButton *asrMimoApiKeyToggle;
 @property(nonatomic, strong) NSButton *asrTestButton;
 @property(nonatomic, strong) NSTextField *asrTestResultLabel;
 // Doubao auth mode + new console API key
@@ -692,34 +735,37 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property(nonatomic, strong) NSTextField *modelProgressSizeLabel;
 @property(nonatomic, strong) NSMutableSet<NSString *> *downloadingModels;
 @property(nonatomic, copy) NSString *pendingVerificationPath;
+// Pane height needed for the MiMo provider (derived from the measured
+// privacy-notice height at build time).
+@property(nonatomic, assign) CGFloat asrMimoRequiredPaneHeight;
 
 // Apple Speech locale selection
 @property(nonatomic, strong) NSPopUpButton *appleSpeechLocalePopup;
 
 // LLM fields
-@property (nonatomic, strong) NSSwitch *llmEnabledCheckbox;
-@property (nonatomic, strong) NSSwitch *llmAutoPasteProcessedTextSwitch;
-@property (nonatomic, strong) NSTableView *llmProfileTableView;
-@property (nonatomic, strong) NSScrollView *llmProfileTableScroll;
-@property (nonatomic, strong) NSButton *llmAddProfileButton;
-@property (nonatomic, strong) NSButton *llmDeleteProfileButton;
-@property (nonatomic, strong) NSMutableArray<NSString *> *llmProfileOrder;
-@property (nonatomic, assign) BOOL suppressLlmProfileSelection;
-@property (nonatomic, strong) NSTextField *llmProfileNameField;
-@property (nonatomic, strong) NSTextField *llmProfileTypeLabel;
-@property (nonatomic, strong) NSTextField *llmBaseUrlField;
-@property (nonatomic, strong) NSTextField *llmApiKeyField;
-@property (nonatomic, strong) NSSecureTextField *llmApiKeySecureField;
-@property (nonatomic, strong) NSButton *llmApiKeyToggle;
-@property (nonatomic, strong) NSTextField *llmModelField;
-@property (nonatomic, strong) NSButton *llmToggleModelPickerButton;
-@property (nonatomic, strong) NSPopUpButton *llmRemoteModelPopup;
-@property (nonatomic, strong) NSButton *llmRefreshModelsButton;
-@property (nonatomic, strong) NSTextField *llmChatCompletionsPathField;
-@property (nonatomic, strong) NSButton *llmTestButton;
-@property (nonatomic, strong) NSTextField *llmTestResultLabel;
-@property (nonatomic, assign) BOOL llmRemoteModelPickerExpanded;
-@property (nonatomic, assign) BOOL llmRemoteModelPickerRowVisible;
+@property(nonatomic, strong) NSSwitch *llmEnabledCheckbox;
+@property(nonatomic, strong) NSSwitch *llmAutoPasteProcessedTextSwitch;
+@property(nonatomic, strong) NSTableView *llmProfileTableView;
+@property(nonatomic, strong) NSScrollView *llmProfileTableScroll;
+@property(nonatomic, strong) NSButton *llmAddProfileButton;
+@property(nonatomic, strong) NSButton *llmDeleteProfileButton;
+@property(nonatomic, strong) NSMutableArray<NSString *> *llmProfileOrder;
+@property(nonatomic, assign) BOOL suppressLlmProfileSelection;
+@property(nonatomic, strong) NSTextField *llmProfileNameField;
+@property(nonatomic, strong) NSTextField *llmProfileTypeLabel;
+@property(nonatomic, strong) NSTextField *llmBaseUrlField;
+@property(nonatomic, strong) NSTextField *llmApiKeyField;
+@property(nonatomic, strong) NSSecureTextField *llmApiKeySecureField;
+@property(nonatomic, strong) NSButton *llmApiKeyToggle;
+@property(nonatomic, strong) NSTextField *llmModelField;
+@property(nonatomic, strong) NSButton *llmToggleModelPickerButton;
+@property(nonatomic, strong) NSPopUpButton *llmRemoteModelPopup;
+@property(nonatomic, strong) NSButton *llmRefreshModelsButton;
+@property(nonatomic, strong) NSTextField *llmChatCompletionsPathField;
+@property(nonatomic, strong) NSButton *llmTestButton;
+@property(nonatomic, strong) NSTextField *llmTestResultLabel;
+@property(nonatomic, assign) BOOL llmRemoteModelPickerExpanded;
+@property(nonatomic, assign) BOOL llmRemoteModelPickerRowVisible;
 
 // LLM max token parameter
 @property(nonatomic, strong) NSPopUpButton *maxTokenParamPopup;
@@ -746,6 +792,9 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property(nonatomic, strong) NSSwitch *startSoundCheckbox;
 @property(nonatomic, strong) NSSwitch *stopSoundCheckbox;
 @property(nonatomic, strong) NSSwitch *errorSoundCheckbox;
+@property(nonatomic, strong) NSSwitch *muteSystemOutputCheckbox;
+// Paste behavior
+@property(nonatomic, strong) NSSwitch *autoReturnSwitch;
 
 // Overlay
 @property(nonatomic, strong) NSPopUpButton *overlayFontFamilyPopup;
@@ -777,6 +826,16 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 @property(nonatomic, assign) BOOL suppressTemplateSync;
 @property(nonatomic, assign) BOOL templateEditorDirty;
 
+// Values captured when a pane is loaded. Saving only writes controls whose
+// semantic value changed, so visiting Settings cannot normalize or overwrite
+// config that the user did not edit.
+@property(nonatomic, strong)
+    NSMutableDictionary<NSString *, NSNumber *> *loadedBooleanValues;
+@property(nonatomic, copy) NSString *loadedDictionaryContent;
+@property(nonatomic, copy) NSString *loadedSystemPromptContent;
+@property(nonatomic, copy)
+    NSArray<NSDictionary *> *loadedTemplatesSnapshot;
+
 @end
 
 @implementation SPSetupWizardWindowController {
@@ -797,6 +856,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   if (self) {
     _verifyQueue =
         dispatch_queue_create("koe.model.verify", DISPATCH_QUEUE_SERIAL);
+    _loadedBooleanValues = [NSMutableDictionary dictionary];
     window.delegate = self;
     [self setupToolbar];
   }
@@ -976,12 +1036,16 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
 - (NSView *)buildAsrPane {
   CGFloat paneWidth = 600;
-  CGFloat labelW = 130;
-  CGFloat fieldX = labelW + 24;
-  CGFloat fieldW = paneWidth - fieldX - 32;
-  CGFloat rowH = 32;
   CGFloat contentX = 24.0;
   CGFloat contentW = paneWidth - 48.0;
+  // Label column measured from the actual strings so no label ever clips.
+  CGFloat labelW = [self formLabelColumnWidthForTitles:@[
+    @"Provider", @"Auth Mode", @"API Key", @"App Key", @"Access Key",
+    @"Language", @"Model", @"Endpoint Silence", @"Output Variant"
+  ]];
+  CGFloat fieldX = contentX + labelW + 12;
+  CGFloat fieldW = paneWidth - fieldX - 32;
+  CGFloat rowH = 32;
 
   // Calculate content height (auth mode, test result, language, advanced
   // section)
@@ -1011,7 +1075,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
   // Provider
   [pane addSubview:[self formLabel:@"Provider"
-                             frame:NSMakeRect(16, y, labelW, 22)]];
+                             frame:NSMakeRect(contentX, y, labelW, 22)]];
   self.asrProviderPopup =
       [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 200, 26)
                                  pullsDown:NO];
@@ -1023,6 +1087,8 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   [self.asrProviderPopup lastItem].representedObject = @"qwen";
   [self.asrProviderPopup addItemWithTitle:@"GLM (Zhipu)"];
   [self.asrProviderPopup lastItem].representedObject = @"glm";
+  [self.asrProviderPopup addItemWithTitle:@"MiMo (Xiaomi)"];
+  [self.asrProviderPopup lastItem].representedObject = @"mimo";
   NSArray<NSString *> *supportedLocalProviders =
       [self.rustBridge supportedLocalProviders];
   // Add Apple Speech (macOS 26+, no model download required; also requires the
@@ -1061,7 +1127,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
   // Auth Mode segmented control (Doubao only)
   NSTextField *authModeLabel = [self formLabel:@"Auth Mode"
-                                         frame:NSMakeRect(16, y, labelW, 22)];
+                                         frame:NSMakeRect(contentX, y, labelW, 22)];
   authModeLabel.tag = 1006;
   authModeLabel.hidden = YES;
   [pane addSubview:authModeLabel];
@@ -1097,7 +1163,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   self.asrApiKeyToggle.hidden = YES;
   [pane addSubview:self.asrApiKeyToggle];
   NSTextField *apiKeyLabel = [self formLabel:@"API Key"
-                                       frame:NSMakeRect(16, y, labelW, 22)];
+                                       frame:NSMakeRect(contentX, y, labelW, 22)];
   apiKeyLabel.tag = 1007;
   apiKeyLabel.hidden = YES;
   [pane addSubview:apiKeyLabel];
@@ -1107,13 +1173,13 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                                 placeholder:@"Volcengine App ID"];
   [pane addSubview:self.asrAppKeyField];
   NSTextField *appKeyLabel = [self formLabel:@"App Key"
-                                       frame:NSMakeRect(16, y, labelW, 22)];
+                                       frame:NSMakeRect(contentX, y, labelW, 22)];
   appKeyLabel.tag = 1001;
   [pane addSubview:appKeyLabel];
 
   // Apple Speech locale popup (same row as App Key / Model, tag 1005)
   NSTextField *localeLabel = [self formLabel:@"Language"
-                                       frame:NSMakeRect(16, y, labelW, 22)];
+                                       frame:NSMakeRect(contentX, y, labelW, 22)];
   localeLabel.tag = 1005;
   localeLabel.hidden = YES;
   [pane addSubview:localeLabel];
@@ -1129,7 +1195,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
   // Row 1: Model popup + Download button (Local providers, same row as App Key)
   self.localModelLabel = [self formLabel:@"Model"
-                                   frame:NSMakeRect(16, y, labelW, 22)];
+                                   frame:NSMakeRect(contentX, y, labelW, 22)];
   self.localModelLabel.tag = 1004;
   self.localModelLabel.hidden = YES;
   [pane addSubview:self.localModelLabel];
@@ -1158,8 +1224,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   y -= rowH;
 
   // Row 2: Status + Delete button
-  self.modelStatusLabel = [[NSTextField alloc]
+  self.modelStatusLabel = [[SPStatusLabel alloc]
       initWithFrame:NSMakeRect(fieldX, y + 2, fieldW - 32, 18)];
+  self.modelStatusLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+  self.modelStatusLabel.usesSingleLineMode = YES;
   self.modelStatusLabel.bezeled = NO;
   self.modelStatusLabel.drawsBackground = NO;
   self.modelStatusLabel.editable = NO;
@@ -1229,7 +1297,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   [pane addSubview:self.asrAccessKeyToggle];
   NSTextField *accessKeyLabel =
       [self formLabel:@"Access Key"
-                frame:NSMakeRect(16, accessKeyY, labelW, 22)];
+                frame:NSMakeRect(contentX, accessKeyY, labelW, 22)];
   accessKeyLabel.tag = 1002;
   [pane addSubview:accessKeyLabel];
 
@@ -1253,7 +1321,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   self.asrQwenApiKeyToggle.hidden = YES;
   [pane addSubview:self.asrQwenApiKeyToggle];
   NSTextField *qwenKeyLabel =
-      [self formLabel:@"API Key" frame:NSMakeRect(16, qwenY, labelW, 22)];
+      [self formLabel:@"API Key" frame:NSMakeRect(contentX, qwenY, labelW, 22)];
   qwenKeyLabel.tag = 1003;
   qwenKeyLabel.hidden = YES;
   [pane addSubview:qwenKeyLabel];
@@ -1278,14 +1346,65 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   self.asrGlmApiKeyToggle.hidden = YES;
   [pane addSubview:self.asrGlmApiKeyToggle];
   NSTextField *glmKeyLabel =
-      [self formLabel:@"API Key" frame:NSMakeRect(16, glmY, labelW, 22)];
+      [self formLabel:@"API Key" frame:NSMakeRect(contentX, glmY, labelW, 22)];
   glmKeyLabel.tag = 1010;
   glmKeyLabel.hidden = YES;
   [pane addSubview:glmKeyLabel];
 
+  // MiMo API Key — fixed at row 1 (same position as Qwen/GLM, toggled by provider)
+  CGFloat mimoY = formStartY - rowH - rowH;
+  self.asrMimoApiKeySecureField = [[NSSecureTextField alloc]
+      initWithFrame:NSMakeRect(fieldX, mimoY, secFieldW, 22)];
+  self.asrMimoApiKeySecureField.placeholderString =
+      @"API Key from xiaomimimo.com";
+  self.asrMimoApiKeySecureField.font = [NSFont systemFontOfSize:13];
+  self.asrMimoApiKeySecureField.hidden = YES;
+  [pane addSubview:self.asrMimoApiKeySecureField];
+  self.asrMimoApiKeyField =
+      [self formTextField:NSMakeRect(fieldX, mimoY, secFieldW, 22)
+              placeholder:@"API Key from xiaomimimo.com"];
+  self.asrMimoApiKeyField.hidden = YES;
+  [pane addSubview:self.asrMimoApiKeyField];
+  self.asrMimoApiKeyToggle = [self
+      eyeButtonWithFrame:NSMakeRect(fieldX + secFieldW + 4, mimoY - 1, eyeW, 24)
+                  action:@selector(toggleMimoApiKeyVisibility:)];
+  self.asrMimoApiKeyToggle.hidden = YES;
+  [pane addSubview:self.asrMimoApiKeyToggle];
+  NSTextField *mimoKeyLabel =
+      [self formLabel:@"API Key" frame:NSMakeRect(contentX, mimoY, labelW, 22)];
+  mimoKeyLabel.tag = 1011;
+  mimoKeyLabel.hidden = YES;
+  [pane addSubview:mimoKeyLabel];
+  // Privacy notice — audio is sent to Xiaomi's servers, not ours.
+  NSTextField *mimoPrivacyNotice = [NSTextField wrappingLabelWithString:
+      @"By selecting a Xiaomi (MiMo) model, you voluntarily consent to "
+      @"Xiaomi collecting your personal information and voice data. Koe "
+      @"collects nothing and runs no servers. For any questions, please "
+      @"contact the Xiaomi team."];
+  mimoPrivacyNotice.font = [NSFont systemFontOfSize:11];
+  // Measured height so the full notice is always visible; sits below the
+  // test result row, growing downward.
+  CGFloat mimoNoticeW = paneWidth - fieldX - 32;
+  CGFloat mimoNoticeH = [self fittingHeightForWrappingLabel:mimoPrivacyNotice
+                                                      width:mimoNoticeW];
+  CGFloat mimoNoticeTop = mimoY - rowH * 2 - 6;
+  mimoPrivacyNotice.frame = NSMakeRect(fieldX, mimoNoticeTop - mimoNoticeH,
+                                       mimoNoticeW, mimoNoticeH);
+  mimoPrivacyNotice.textColor = [NSColor systemOrangeColor];
+  mimoPrivacyNotice.tag = 1011;
+  mimoPrivacyNotice.hidden = YES;
+  [pane addSubview:mimoPrivacyNotice];
+  // Pane height needed to show the whole notice (56pt bottom button area).
+  self.asrMimoRequiredPaneHeight =
+      ceil(contentHeight - NSMinY(mimoPrivacyNotice.frame)) + 56.0;
+
   // Test result label — positioned right after credential rows, before
-  // language.
-  self.asrTestResultLabel = [NSTextField wrappingLabelWithString:@""];
+  // language. Single truncating line (the Language row sits directly below);
+  // the full message is available via tooltip.
+  SPStatusLabel *asrTestResult = [SPStatusLabel labelWithString:@""];
+  asrTestResult.lineBreakMode = NSLineBreakByTruncatingTail;
+  asrTestResult.usesSingleLineMode = YES;
+  self.asrTestResultLabel = asrTestResult;
   CGFloat testResultY = accessKeyY - rowH;
   self.asrTestResultLabel.frame =
       NSMakeRect(fieldX, testResultY, paneWidth - fieldX - 24, 20);
@@ -1296,7 +1415,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   // Language popup (Doubao + DoubaoIME)
   CGFloat langY = testResultY - rowH;
   NSTextField *langLabel = [self formLabel:@"Language"
-                                     frame:NSMakeRect(16, langY, labelW, 22)];
+                                     frame:NSMakeRect(contentX, langY, labelW, 22)];
   langLabel.tag = 1008;
   langLabel.hidden = YES;
   [pane addSubview:langLabel];
@@ -1349,7 +1468,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   // Advanced row 1: Endpoint Silence
   CGFloat advRowY = rowH * 2;
   NSTextField *endLabel = [self formLabel:@"Endpoint Silence"
-                                    frame:NSMakeRect(16, advRowY, labelW, 22)];
+                                    frame:NSMakeRect(contentX, advRowY, labelW, 22)];
   [self.asrAdvancedContainer addSubview:endLabel];
   self.asrEndWindowField =
       [self formTextField:NSMakeRect(fieldX, advRowY, 80, 22)
@@ -1358,6 +1477,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   NSTextField *endUnit =
       [self formLabel:@"ms (min 200)"
                 frame:NSMakeRect(fieldX + 86, advRowY, 100, 22)];
+  endUnit.alignment = NSTextAlignmentLeft;
   endUnit.font = [NSFont systemFontOfSize:11];
   endUnit.textColor = [NSColor secondaryLabelColor];
   [self.asrAdvancedContainer addSubview:endUnit];
@@ -1366,7 +1486,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   advRowY -= rowH;
   NSTextField *variantLabel =
       [self formLabel:@"Output Variant"
-                frame:NSMakeRect(16, advRowY, labelW, 22)];
+                frame:NSMakeRect(contentX, advRowY, labelW, 22)];
   [self.asrAdvancedContainer addSubview:variantLabel];
   self.asrOutputVariantPopup = [[NSPopUpButton alloc]
       initWithFrame:NSMakeRect(fieldX, advRowY - 2, 160, 26)
@@ -1398,7 +1518,11 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   // which stays pinned to the bottom. This lets `resizeAsrPaneToCurrentProvider`
   // shrink/grow the pane height per provider without orphaning controls.
   for (NSView *sub in pane.subviews) {
-    if (NSMinY(sub.frame) < 50) {
+    if (sub == self.asrAdvancedContainer) {
+      // Part of the form stack — must stay directly below its disclosure
+      // checkbox even though it builds low enough to look bottom-pinned.
+      sub.autoresizingMask = NSViewMinYMargin;
+    } else if (NSMinY(sub.frame) < 50) {
       sub.autoresizingMask = NSViewMaxYMargin;
     } else {
       sub.autoresizingMask = NSViewMinYMargin;
@@ -1430,8 +1554,12 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   CGFloat sidebarW = 160.0;
   CGFloat sidebarButtonsH = 28.0;
 
-  // Detail form geometry (right of sidebar)
-  CGFloat labelW = 96;
+  // Detail form geometry (right of sidebar). The label column is measured
+  // from the actual strings so no label ever clips.
+  CGFloat labelW = [self formLabelColumnWidthForTitles:@[
+    @"Name", @"Type", @"Base URL", @"API Key", @"Model", @"Model List",
+    @"API Path", @"Token Parameter"
+  ]];
   CGFloat detailLabelX = sidebarX + sidebarW + 16;
   CGFloat fieldX = detailLabelX + labelW + 8;
   CGFloat fieldW = paneWidth - fieldX - 24;
@@ -1659,9 +1787,9 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   [self setHidden:YES forViewsWithTagInRange:NSMakeRange(2004, 1) inView:pane];
   detailY -= rowH + 4;
 
-  // Chat Completions Path
+  // Protocol endpoint path
   NSTextField *chatPathLabel =
-      [self formLabel:@"Chat Path"
+      [self formLabel:@"API Path"
                 frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
   chatPathLabel.tag = 2005;
   [pane addSubview:chatPathLabel];
@@ -1679,7 +1807,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   tokenParamLabel.tag = 2006;
   [pane addSubview:tokenParamLabel];
   self.maxTokenParamPopup = [[NSPopUpButton alloc]
-      initWithFrame:NSMakeRect(fieldX, detailY - 2, 240, 26)
+      initWithFrame:NSMakeRect(fieldX, detailY - 2, MIN(240.0, fieldW), 26)
           pullsDown:NO];
   self.maxTokenParamPopup.tag = 2006;
   [self.maxTokenParamPopup addItemsWithTitles:@[
@@ -1690,16 +1818,18 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
       @"max_completion_tokens";
   [self.maxTokenParamPopup itemAtIndex:1].representedObject = @"max_tokens";
   [pane addSubview:self.maxTokenParamPopup];
-  detailY -= 42;
 
-  // Hint text
+  // Hint text — measured so the full text is always visible
   NSTextField *tokenHint = [self
       descriptionLabel:@"GPT-4o and older models use max_tokens. GPT-5 and "
                        @"reasoning models (o1/o3) use max_completion_tokens."];
-  tokenHint.frame = NSMakeRect(fieldX, detailY - 2, fieldW, 32);
+  CGFloat tokenHintH = [self fittingHeightForWrappingLabel:tokenHint
+                                                     width:fieldW];
+  tokenHint.frame = NSMakeRect(fieldX, detailY - 10.0 - tokenHintH, fieldW,
+                               tokenHintH);
   tokenHint.tag = 2007;
   [pane addSubview:tokenHint];
-  detailY -= 44;
+  detailY = NSMinY(tokenHint.frame) - 40.0;
 
   // Test button
   self.llmTestButton = [NSButton buttonWithTitle:@"Test Connection"
@@ -1709,11 +1839,13 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   self.llmTestButton.frame = NSMakeRect(fieldX, detailY, 130, 28);
   self.llmTestButton.tag = 2008;
   [pane addSubview:self.llmTestButton];
-  detailY -= 32;
 
-  // Test result
-  self.llmTestResultLabel = [NSTextField wrappingLabelWithString:@""];
-  self.llmTestResultLabel.frame = NSMakeRect(fieldX, detailY - 36, fieldW, 42);
+  // Test result — re-measures and grows downward whenever its text changes
+  SPStatusLabel *llmTestResult = [SPStatusLabel wrappingLabelWithString:@""];
+  llmTestResult.growsDownward = YES;
+  self.llmTestResultLabel = llmTestResult;
+  self.llmTestResultLabel.frame =
+      NSMakeRect(fieldX, detailY - 8.0 - 42.0, fieldW, 42);
   self.llmTestResultLabel.font = [NSFont systemFontOfSize:12];
   self.llmTestResultLabel.selectable = YES;
   self.llmTestResultLabel.tag = 2008;
@@ -1755,8 +1887,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   mlxY -= rowH;
 
   // MLX Status + Delete button
-  self.llmModelStatusLabel = [[NSTextField alloc]
+  self.llmModelStatusLabel = [[SPStatusLabel alloc]
       initWithFrame:NSMakeRect(fieldX, mlxY + 2, fieldW - 32, 18)];
+  self.llmModelStatusLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+  self.llmModelStatusLabel.usesSingleLineMode = YES;
   self.llmModelStatusLabel.bezeled = NO;
   self.llmModelStatusLabel.drawsBackground = NO;
   self.llmModelStatusLabel.editable = NO;
@@ -1999,7 +2133,15 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                          target:self
                          action:@selector(recordTriggerHotkey:)];
   self.recordTriggerHotkeyButton.bezelStyle = NSBezelStyleRounded;
-  self.recordTriggerHotkeyButton.frame = NSMakeRect(0, 0, 70, 28);
+  // Wide enough for both runtime titles ("Record" / "Press...")
+  self.recordTriggerHotkeyButton.title = @"Press...";
+  [self.recordTriggerHotkeyButton sizeToFit];
+  CGFloat recordButtonW = self.recordTriggerHotkeyButton.frame.size.width;
+  self.recordTriggerHotkeyButton.title = @"Record";
+  [self.recordTriggerHotkeyButton sizeToFit];
+  recordButtonW =
+      MAX(recordButtonW, self.recordTriggerHotkeyButton.frame.size.width);
+  self.recordTriggerHotkeyButton.frame = NSMakeRect(0, 0, recordButtonW, 28);
   self.resetTriggerHotkeyButton =
       [NSButton buttonWithTitle:@"Reset"
                          target:self
@@ -2018,9 +2160,11 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   [self.triggerModePopup addItemsWithTitles:@[
     @"Hold (Press & Hold)",
     @"Toggle (Tap to Start/Stop)",
+    @"DoubleTap",
   ]];
   [self.triggerModePopup itemAtIndex:0].representedObject = @"hold";
   [self.triggerModePopup itemAtIndex:1].representedObject = @"toggle";
+  [self.triggerModePopup itemAtIndex:2].representedObject = @"double_tap";
 
   // ── Trigger card ──
   NSView *triggerCard =
@@ -2030,6 +2174,17 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                                       control:triggerShortcutControl],
                        [self cardRowWithLabel:@"Trigger Mode"
                                       control:self.triggerModePopup],
+                     ]
+                    width:cardWidth];
+
+  // ── Paste Behavior ──
+  self.autoReturnSwitch = [self settingsSwitchWithAction:NULL];
+
+  NSView *pasteCard =
+      [self cardWithTitle:@"Paste Behavior"
+                     rows:@[
+                       [self cardRowWithLabel:@"Press Return after paste"
+                                      control:self.autoReturnSwitch],
                      ]
                     width:cardWidth];
 
@@ -2050,10 +2205,24 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                      ]
                     width:cardWidth];
 
+  // ── Recording ──
+  self.muteSystemOutputCheckbox = [self settingsSwitchWithAction:NULL];
+  NSView *recordingCard =
+      [self cardWithTitle:@"Recording"
+                     rows:@[
+                       [self cardRowWithLabel:@"Mute system audio while recording"
+                                      control:self.muteSystemOutputCheckbox],
+                     ]
+                    width:cardWidth];
+
   // ── Layout ──
   CGFloat triggerH = triggerCard.frame.size.height;
+  CGFloat pasteH = pasteCard.frame.size.height;
   CGFloat feedbackH = feedbackCard.frame.size.height;
-  CGFloat contentHeight = topPad + triggerH + cardSpacing + feedbackH + 56;
+  CGFloat recordingH = recordingCard.frame.size.height;
+  CGFloat contentHeight = topPad + triggerH + cardSpacing + pasteH +
+                          cardSpacing + feedbackH + cardSpacing + recordingH +
+                          56;
 
   NSView *pane =
       [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
@@ -2070,6 +2239,14 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                                 : triggerCard.subviews[0];
   [self layoutCardRowControls:triggerCardBody width:cardWidth];
 
+  y -= cardSpacing + pasteH;
+  pasteCard.frame = NSMakeRect(24, y, cardWidth, pasteH);
+  [pane addSubview:pasteCard];
+  NSView *pasteCardBody = pasteCard.subviews.count > 1
+                              ? pasteCard.subviews[1]
+                              : pasteCard.subviews[0];
+  [self layoutCardRowControls:pasteCardBody width:cardWidth];
+
   y -= cardSpacing + feedbackH;
   feedbackCard.frame = NSMakeRect(24, y, cardWidth, feedbackH);
   [pane addSubview:feedbackCard];
@@ -2077,6 +2254,14 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                                  ? feedbackCard.subviews[1]
                                  : feedbackCard.subviews[0];
   [self layoutCardRowControls:feedbackCardBody width:cardWidth];
+
+  y -= cardSpacing + recordingH;
+  recordingCard.frame = NSMakeRect(24, y, cardWidth, recordingH);
+  [pane addSubview:recordingCard];
+  NSView *recordingCardBody = recordingCard.subviews.count > 1
+                                  ? recordingCard.subviews[1]
+                                  : recordingCard.subviews[0];
+  [self layoutCardRowControls:recordingCardBody width:cardWidth];
 
   [self addButtonsToPane:pane atY:16 width:paneWidth];
 
@@ -2699,11 +2884,8 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
                                [profile[@"name"] length] > 0
                            ? profile[@"name"]
                            : profileId;
-      NSString *provider = [profile[@"provider"] isKindOfClass:[NSString class]]
-                               ? profile[@"provider"]
-                               : @"openai";
       titleLabel.stringValue = name;
-      subtitleLabel.stringValue = [self prettyNameForLlmProvider:provider];
+      subtitleLabel.stringValue = [self prettyNameForLlmProfile:profile];
     }
     return cell;
   }
@@ -3269,12 +3451,28 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
 - (NSView *)buildAboutPane {
   CGFloat paneWidth = 600;
-  CGFloat contentHeight = 308;
+  // Measure the description first — the pane height grows to fit it.
+  NSTextField *desc = [self
+      descriptionLabel:@"A background-first macOS voice input tool.\nPress a "
+                       @"hotkey, speak, and the corrected text is pasted into "
+                       @"whatever app you’re using."];
+  desc.alignment = NSTextAlignmentCenter;
+  CGFloat descH = [self fittingHeightForWrappingLabel:desc
+                                                width:paneWidth - 120];
+  CGFloat contentHeight = 308 + MAX(0.0, descH - 40.0) + 132.0;
   NSView *pane =
       [[NSView alloc] initWithFrame:NSMakeRect(0, 0, paneWidth, contentHeight)];
   [self applySettingsPaneBackgroundToView:pane];
 
-  CGFloat y = contentHeight - 48;
+  CGFloat y = contentHeight - 36;
+
+  // App icon
+  NSImageView *iconView =
+      [NSImageView imageViewWithImage:[NSApp applicationIconImage]];
+  iconView.imageScaling = NSImageScaleProportionallyUpOrDown;
+  iconView.frame = NSMakeRect((paneWidth - 96.0) / 2.0, y - 96, 96, 96);
+  [pane addSubview:iconView];
+  y = NSMinY(iconView.frame) - 46;
 
   // App name
   NSTextField *appName = [NSTextField labelWithString:@"Koe (\u58f0)"];
@@ -3300,15 +3498,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   [pane addSubview:versionLabel];
   y -= 32;
 
-  // Description
-  NSTextField *desc = [self
-      descriptionLabel:@"A background-first macOS voice input tool.\nPress a "
-                       @"hotkey, speak, and the corrected text is pasted into "
-                       @"whatever app you\u2019re using."];
-  desc.alignment = NSTextAlignmentCenter;
-  desc.frame = NSMakeRect(60, y - 10, paneWidth - 120, 40);
+  // Description (pre-measured above)
+  desc.frame = NSMakeRect(60, y + 30 - descH, paneWidth - 120, descH);
   [pane addSubview:desc];
-  y -= 56;
+  y = NSMinY(desc.frame) - 46;
 
   // GitHub button
   NSButton *githubButton = [NSButton buttonWithTitle:@"GitHub Repository"
@@ -3386,6 +3579,18 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   label.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
   label.textColor = [NSColor labelColor];
   return label;
+}
+
+// Width of the label column needed so none of the given form labels clip.
+- (CGFloat)formLabelColumnWidthForTitles:(NSArray<NSString *> *)titles {
+  NSDictionary *attrs = @{
+    NSFontAttributeName : [NSFont systemFontOfSize:13
+                                            weight:NSFontWeightMedium]
+  };
+  CGFloat width = 0.0;
+  for (NSString *title in titles)
+    width = MAX(width, ceil([title sizeWithAttributes:attrs].width));
+  return width + 4.0;
 }
 
 - (NSTextField *)formTextField:(NSRect)frame
@@ -3769,7 +3974,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 
     if (i < rows.count - 1) {
       NSBox *sep = [[NSBox alloc]
-          initWithFrame:NSMakeRect(cardPad, rowY, width - cardPad, 1)];
+          initWithFrame:NSMakeRect(cardPad, rowY, width - 2 * cardPad, 1)];
       sep.boxType = NSBoxSeparator;
       [card addSubview:sep];
     }
@@ -3803,13 +4008,25 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
 - (void)layoutCardRowControls:(NSView *)card width:(CGFloat)width {
   CGFloat pad = 16.0;
   for (NSView *row in card.subviews) {
+    NSView *control = nil;
     for (NSView *sub in row.subviews) {
       if (sub.autoresizingMask & NSViewMinXMargin) {
+        control = sub;
         CGFloat controlW = sub.frame.size.width;
         CGFloat controlH = sub.frame.size.height;
         sub.frame = NSMakeRect(width - pad - controlW,
                                (row.frame.size.height - controlH) / 2.0,
                                controlW, controlH);
+      }
+    }
+    // Give the row label all remaining space up to the control so long
+    // titles never clip against a fixed label width.
+    for (NSView *sub in row.subviews) {
+      if (sub != control && [sub isKindOfClass:[NSTextField class]]) {
+        NSRect frame = sub.frame;
+        CGFloat rightEdge = control ? NSMinX(control.frame) : width - pad;
+        frame.size.width = MAX(40.0, rightEdge - 12.0 - NSMinX(frame));
+        sub.frame = frame;
       }
     }
   }
@@ -3894,6 +4111,28 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   }
 }
 
+- (void)toggleMimoApiKeyVisibility:(NSButton *)sender {
+  if (sender.tag == 0) {
+    // Show plain text
+    self.asrMimoApiKeyField.stringValue =
+        self.asrMimoApiKeySecureField.stringValue;
+    self.asrMimoApiKeySecureField.hidden = YES;
+    self.asrMimoApiKeyField.hidden = NO;
+    sender.image = [NSImage imageWithSystemSymbolName:@"eye"
+                             accessibilityDescription:@"Hide"];
+    sender.tag = 1;
+  } else {
+    // Show secure
+    self.asrMimoApiKeySecureField.stringValue =
+        self.asrMimoApiKeyField.stringValue;
+    self.asrMimoApiKeyField.hidden = YES;
+    self.asrMimoApiKeySecureField.hidden = NO;
+    sender.image = [NSImage imageWithSystemSymbolName:@"eye.slash"
+                             accessibilityDescription:@"Show"];
+    sender.tag = 0;
+  }
+}
+
 - (void)toggleAsrApiKeyVisibility:(NSButton *)sender {
   if (sender.tag == 0) {
     self.asrApiKeyField.stringValue = self.asrApiKeySecureField.stringValue;
@@ -3955,6 +4194,11 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   if ([provider isEqualToString:@"glm"]) {
     return 340.0;
   }
+  if ([provider isEqualToString:@"mimo"]) {
+    // Taller than GLM to fit the privacy notice under the API key row.
+    // The exact height is measured at pane-build time from the notice text.
+    return MAX(360.0, self.asrMimoRequiredPaneHeight);
+  }
   if ([provider isEqualToString:@"apple-speech"]) {
     return 280.0;
   }
@@ -3998,9 +4242,10 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   BOOL isDoubao = [selectedProvider isEqualToString:@"doubao"];
   BOOL isQwen = [selectedProvider isEqualToString:@"qwen"];
   BOOL isGlm = [selectedProvider isEqualToString:@"glm"];
+  BOOL isMimo = [selectedProvider isEqualToString:@"mimo"];
   BOOL isAppleSpeech = [selectedProvider isEqualToString:@"apple-speech"];
   BOOL isModelBasedLocal =
-      !isDoubaoIme && !isDoubao && !isQwen && !isGlm && !isAppleSpeech;
+      !isDoubaoIme && !isDoubao && !isQwen && !isGlm && !isMimo && !isAppleSpeech;
 
   // Show/hide Doubao auth mode control and credential fields
   [self setHidden:!isDoubao
@@ -4076,6 +4321,14 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   self.asrGlmApiKeySecureField.hidden = !isGlm;
   self.asrGlmApiKeyToggle.hidden = !isGlm;
 
+  // Show/hide MiMo fields
+  [self setHidden:!isMimo
+      forViewsMatchingTags:[NSIndexSet indexSetWithIndex:1011]
+                    inView:self.currentPaneView];
+  self.asrMimoApiKeyField.hidden = YES; // Always start hidden (secure mode)
+  self.asrMimoApiKeySecureField.hidden = !isMimo;
+  self.asrMimoApiKeyToggle.hidden = !isMimo;
+
   // Show/hide Apple Speech locale popup and asset status
   self.appleSpeechLocalePopup.hidden = !isAppleSpeech;
   [self setHidden:!isAppleSpeech
@@ -4115,7 +4368,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   }
 
   // Hide test button for local providers (no remote connection to test)
-  BOOL isLocal = !isDoubaoIme && !isDoubao && !isQwen && !isGlm;
+  BOOL isLocal = !isDoubaoIme && !isDoubao && !isQwen && !isGlm && !isMimo;
   self.asrTestButton.hidden = isLocal;
   self.asrTestResultLabel.hidden = isLocal;
 
@@ -4537,26 +4790,51 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   copy[@"mlx"] = [mlx isKindOfClass:[NSDictionary class]]
                      ? [mlx mutableCopy]
                      : [@{@"model" : @"mlx/Qwen3-0.6B-4bit"} mutableCopy];
-  NSString *chatPath =
-      [copy[@"chat_completions_path"] isKindOfClass:[NSString class]]
-          ? copy[@"chat_completions_path"]
-          : @"";
-  if (chatPath.length == 0) {
-    copy[@"chat_completions_path"] = kDefaultLlmChatCompletionsPath;
-  }
+  NSString *protocol = [self apiProtocolForLlmProfile:copy];
+  copy[@"api_protocol"] = protocol;
+  NSString *endpointPath =
+      [copy[@"endpoint_path"] isKindOfClass:[NSString class]]
+          ? copy[@"endpoint_path"]
+          : ([copy[@"chat_completions_path"] isKindOfClass:[NSString class]]
+                 ? copy[@"chat_completions_path"]
+                 : @"");
+  if (endpointPath.length == 0)
+    endpointPath = [self defaultEndpointPathForLlmProtocol:protocol];
+  copy[@"endpoint_path"] = endpointPath;
+  [copy removeObjectForKey:@"chat_completions_path"];
   return copy;
 }
 
-- (NSMutableDictionary *)defaultOpenAILlmProfileWithName:(NSString *)name {
+- (NSMutableDictionary *)defaultOpenAILlmProfileWithName:(NSString *)name
+                                                 protocol:(NSString *)protocol {
+  BOOL usesResponses = [protocol isEqualToString:kLlmProtocolOpenAIResponses];
   return [@{
-    @"name" : name ?: @"OpenAI Compatible",
+    @"name" : name ?: (usesResponses ? @"OpenAI Responses"
+                                     : @"OpenAI Chat Completions"),
     @"provider" : @"openai",
+    @"api_protocol" : protocol ?: kLlmProtocolOpenAIChat,
     @"base_url" : @"https://api.openai.com/v1",
     @"api_key" : @"",
     @"model" : @"gpt-5.4-nano",
-    @"chat_completions_path" : kDefaultLlmChatCompletionsPath,
+    @"endpoint_path" : usesResponses ? kDefaultLlmResponsesPath
+                                      : kDefaultLlmChatCompletionsPath,
     @"max_token_parameter" : @"max_completion_tokens",
-    @"no_reasoning_control" : @"reasoning_effort",
+    @"no_reasoning_control" : @"none",
+    @"mlx" : @{@"model" : @"mlx/Qwen3-0.6B-4bit"},
+  } mutableCopy];
+}
+
+- (NSMutableDictionary *)defaultAnthropicLlmProfile {
+  return [@{
+    @"name" : @"Anthropic Messages",
+    @"provider" : @"anthropic",
+    @"api_protocol" : kLlmProtocolAnthropicMessages,
+    @"base_url" : @"https://api.anthropic.com/v1",
+    @"api_key" : @"",
+    @"model" : @"",
+    @"endpoint_path" : kDefaultLlmAnthropicMessagesPath,
+    @"max_token_parameter" : @"max_tokens",
+    @"no_reasoning_control" : @"none",
     @"mlx" : @{@"model" : @"mlx/Qwen3-0.6B-4bit"},
   } mutableCopy];
 }
@@ -4565,10 +4843,11 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   return [@{
     @"name" : @"APFEL",
     @"provider" : @"apfel",
+    @"api_protocol" : kLlmProtocolOpenAIChat,
     @"base_url" : @"http://127.0.0.1:11434/v1",
     @"api_key" : @"",
     @"model" : @"apple-foundationmodel",
-    @"chat_completions_path" : kDefaultLlmChatCompletionsPath,
+    @"endpoint_path" : kDefaultLlmChatCompletionsPath,
     @"max_token_parameter" : @"max_tokens",
     @"no_reasoning_control" : @"none",
     @"mlx" : @{@"model" : @"mlx/Qwen3-0.6B-4bit"},
@@ -4579,22 +4858,55 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   return [@{
     @"name" : name ?: @"MLX (Apple Silicon)",
     @"provider" : @"mlx",
+    @"api_protocol" : kLlmProtocolOpenAIChat,
     @"base_url" : @"",
     @"api_key" : @"",
     @"model" : @"",
-    @"chat_completions_path" : kDefaultLlmChatCompletionsPath,
+    @"endpoint_path" : @"",
     @"max_token_parameter" : @"max_completion_tokens",
     @"no_reasoning_control" : @"none",
     @"mlx" : @{@"model" : @"mlx/Qwen3-0.6B-4bit"},
   } mutableCopy];
 }
 
-- (NSString *)prettyNameForLlmProvider:(NSString *)provider {
+- (NSString *)apiProtocolForLlmProfile:(NSDictionary *)profile {
+  NSString *provider = [profile[@"provider"] isKindOfClass:[NSString class]]
+                           ? profile[@"provider"]
+                           : @"openai";
+  if ([provider isEqualToString:@"anthropic"])
+    return kLlmProtocolAnthropicMessages;
+  if ([provider isEqualToString:@"apfel"] ||
+      [provider isEqualToString:@"mlx"])
+    return kLlmProtocolOpenAIChat;
+  NSString *protocol =
+      [profile[@"api_protocol"] isKindOfClass:[NSString class]]
+          ? profile[@"api_protocol"]
+          : kLlmProtocolOpenAIChat;
+  return protocol.length > 0 ? protocol : kLlmProtocolOpenAIChat;
+}
+
+- (NSString *)defaultEndpointPathForLlmProtocol:(NSString *)protocol {
+  if ([protocol isEqualToString:kLlmProtocolOpenAIResponses])
+    return kDefaultLlmResponsesPath;
+  if ([protocol isEqualToString:kLlmProtocolAnthropicMessages])
+    return kDefaultLlmAnthropicMessagesPath;
+  return kDefaultLlmChatCompletionsPath;
+}
+
+- (NSString *)prettyNameForLlmProfile:(NSDictionary *)profile {
+  NSString *provider = [profile[@"provider"] isKindOfClass:[NSString class]]
+                           ? profile[@"provider"]
+                           : @"openai";
   if ([provider isEqualToString:@"apfel"])
     return @"APFEL";
   if ([provider isEqualToString:@"mlx"])
     return @"MLX (Apple Silicon)";
-  return @"OpenAI Compatible";
+  if ([provider isEqualToString:@"anthropic"])
+    return @"Anthropic Messages";
+  if ([[self apiProtocolForLlmProfile:profile]
+          isEqualToString:kLlmProtocolOpenAIResponses])
+    return @"OpenAI Responses";
+  return @"OpenAI Chat Completions";
 }
 
 - (void)loadLlmProfilesFromCore {
@@ -4626,7 +4938,12 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
   if (self.llmProfiles.count == 0) {
     self.llmProfiles[@"openai"] =
-        [self defaultOpenAILlmProfileWithName:@"OpenAI Compatible"];
+        [self defaultOpenAILlmProfileWithName:@"OpenAI Chat Completions"
+                                      protocol:kLlmProtocolOpenAIChat];
+    self.llmProfiles[@"openai-responses"] =
+        [self defaultOpenAILlmProfileWithName:@"OpenAI Responses"
+                                      protocol:kLlmProtocolOpenAIResponses];
+    self.llmProfiles[@"anthropic"] = [self defaultAnthropicLlmProfile];
     self.llmProfiles[@"apfel"] = [self defaultApfelLlmProfile];
     self.llmProfiles[@"mlx"] =
         [self defaultMlxLlmProfileWithName:@"MLX (Apple Silicon)"];
@@ -4688,19 +5005,21 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                          : self.llmApiKeySecureField.stringValue;
   profile[@"api_key"] = apiKey ?: @"";
   profile[@"model"] = self.llmModelField.stringValue ?: @"";
-  NSString *chatPath = [[self.llmChatCompletionsPathField.stringValue ?: @""
+  NSString *endpointPath = [[self.llmChatCompletionsPathField.stringValue ?: @""
       stringByTrimmingCharactersInSet:[NSCharacterSet
                                           whitespaceAndNewlineCharacterSet]]
       copy];
-  profile[@"chat_completions_path"] =
-      (chatPath.length > 0) ? chatPath : kDefaultLlmChatCompletionsPath;
+  NSString *protocol = [self apiProtocolForLlmProfile:profile];
+  profile[@"api_protocol"] = protocol;
+  profile[@"endpoint_path"] =
+      (endpointPath.length > 0)
+          ? endpointPath
+          : [self defaultEndpointPathForLlmProtocol:protocol];
   profile[@"max_token_parameter"] =
       self.maxTokenParamPopup.selectedItem.representedObject
           ?: @"max_completion_tokens";
   if (!profile[@"no_reasoning_control"]) {
-    BOOL usesReasoningEffort = [provider isEqualToString:@"openai"];
-    profile[@"no_reasoning_control"] =
-        usesReasoningEffort ? @"reasoning_effort" : @"none";
+    profile[@"no_reasoning_control"] = @"none";
   }
 
   if ([provider isEqualToString:@"mlx"]) {
@@ -4729,7 +5048,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                        : @"";
   self.llmProfileNameField.stringValue = name;
   self.llmProfileTypeLabel.stringValue =
-      [self prettyNameForLlmProvider:provider];
+      [self prettyNameForLlmProfile:profile];
 
   self.llmBaseUrlField.stringValue =
       [profile[@"base_url"] isKindOfClass:[NSString class]]
@@ -4748,12 +5067,16 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   self.llmModelField.stringValue =
       [profile[@"model"] isKindOfClass:[NSString class]] ? profile[@"model"]
                                                          : @"";
+  NSString *protocol = [self apiProtocolForLlmProfile:profile];
   NSString *chatPath =
-      [profile[@"chat_completions_path"] isKindOfClass:[NSString class]]
-          ? profile[@"chat_completions_path"]
-          : kDefaultLlmChatCompletionsPath;
+      [profile[@"endpoint_path"] isKindOfClass:[NSString class]]
+          ? profile[@"endpoint_path"]
+          : [self defaultEndpointPathForLlmProtocol:protocol];
   self.llmChatCompletionsPathField.stringValue =
-      chatPath.length > 0 ? chatPath : kDefaultLlmChatCompletionsPath;
+      chatPath.length > 0 ? chatPath
+                          : [self defaultEndpointPathForLlmProtocol:protocol];
+  self.llmChatCompletionsPathField.placeholderString =
+      [self defaultEndpointPathForLlmProtocol:protocol];
 
   NSString *maxTokenParam =
       [profile[@"max_token_parameter"] isKindOfClass:[NSString class]]
@@ -4820,13 +5143,27 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
 - (void)showAddLlmProfileMenu:(id)sender {
   NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
-  NSMenuItem *openaiItem =
-      [[NSMenuItem alloc] initWithTitle:@"OpenAI Compatible"
+  NSMenuItem *openaiChatItem =
+      [[NSMenuItem alloc] initWithTitle:@"OpenAI Chat Completions"
                                  action:@selector(addLlmProfileFromMenu:)
                           keyEquivalent:@""];
-  openaiItem.target = self;
-  openaiItem.representedObject = @"openai";
-  [menu addItem:openaiItem];
+  openaiChatItem.target = self;
+  openaiChatItem.representedObject = @"openai_chat";
+  [menu addItem:openaiChatItem];
+  NSMenuItem *openaiResponsesItem =
+      [[NSMenuItem alloc] initWithTitle:@"OpenAI Responses"
+                                 action:@selector(addLlmProfileFromMenu:)
+                          keyEquivalent:@""];
+  openaiResponsesItem.target = self;
+  openaiResponsesItem.representedObject = @"openai_responses";
+  [menu addItem:openaiResponsesItem];
+  NSMenuItem *anthropicItem =
+      [[NSMenuItem alloc] initWithTitle:@"Anthropic Messages"
+                                 action:@selector(addLlmProfileFromMenu:)
+                          keyEquivalent:@""];
+  anthropicItem.target = self;
+  anthropicItem.representedObject = @"anthropic";
+  [menu addItem:anthropicItem];
   NSMenuItem *apfelItem =
       [[NSMenuItem alloc] initWithTitle:@"APFEL"
                                  action:@selector(addLlmProfileFromMenu:)
@@ -4856,7 +5193,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   NSString *prefix =
       [type isEqualToString:@"mlx"]
           ? @"mlx"
-          : ([type isEqualToString:@"apfel"] ? @"apfel" : @"openai");
+          : ([type isEqualToString:@"apfel"]
+                 ? @"apfel"
+                 : ([type isEqualToString:@"anthropic"]
+                        ? @"anthropic"
+                        : ([type isEqualToString:@"openai_responses"]
+                               ? @"openai-responses"
+                               : @"openai")));
   NSString *profileId = [self newLlmProfileIdWithPrefix:prefix];
   NSMutableDictionary *profile = nil;
   if ([type isEqualToString:@"apfel"]) {
@@ -4864,8 +5207,14 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     profile[@"name"] = @"APFEL";
   } else if ([type isEqualToString:@"mlx"]) {
     profile = [self defaultMlxLlmProfileWithName:@"MLX (Apple Silicon)"];
+  } else if ([type isEqualToString:@"anthropic"]) {
+    profile = [self defaultAnthropicLlmProfile];
+  } else if ([type isEqualToString:@"openai_responses"]) {
+    profile = [self defaultOpenAILlmProfileWithName:@"OpenAI Responses"
+                                            protocol:kLlmProtocolOpenAIResponses];
   } else {
-    profile = [self defaultOpenAILlmProfileWithName:@"OpenAI Compatible"];
+    profile = [self defaultOpenAILlmProfileWithName:@"OpenAI Chat Completions"
+                                            protocol:kLlmProtocolOpenAIChat];
   }
   self.llmProfiles[profileId] = profile;
   self.activeLlmProfileId = profileId;
@@ -4903,6 +5252,15 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
 - (void)loadCurrentValues {
   [self loadValuesForPane:self.currentPaneIdentifier];
+}
+
+- (void)rememberLoadedBooleanValue:(BOOL)value forKey:(NSString *)key {
+  self.loadedBooleanValues[key] = @(value);
+}
+
+- (BOOL)shouldPersistBooleanValue:(BOOL)value forKey:(NSString *)key {
+  NSNumber *loadedValue = self.loadedBooleanValues[key];
+  return loadedValue == nil || loadedValue.boolValue != value;
 }
 
 - (void)loadValuesForPane:(NSString *)identifier {
@@ -4969,10 +5327,22 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     } else {
       [self.asrOutputVariantPopup selectItemAtIndex:0];
     }
-    NSString *accelerate = configGet(@"asr.doubao.enable_accelerate_text");
-    self.asrAccelerateCheckbox.state = [accelerate isEqualToString:@"true"]
-                                           ? NSControlStateValueOn
-                                           : NSControlStateValueOff;
+    BOOL accelerate = configBooleanValue(
+        configGet(@"asr.doubao.enable_accelerate_text"), NO);
+    self.asrAccelerateCheckbox.state =
+        accelerate ? NSControlStateValueOn : NSControlStateValueOff;
+    [self rememberLoadedBooleanValue:accelerate
+                              forKey:@"asr.doubao.enable_accelerate_text"];
+    // Restore the advanced-expanded state. The advanced VALUES persist in
+    // config, but the disclosure checkbox defaults to collapsed — so reopening
+    // Settings hid the section and the settings looked lost (they weren't).
+    // If any Doubao advanced value is non-default, pre-check the disclosure so
+    // the asrProviderChanged call below unhides the container and resizes.
+    BOOL hasAdvancedValues = (self.asrEndWindowField.stringValue.length > 0) ||
+                             (outputVariant.length > 0) ||
+                             accelerate;
+    self.asrAdvancedDisclosure.state =
+        hasAdvancedValues ? NSControlStateValueOn : NSControlStateValueOff;
     // Load Qwen fields
     NSString *qwenApiKey = configGet(@"asr.qwen.api_key");
     self.asrQwenApiKeySecureField.stringValue = qwenApiKey;
@@ -4981,6 +5351,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     NSString *glmApiKey = configGet(@"asr.glm.api_key");
     self.asrGlmApiKeySecureField.stringValue = glmApiKey;
     self.asrGlmApiKeyField.stringValue = glmApiKey;
+    // Load MiMo fields
+    NSString *mimoApiKey = configGet(@"asr.mimo.api_key");
+    self.asrMimoApiKeySecureField.stringValue = mimoApiKey;
+    self.asrMimoApiKeyField.stringValue = mimoApiKey;
     // Reset visibility based on selected provider
     [self asrProviderChanged:self.asrProviderPopup];
     // Select saved Apple Speech locale (always, so switching to apple-speech
@@ -5037,16 +5411,18 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     self.asrTestResultLabel.stringValue = @"";
     self.asrTestButton.enabled = YES;
   } else if ([identifier isEqualToString:kToolbarLLM]) {
-    NSString *enabled = configGet(@"llm.enabled");
-    self.llmEnabledCheckbox.state = ([enabled isEqualToString:@"false"])
-                                        ? NSControlStateValueOff
-                                        : NSControlStateValueOn;
+    BOOL enabled = configBooleanValue(configGet(@"llm.enabled"), YES);
+    self.llmEnabledCheckbox.state =
+        enabled ? NSControlStateValueOn : NSControlStateValueOff;
+    [self rememberLoadedBooleanValue:enabled forKey:@"llm.enabled"];
 
     // auto_paste_processed_text defaults to true when unset.
     NSString *autoPaste = configGet(@"llm.auto_paste_processed_text");
+    BOOL autoPasteEnabled = ![autoPaste isEqualToString:@"false"];
     self.llmAutoPasteProcessedTextSwitch.state =
-        ([autoPaste isEqualToString:@"false"]) ? NSControlStateValueOff
-                                               : NSControlStateValueOn;
+        autoPasteEnabled ? NSControlStateValueOn : NSControlStateValueOff;
+    [self rememberLoadedBooleanValue:autoPasteEnabled
+                              forKey:@"llm.auto_paste_processed_text"];
 
     [self loadLlmProfilesFromCore];
     self.llmTestResultLabel.stringValue = @"";
@@ -5068,8 +5444,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
         bottomMarginRaw.length > 0
             ? clampedOverlayBottomMarginValue(bottomMarginRaw.integerValue)
             : kOverlayBottomMarginDefault;
-    BOOL limitVisibleLines =
-        overlayLimitVisibleLinesEnabledValue(limitVisibleLinesRaw);
+    BOOL limitVisibleLines = configBooleanValue(
+        limitVisibleLinesRaw, kOverlayLimitVisibleLinesDefault);
     NSInteger maxVisibleLines = maxVisibleLinesRaw.length > 0
                                     ? clampedOverlayMaxVisibleLinesValue(
                                           maxVisibleLinesRaw.integerValue)
@@ -5080,6 +5456,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     self.overlayBottomMarginSlider.integerValue = bottomMargin;
     self.overlayLimitVisibleLinesSwitch.state =
         limitVisibleLines ? NSControlStateValueOn : NSControlStateValueOff;
+    [self rememberLoadedBooleanValue:limitVisibleLines
+                              forKey:@"overlay.limit_visible_lines"];
     [self selectOverlayMaxVisibleLinesValue:maxVisibleLines];
     [self syncOverlayPreviewFromControls];
   } else if ([identifier isEqualToString:kToolbarHotkey]) {
@@ -5090,24 +5468,42 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
     // Load trigger mode
     NSString *triggerMode = configGet(@"hotkey.trigger_mode");
-    if ([triggerMode isEqualToString:@"toggle"]) {
+    if ([triggerMode isEqualToString:@"double_tap"]) {
+      [self.triggerModePopup selectItemAtIndex:2];
+    } else if ([triggerMode isEqualToString:@"toggle"]) {
       [self.triggerModePopup selectItemAtIndex:1];
     } else {
       [self.triggerModePopup selectItemAtIndex:0];
     }
 
-    NSString *startSound = configGet(@"feedback.start_sound");
-    NSString *stopSound = configGet(@"feedback.stop_sound");
-    NSString *errorSound = configGet(@"feedback.error_sound");
-    self.startSoundCheckbox.state = [startSound isEqualToString:@"true"]
-                                        ? NSControlStateValueOn
-                                        : NSControlStateValueOff;
-    self.stopSoundCheckbox.state = [stopSound isEqualToString:@"true"]
-                                       ? NSControlStateValueOn
-                                       : NSControlStateValueOff;
-    self.errorSoundCheckbox.state = [errorSound isEqualToString:@"true"]
-                                        ? NSControlStateValueOn
-                                        : NSControlStateValueOff;
+    BOOL startSound =
+        configBooleanValue(configGet(@"feedback.start_sound"), NO);
+    BOOL stopSound =
+        configBooleanValue(configGet(@"feedback.stop_sound"), NO);
+    BOOL errorSound =
+        configBooleanValue(configGet(@"feedback.error_sound"), NO);
+    BOOL muteSystemOutput =
+        configBooleanValue(configGet(@"feedback.mute_system_output"), NO);
+    BOOL autoReturn = configBooleanValue(configGet(@"paste.auto_return"), NO);
+    self.startSoundCheckbox.state =
+        startSound ? NSControlStateValueOn : NSControlStateValueOff;
+    self.stopSoundCheckbox.state =
+        stopSound ? NSControlStateValueOn : NSControlStateValueOff;
+    self.errorSoundCheckbox.state =
+        errorSound ? NSControlStateValueOn : NSControlStateValueOff;
+    self.muteSystemOutputCheckbox.state =
+        muteSystemOutput ? NSControlStateValueOn : NSControlStateValueOff;
+    self.autoReturnSwitch.state =
+        autoReturn ? NSControlStateValueOn : NSControlStateValueOff;
+    [self rememberLoadedBooleanValue:startSound
+                              forKey:@"feedback.start_sound"];
+    [self rememberLoadedBooleanValue:stopSound
+                              forKey:@"feedback.stop_sound"];
+    [self rememberLoadedBooleanValue:errorSound
+                              forKey:@"feedback.error_sound"];
+    [self rememberLoadedBooleanValue:muteSystemOutput
+                              forKey:@"feedback.mute_system_output"];
+    [self rememberLoadedBooleanValue:autoReturn forKey:@"paste.auto_return"];
   } else if ([identifier isEqualToString:kToolbarDictionary]) {
     NSString *dictPath = [dir stringByAppendingPathComponent:kDictionaryFile];
     NSString *dictContent =
@@ -5116,6 +5512,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                                      error:nil]
             ?: @"";
     [self.dictionaryTextView setString:dictContent];
+    self.loadedDictionaryContent = dictContent;
   } else if ([identifier isEqualToString:kToolbarSystemPrompt]) {
     NSString *promptPath =
         [dir stringByAppendingPathComponent:kSystemPromptFile];
@@ -5125,11 +5522,14 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                                      error:nil]
             ?: @"";
     [self.systemPromptTextView setString:promptContent];
+    self.loadedSystemPromptContent = promptContent;
   } else if ([identifier isEqualToString:kToolbarTemplates]) {
-    NSString *templatesEnabled = configGet(@"llm.prompt_templates_enabled");
+    BOOL templatesEnabled = configBooleanValue(
+        configGet(@"llm.prompt_templates_enabled"), NO);
     self.templatesEnabledSwitch.state =
-        [templatesEnabled isEqualToString:@"true"] ? NSControlStateValueOn
-                                                   : NSControlStateValueOff;
+        templatesEnabled ? NSControlStateValueOn : NSControlStateValueOff;
+    [self rememberLoadedBooleanValue:templatesEnabled
+                              forKey:@"llm.prompt_templates_enabled"];
 
     NSArray *templates = [self.rustBridge promptTemplates];
     self.templatesData = [NSMutableArray array];
@@ -5148,6 +5548,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     [self reindexTemplateShortcuts];
     [self reloadTemplateTableSelectingRow:(self.templatesData.count > 0 ? 0
                                                                         : -1)];
+    self.loadedTemplatesSnapshot = [[self serializedTemplatesData] copy];
   }
 }
 
@@ -5219,13 +5620,17 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   NSArray<NSDictionary *> *serializedTemplates = nil;
   if (self.templatesData) {
     [self saveCurrentTemplateEdits];
-    NSString *templateError = nil;
-    if (![self validateTemplatesDataWithMessage:&templateError]) {
-      [self showAlert:@"Invalid prompt templates"
-                 info:templateError ?: @"Check your templates and try again."];
-      return;
+    NSArray<NSDictionary *> *currentTemplates = [self serializedTemplatesData];
+    if (!self.loadedTemplatesSnapshot ||
+        ![currentTemplates isEqualToArray:self.loadedTemplatesSnapshot]) {
+      NSString *templateError = nil;
+      if (![self validateTemplatesDataWithMessage:&templateError]) {
+        [self showAlert:@"Invalid prompt templates"
+                   info:templateError ?: @"Check your templates and try again."];
+        return;
+      }
+      serializedTemplates = currentTemplates;
     }
-    serializedTemplates = [self serializedTemplatesData];
   }
 
   NSString *configPath = configFilePath();
@@ -5296,8 +5701,12 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
           (self.asrAccelerateCheckbox.state == NSControlStateValueOn)
               ? @"true"
               : @"false";
-      saveOk &=
-          configSet(@"asr.doubao.enable_accelerate_text", accelerateValue);
+      if ([self shouldPersistBooleanValue:
+                    self.asrAccelerateCheckbox.state == NSControlStateValueOn
+                                  forKey:@"asr.doubao.enable_accelerate_text"]) {
+        saveOk &=
+            configSet(@"asr.doubao.enable_accelerate_text", accelerateValue);
+      }
     }
     // Save Qwen fields
     NSString *qwenApiKey = self.asrQwenApiKeyToggle.tag == 1
@@ -5309,6 +5718,11 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                               ? self.asrGlmApiKeyField.stringValue
                               : self.asrGlmApiKeySecureField.stringValue;
     saveOk &= configSet(@"asr.glm.api_key", glmApiKey);
+    // Save MiMo fields
+    NSString *mimoApiKey = self.asrMimoApiKeyToggle.tag == 1
+                               ? self.asrMimoApiKeyField.stringValue
+                               : self.asrMimoApiKeySecureField.stringValue;
+    saveOk &= configSet(@"asr.mimo.api_key", mimoApiKey);
     // Save Apple Speech locale
     if ([selectedProvider isEqualToString:@"apple-speech"]) {
       NSString *locale =
@@ -5332,12 +5746,18 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     NSString *enabledStr =
         (self.llmEnabledCheckbox.state == NSControlStateValueOn) ? @"true"
                                                                  : @"false";
-    saveOk &= configSet(@"llm.enabled", enabledStr);
-    NSString *autoPasteProcessedText =
-        (self.llmAutoPasteProcessedTextSwitch.state == NSControlStateValueOn)
-            ? @"true"
-            : @"false";
-    saveOk &= configSet(@"llm.auto_paste_processed_text", autoPasteProcessedText);
+    if ([self shouldPersistBooleanValue:
+                  self.llmEnabledCheckbox.state == NSControlStateValueOn
+                                forKey:@"llm.enabled"]) {
+      saveOk &= configSet(@"llm.enabled", enabledStr);
+    }
+    BOOL autoPasteProcessedText =
+        self.llmAutoPasteProcessedTextSwitch.state == NSControlStateValueOn;
+    if ([self shouldPersistBooleanValue:autoPasteProcessedText
+                                 forKey:@"llm.auto_paste_processed_text"]) {
+      saveOk &= configSet(@"llm.auto_paste_processed_text",
+                          autoPasteProcessedText ? @"true" : @"false");
+    }
 
     [self syncActiveLlmProfileFromFields];
     NSDictionary *payload = @{
@@ -5381,8 +5801,11 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                         [NSString stringWithFormat:@"%ld", (long)fontSize]);
     saveOk &= configSet(@"overlay.bottom_margin",
                         [NSString stringWithFormat:@"%ld", (long)bottomMargin]);
-    saveOk &= configSet(@"overlay.limit_visible_lines",
-                        limitVisibleLines ? @"true" : @"false");
+    if ([self shouldPersistBooleanValue:limitVisibleLines
+                                 forKey:@"overlay.limit_visible_lines"]) {
+      saveOk &= configSet(@"overlay.limit_visible_lines",
+                          limitVisibleLines ? @"true" : @"false");
+    }
     saveOk &=
         configSet(@"overlay.max_visible_lines",
                   [NSString stringWithFormat:@"%ld", (long)maxVisibleLines]);
@@ -5397,15 +5820,54 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     NSString *errorSound =
         (self.errorSoundCheckbox.state == NSControlStateValueOn) ? @"true"
                                                                  : @"false";
-    saveOk &= configSet(@"feedback.start_sound", startSound);
-    saveOk &= configSet(@"feedback.stop_sound", stopSound);
-    saveOk &= configSet(@"feedback.error_sound", errorSound);
+    if ([self shouldPersistBooleanValue:
+                  self.startSoundCheckbox.state == NSControlStateValueOn
+                                forKey:@"feedback.start_sound"]) {
+      saveOk &= configSet(@"feedback.start_sound", startSound);
+    }
+    if ([self shouldPersistBooleanValue:
+                  self.stopSoundCheckbox.state == NSControlStateValueOn
+                                forKey:@"feedback.stop_sound"]) {
+      saveOk &= configSet(@"feedback.stop_sound", stopSound);
+    }
+    if ([self shouldPersistBooleanValue:
+                  self.errorSoundCheckbox.state == NSControlStateValueOn
+                                forKey:@"feedback.error_sound"]) {
+      saveOk &= configSet(@"feedback.error_sound", errorSound);
+    }
+  }
+  if (self.muteSystemOutputCheckbox) {
+    NSString *muteSystemOutput =
+        (self.muteSystemOutputCheckbox.state == NSControlStateValueOn)
+            ? @"true"
+            : @"false";
+    if ([self shouldPersistBooleanValue:
+                  self.muteSystemOutputCheckbox.state == NSControlStateValueOn
+                                forKey:@"feedback.mute_system_output"]) {
+      saveOk &=
+          configSet(@"feedback.mute_system_output", muteSystemOutput);
+    }
+  }
+  if (self.autoReturnSwitch) {
+    NSString *autoReturn =
+        (self.autoReturnSwitch.state == NSControlStateValueOn) ? @"true"
+                                                               : @"false";
+    if ([self shouldPersistBooleanValue:
+                  self.autoReturnSwitch.state == NSControlStateValueOn
+                                forKey:@"paste.auto_return"]) {
+      saveOk &= configSet(@"paste.auto_return", autoReturn);
+    }
   }
   if (self.templatesEnabledSwitch) {
     NSString *templatesEnabled =
         (self.templatesEnabledSwitch.state == NSControlStateValueOn) ? @"true"
                                                                      : @"false";
-    saveOk &= configSet(@"llm.prompt_templates_enabled", templatesEnabled);
+    if ([self shouldPersistBooleanValue:
+                  self.templatesEnabledSwitch.state == NSControlStateValueOn
+                                forKey:@"llm.prompt_templates_enabled"]) {
+      saveOk &=
+          configSet(@"llm.prompt_templates_enabled", templatesEnabled);
+    }
   }
 
   if (!saveOk) {
@@ -5429,7 +5891,9 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
   // Write dictionary.txt
   NSError *error = nil;
-  if (self.dictionaryTextView) {
+  if (self.dictionaryTextView &&
+      ![self.dictionaryTextView.string
+          isEqualToString:self.loadedDictionaryContent ?: @""]) {
     NSString *dictPath = [dir stringByAppendingPathComponent:kDictionaryFile];
     [self.dictionaryTextView.string writeToFile:dictPath
                                      atomically:YES
@@ -5446,7 +5910,9 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   }
 
   // Write system_prompt.txt
-  if (self.systemPromptTextView) {
+  if (self.systemPromptTextView &&
+      ![self.systemPromptTextView.string
+          isEqualToString:self.loadedSystemPromptContent ?: @""]) {
     NSString *promptPath =
         [dir stringByAppendingPathComponent:kSystemPromptFile];
     [self.systemPromptTextView.string writeToFile:promptPath
@@ -5557,23 +6023,19 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 }
 
 - (void)refreshLlmRemoteModels:(id)sender {
-  NSDictionary *activeProfile = [self activeLlmProfile];
+  NSDictionary *activeProfile = [self runtimeLlmProfileForActiveProfile];
   NSString *provider =
       [activeProfile[@"provider"] isKindOfClass:[NSString class]]
           ? activeProfile[@"provider"]
           : @"openai";
-  BOOL isOpenAiLike = [provider isEqualToString:@"openai"] ||
-                      [provider isEqualToString:@"apfel"];
-  if (!isOpenAiLike)
+  BOOL isRemote = ![provider isEqualToString:@"mlx"];
+  if (!isRemote)
     return;
   [self updateLlmFieldsEnabled];
 
   NSString *baseURL = [self.llmBaseUrlField.stringValue
       stringByTrimmingCharactersInSet:[NSCharacterSet
                                           whitespaceAndNewlineCharacterSet]];
-  NSString *apiKey = self.llmApiKeyToggle.tag == 1
-                         ? self.llmApiKeyField.stringValue
-                         : self.llmApiKeySecureField.stringValue;
   NSString *currentModel = [self.llmModelField.stringValue copy] ?: @"";
   if (baseURL.length == 0) {
     [self.llmRemoteModelPopup removeAllItems];
@@ -5595,8 +6057,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
           return;
 
         NSDictionary *result =
-            [strongSelf.rustBridge llmRemoteModelsForBaseURL:baseURL
-                                                      apiKey:apiKey];
+            [strongSelf.rustBridge llmRemoteModelsForProfile:activeProfile];
         BOOL success = [result[@"success"] boolValue];
         NSArray *modelsRaw = [result[@"models"] isKindOfClass:[NSArray class]]
                                  ? result[@"models"]
@@ -5621,9 +6082,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
               [innerActive[@"provider"] isKindOfClass:[NSString class]]
                   ? innerActive[@"provider"]
                   : @"openai";
-          BOOL stillOpenAiLike = [activeProvider isEqualToString:@"openai"] ||
-                                 [activeProvider isEqualToString:@"apfel"];
-          if (!stillOpenAiLike)
+          BOOL stillRemote = ![activeProvider isEqualToString:@"mlx"];
+          if (!stillRemote)
             return;
 
           innerSelf.llmRefreshModelsButton.enabled =
@@ -5658,22 +6118,24 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
       [activeProfile[@"provider"] isKindOfClass:[NSString class]]
           ? activeProfile[@"provider"]
           : @"openai";
-  // APFEL is just an OpenAI-compatible endpoint with a distinct label, so it
-  // reuses the same field set as "openai".
-  BOOL isOpenAiLike = [provider isEqualToString:@"openai"] ||
-                      [provider isEqualToString:@"apfel"];
   BOOL isMlx = [provider isEqualToString:@"mlx"];
+  BOOL isRemote = !isMlx;
+  NSString *protocol = [self apiProtocolForLlmProfile:activeProfile];
+  BOOL isOpenAIChat = [protocol isEqualToString:kLlmProtocolOpenAIChat];
 
   // Toggle OpenAI fields (tag 2001-2008). Tag 2004 (Model List row) is
   // managed separately below because its visibility is gated by the
   // expand/collapse state of the Choose button.
-  [self setHidden:!isOpenAiLike
+  [self setHidden:!isRemote
       forViewsWithTagInRange:NSMakeRange(2001, 8)
                       inView:self.currentPaneView];
+  [self setHidden:!isOpenAIChat
+      forViewsWithTagInRange:NSMakeRange(2006, 2)
+                      inView:self.currentPaneView];
   // Eye toggle doesn't use tag for show/hide (tag is used for 0/1 state)
-  self.llmApiKeyToggle.hidden = !isOpenAiLike;
+  self.llmApiKeyToggle.hidden = !isRemote;
   // Preserve API key visibility state when showing OpenAI fields
-  if (isOpenAiLike) {
+  if (isRemote) {
     BOOL showPlain = (self.llmApiKeyToggle.tag == 1);
     self.llmApiKeyField.hidden = !showPlain;
     self.llmApiKeySecureField.hidden = showPlain;
@@ -5683,12 +6145,12 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   self.llmApiKeyField.enabled = enabled;
   self.llmApiKeySecureField.enabled = enabled;
   self.llmModelField.enabled = enabled;
-  self.llmToggleModelPickerButton.hidden = !isOpenAiLike;
-  self.llmToggleModelPickerButton.enabled = enabled && isOpenAiLike;
+  self.llmToggleModelPickerButton.hidden = !isRemote;
+  self.llmToggleModelPickerButton.enabled = enabled && isRemote;
   [self.llmToggleModelPickerButton
       setTitle:(self.llmRemoteModelPickerExpanded ? @"Hide" : @"Choose")];
   BOOL showRemoteModelPicker =
-      isOpenAiLike && self.llmRemoteModelPickerExpanded;
+      isRemote && self.llmRemoteModelPickerExpanded;
   [self setLlmRemoteModelPickerRowVisible:showRemoteModelPicker];
   [self setHidden:!showRemoteModelPicker
       forViewsWithTagInRange:NSMakeRange(2004, 1)
@@ -5698,8 +6160,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   self.llmRemoteModelPopup.enabled =
       enabled && showRemoteModelPicker && hasSelectableRemoteModel;
   self.llmRefreshModelsButton.enabled = enabled && showRemoteModelPicker;
-  self.llmChatCompletionsPathField.enabled = enabled;
-  self.maxTokenParamPopup.enabled = enabled;
+  self.llmChatCompletionsPathField.enabled = enabled && isRemote;
+  self.maxTokenParamPopup.enabled = enabled && isOpenAIChat;
   self.llmTestButton.enabled = enabled;
 
   // Toggle MLX fields (tag 2010-2012)
@@ -5943,7 +6405,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   NSString *model = [profile[@"model"] isKindOfClass:[NSString class]]
                         ? profile[@"model"]
                         : @"";
-  if ([provider isEqualToString:@"openai"] &&
+  if (![provider isEqualToString:@"mlx"] &&
       (baseUrl.length == 0 || model.length == 0)) {
     self.llmTestResultLabel.stringValue =
         @"Please fill in Base URL and Model first.";
@@ -6027,6 +6489,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     [self testQwenConnection];
   } else if ([provider isEqualToString:@"glm"]) {
     [self testGlmConnection];
+  } else if ([provider isEqualToString:@"mimo"]) {
+    [self testMimoConnection];
   }
 }
 
@@ -6532,6 +6996,100 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
             @"Connection timed out: please check your network";
         strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
       });
+}
+
+- (void)testMimoConnection {
+  NSString *apiKey = self.asrMimoApiKeyToggle.tag == 1
+                         ? self.asrMimoApiKeyField.stringValue
+                         : self.asrMimoApiKeySecureField.stringValue;
+
+  if (apiKey.length == 0) {
+    self.asrTestResultLabel.stringValue = @"Please fill in API Key first";
+    self.asrTestResultLabel.textColor = [NSColor systemOrangeColor];
+    return;
+  }
+
+  self.asrTestButton.enabled = NO;
+  self.asrTestResultLabel.stringValue = @"Testing...";
+  self.asrTestResultLabel.textColor = [NSColor secondaryLabelColor];
+
+  // MiMo uses HTTP POST — send a minimal request to verify API key
+  NSString *mimoUrl = configGet(@"asr.mimo.url");
+  if (mimoUrl.length == 0)
+    mimoUrl = @"https://api.xiaomimimo.com/v1/chat/completions";
+
+  NSURL *url = [NSURL URLWithString:mimoUrl];
+  NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+  request.HTTPMethod = @"POST";
+  request.timeoutInterval = 10;
+  [request setValue:apiKey forHTTPHeaderField:@"api-key"];
+  [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+
+  // Minimal body — just model + empty message to test auth
+  NSDictionary *body = @{
+    @"model" : @"mimo-v2.5-asr",
+    @"messages" : @[
+      @{@"role" : @"user", @"content" : @"test"}
+    ]
+  };
+  request.HTTPBody =
+      [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
+
+  __weak typeof(self) weakSelf = self;
+  NSURLSessionDataTask *task =
+      [[NSURLSession sharedSession]
+          dataTaskWithRequest:request
+            completionHandler:^(NSData *data, NSURLResponse *response,
+                                NSError *error) {
+              dispatch_async(dispatch_get_main_queue(), ^{
+                __strong typeof(weakSelf) strongSelf = weakSelf;
+                if (!strongSelf)
+                  return;
+                strongSelf.asrTestButton.enabled = YES;
+
+                if (error) {
+                  NSString *errorMsg = error.localizedDescription;
+                  if (error.code == NSURLErrorTimedOut) {
+                    strongSelf.asrTestResultLabel.stringValue =
+                        @"Connection timed out: please check your network";
+                  } else if ([errorMsg containsString:@"Cannot connect"] ||
+                             [errorMsg containsString:@"unable"]) {
+                    strongSelf.asrTestResultLabel.stringValue =
+                        @"Network error: please check your network settings";
+                  } else {
+                    strongSelf.asrTestResultLabel.stringValue =
+                        [NSString stringWithFormat:@"Error: %@", errorMsg];
+                  }
+                  strongSelf.asrTestResultLabel.textColor =
+                      [NSColor systemRedColor];
+                  return;
+                }
+
+                NSHTTPURLResponse *httpResponse =
+                    (NSHTTPURLResponse *)response;
+                if (httpResponse.statusCode == 200 ||
+                    httpResponse.statusCode == 400) {
+                  // 400 = bad request (expected with minimal body), but auth
+                  // worked
+                  strongSelf.asrTestResultLabel.stringValue = @"Connected";
+                  strongSelf.asrTestResultLabel.textColor =
+                      [NSColor systemGreenColor];
+                } else if (httpResponse.statusCode == 401 ||
+                           httpResponse.statusCode == 403) {
+                  strongSelf.asrTestResultLabel.stringValue =
+                      @"Auth failed: please check your API Key";
+                  strongSelf.asrTestResultLabel.textColor =
+                      [NSColor systemRedColor];
+                } else {
+                  strongSelf.asrTestResultLabel.stringValue =
+                      [NSString stringWithFormat:@"HTTP %ld: unexpected response",
+                                                 (long)httpResponse.statusCode];
+                  strongSelf.asrTestResultLabel.textColor =
+                      [NSColor systemOrangeColor];
+                }
+              });
+            }];
+  [task resume];
 }
 
 - (void)showAlert:(NSString *)message info:(NSString *)info {

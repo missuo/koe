@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Koe</title>
+    <description>Updates for the standard app (Apple Silicon).</description>
+    <language>en</language>
+    <item>
+      <title>Version 1.0.21</title>
+      <link>https://github.com/missuo/koe/releases/tag/v1.0.21</link>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li>Further hardened the phantom-keypress-on-quit fix: the hotkey event tap now runs in listen-only mode whenever nothing needs to be consumed (which is all the time for modifier triggers like Fn or Option), upgrading to a consuming tap only while the template selector's number shortcuts are on screen. Quitting after long real-world use previously could still emit phantom Fn events from the long-lived consuming tap's teardown — listen-only taps demonstrably never do this.</li>
+</ul>
+      ]]></description>
+      <sparkle:version>22</sparkle:version>
+      <sparkle:shortVersionString>1.0.21</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 15 Jul 2026 19:27:15 GMT</pubDate>
+      <enclosure url="https://github.com/missuo/koe/releases/download/v1.0.21/Koe-macOS-arm64.zip"
+        sparkle:edSignature="5Cy3RZKWkJ5DHzDZF0aGyGvukGBE3f+Ksj5bCKKLvuFfhqvKPbwTBaN6Rl6sWQry9aLxgTZEYw5R4tC7LK1ZCw=="
+        length="11849599"
+        type="application/octet-stream" />
+    </item>
+    <item>
+      <title>Version 1.0.20</title>
+      <link>https://github.com/missuo/koe/releases/tag/v1.0.20</link>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li>Fixed a regression introduced in 1.0.19 where a quick tap of the trigger key (Fn, Option, …) started dictation and immediately ended it — the trigger only survived if held noticeably long. Fast taps now reliably start and stop recording.</li>
+<li>Trigger handling no longer freezes while a modal dialog (such as a Sparkle update prompt) is on screen.</li>
+</ul>
+      ]]></description>
+      <sparkle:version>21</sparkle:version>
+      <sparkle:shortVersionString>1.0.20</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 15 Jul 2026 18:44:57 GMT</pubDate>
+      <enclosure url="https://github.com/missuo/koe/releases/download/v1.0.20/Koe-macOS-arm64.zip"
+        sparkle:edSignature="jLGIwxDy15bOAPZ3EboSh/3rY1zPmj3dxaLmsSzzOz1nE+MRExRsuvbsQyGGLHvkm7Rlmx/WcxWilHbmu0uFDw=="
+        length="11849081"
+        type="application/octet-stream" />
+    </item>
+    <item>
+      <title>Version 1.0.19</title>
+      <link>https://github.com/missuo/koe/releases/tag/v1.0.19</link>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li>The in-app update dialog now shows what changed in the new version: Sparkle appcast entries carry the release's changelog section as formatted release notes (effective for updates released from this version on).</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Fixed the long-standing phantom-keypress-on-quit bug: quitting Koe after a period of use could fire other apps' Fn/Globe hotkeys (screenshot tools, other dictation apps). The hotkey event tap ran on the main thread, so main-thread stalls (ASR finalization, pasting) could swallow in-flight modifier events; WindowServer then accumulated stale modifier state and flushed corrective Fn key events into the session when the tap was destroyed at quit. The tap now runs on a dedicated thread that never stalls, and it is torn down before any slow shutdown work. This also fixes real keystrokes being silently dropped for 1–2 seconds while Koe was quitting.</li>
+<li>Pending synthetic paste events are now cancelled on every termination path (Sparkle update relaunch, logout, shutdown), not just the status-bar Quit.</li>
+</ul>
+      ]]></description>
+      <sparkle:version>20</sparkle:version>
+      <sparkle:shortVersionString>1.0.19</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 15 Jul 2026 18:15:56 GMT</pubDate>
+      <enclosure url="https://github.com/missuo/koe/releases/download/v1.0.19/Koe-macOS-arm64.zip"
+        sparkle:edSignature="g2ATJpzS9HiFyfS4K+vab1Oh1teBRFaQt092qzNG2kvK7Tly397QQFGOAGhekM5kMkN2fQIxkKjd++xaQnoACQ=="
+        length="11848710"
+        type="application/octet-stream" />
+    </item>
+    <item>
+      <title>Version 1.0.18</title>
+      <link>https://github.com/missuo/koe/releases/tag/v1.0.18</link>
+      <sparkle:version>19</sparkle:version>
+      <sparkle:shortVersionString>1.0.18</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 15 Jul 2026 16:53:16 GMT</pubDate>
+      <enclosure url="https://github.com/missuo/koe/releases/download/v1.0.18/Koe-macOS-arm64.zip"
+        sparkle:edSignature="W4Gau54DsFa33vtrZL62ivjz9pW7V9PkTRIMXGLKg7bRJCN6MwBpPxI32eYdcLTHDBOfMEpWh1OX4HbrCkwhBw=="
+        length="11847728"
+        type="application/octet-stream" />
+    </item>
+    <item>
+      <title>Version 1.0.17</title>
+      <link>https://github.com/missuo/koe/releases/tag/v1.0.17</link>
+      <sparkle:version>18</sparkle:version>
+      <sparkle:shortVersionString>1.0.17</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Tue, 14 Jul 2026 09:32:46 GMT</pubDate>
+      <enclosure url="https://github.com/missuo/koe/releases/download/v1.0.17/Koe-macOS-arm64.zip"
+        sparkle:edSignature="GUcr7oQd8ZxrZ7l9TEsiRMiLEoJVVsTY9+asK/FaWdQtIoCnkeu+fhDjNn54O9IsB7l97qk1GC8mCscuxSsBCQ=="
+        length="11339616"
+        type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>

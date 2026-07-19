@@ -2,6 +2,11 @@
 
 /// Delegate protocol for hotkey events
 @protocol SPHotkeyMonitorDelegate <NSObject>
+/// Fired immediately on trigger-down, before tap/hold classification.
+- (void)hotkeyMonitorDidBeginTrigger;
+/// Fired when an unconfirmed trigger is discarded (for example, a short tap
+/// while configured for hold mode).
+- (void)hotkeyMonitorDidCancelTrigger;
 - (void)hotkeyMonitorDidDetectHoldStart;
 - (void)hotkeyMonitorDidDetectHoldEnd;
 - (void)hotkeyMonitorDidDetectTapStart;
@@ -13,13 +18,18 @@ typedef NS_ENUM(uint8_t, SPHotkeyMatchKind) {
     SPHotkeyMatchKindKeyDown = 1,
 };
 
+typedef NS_ENUM(uint8_t, SPHotkeyTriggerMode) {
+    SPHotkeyTriggerModeHold = 0,
+    SPHotkeyTriggerModeToggle = 1,
+    SPHotkeyTriggerModeDoubleTap = 2,
+};
+
 @interface SPHotkeyMonitor : NSObject
 
 /// Threshold in milliseconds to distinguish tap from hold. Default 180ms.
 @property (nonatomic, assign) NSTimeInterval holdThresholdMs;
 
-/// Trigger mode: 0 = hold (short press ignored), 1 = toggle (tap to start/stop).
-@property (nonatomic, assign) uint8_t triggerMode;
+@property (nonatomic, assign) SPHotkeyTriggerMode triggerMode;
 
 /// Primary key code to monitor (default: 63 = Fn/Globe)
 @property (nonatomic, assign) NSInteger targetKeyCode;
@@ -32,6 +42,10 @@ typedef NS_ENUM(uint8_t, SPHotkeyMatchKind) {
 
 /// How the trigger hotkey should be matched.
 @property (nonatomic, assign) uint8_t targetMatchKind;
+
+/// Maximum interval from the first press to the second press in double-tap
+/// mode. Defaults to the user's macOS double-click interval.
+@property (nonatomic, assign) NSTimeInterval doubleTapThresholdMs;
 
 - (instancetype)initWithDelegate:(id<SPHotkeyMonitorDelegate>)delegate;
 - (void)start;
@@ -49,16 +63,19 @@ typedef NS_ENUM(uint8_t, SPHotkeyMatchKind) {
 
 /// Optional block called when a number key (1-9) is pressed.
 /// Return YES to consume the key event so it does not continue to the target app.
-@property (nonatomic, copy) BOOL (^numberKeyHandler)(NSInteger number);
+/// Atomic: read from the event-tap thread while set/cleared on the main thread.
+@property (copy) BOOL (^numberKeyHandler)(NSInteger number);
 
 /// Optional block called when any non-template key is pressed (any key except 1-9).
 /// The key event is NOT consumed — it always passes through to the target app.
 /// Used to dismiss the overlay when the user resumes typing after text insertion.
-@property (nonatomic, copy) void (^anyKeyDismissHandler)(void);
+/// Atomic: read from the event-tap thread while set/cleared on the main thread.
+@property (copy) void (^anyKeyDismissHandler)(void);
 
 /// Optional block called when Return/Enter is pressed.
-/// Return YES to consume the key event. It is only invoked when the active
+/// Return YES to consume the key event. It is only honoured when the active
 /// CGEventTap can suppress the event globally.
-@property (nonatomic, copy) BOOL (^enterKeyHandler)(void);
+/// Atomic: read from the event-tap thread while set/cleared on the main thread.
+@property (copy) BOOL (^enterKeyHandler)(void);
 
 @end

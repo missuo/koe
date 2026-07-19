@@ -6,13 +6,30 @@ on:
       - main
     tags:
       - "v*"
+    # Docs-only pushes skip CI. Tag pushes always run: path filters are
+    # bypassed for newly created refs.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "skills/**"
+      - "LICENSE"
+      - ".gitignore"
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "skills/**"
+      - "LICENSE"
+      - ".gitignore"
   workflow_dispatch:
 
 permissions:
   contents: write
+
+env:
+  SPARKLE_VERSION: 2.9.4
 
 jobs:
   test:
@@ -21,7 +38,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -35,13 +52,29 @@ jobs:
         run: cargo test --manifest-path koe-core/Cargo.toml
 
   build-arm64:
-    name: Build macOS arm64
+    # The two app variants build in parallel so the (much slower) MLX build
+    # never delays the standard app. On tag pushes each variant uploads its
+    # zip to the GitHub Release as soon as it finishes; the appcast update
+    # still waits for both.
+    name: Build macOS arm64 (${{ matrix.variant }})
     needs: test
     runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: standard
+            scheme: Koe
+            zip: Koe-macOS-arm64.zip
+            artifact: Koe-macOS-arm64
+          - variant: mlx
+            scheme: Koe-MLX
+            zip: Koe-MLX-macOS-arm64.zip
+            artifact: Koe-MLX-macOS-arm64
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -51,195 +84,180 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: aarch64-apple-darwin
+          # Per-variant: the two schemes build koe-core with different
+          # feature sets, so sharing one cache would thrash it.
+          key: aarch64-apple-darwin-${{ matrix.variant }}
 
       - name: Install dependencies
-        run: brew install xcodegen cmake
+        # Untap the runner image's untrusted aws/tap first so Homebrew's
+        # tap-trust check doesn't emit warnings.
+        run: |
+          brew untap aws/tap 2>/dev/null || true
+          brew install xcodegen cmake
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1
 
       - name: Cache Swift packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
-          path: KoeApp/build-ci/arm64/SourcePackages
-          key: spm-arm64-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Packages/**/Package.swift', 'Packages/**/Package.resolved') }}
+          path: KoeApp/build-ci/SourcePackages
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ hashFiles('KoeApp/project.yml', 'Packages/**/Package.swift', 'Packages/**/Package.resolved') }}
           restore-keys: |
-            spm-arm64-${{ runner.os }}-${{ runner.arch }}-
+            spm-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-
+            spm-${{ runner.os }}-${{ runner.arch }}-
       - name: Show Xcode and Swift versions
         run: |
           xcodebuild -version
           swift --version
+      - name: Import Developer ID certificate
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERTIFICATE_PATH="$RUNNER_TEMP/certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 24)
+
+          echo "$CERTIFICATE_P12_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          rm -f "$CERTIFICATE_PATH"
+
+          echo "CODESIGN_IDENTITY=Developer ID Application" >> "$GITHUB_ENV"
+
+      - name: Set up Sparkle signing
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          SPARKLE_ED25519_PUBLIC_KEY: ${{ secrets.SPARKLE_ED25519_PUBLIC_KEY }}
+          SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          curl -fL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
+            -o "$RUNNER_TEMP/sparkle.tar.xz"
+          mkdir -p "$RUNNER_TEMP/sparkle"
+          tar -xJf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+          xattr -dr com.apple.quarantine "$RUNNER_TEMP/sparkle" || true
+
+          KEY_FILE="$RUNNER_TEMP/sparkle_ed25519.key"
+          printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+
+          /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $SPARKLE_ED25519_PUBLIC_KEY" KoeApp/Koe/Info.plist
+
+          echo "SPARKLE_BIN=$RUNNER_TEMP/sparkle/bin" >> "$GITHUB_ENV"
+          echo "SPARKLE_PRIVATE_KEY_FILE=$KEY_FILE" >> "$GITHUB_ENV"
+
       - name: Build CLI
         run: cargo build --package koe-cli --release --target aarch64-apple-darwin
 
-      - name: Generate full Xcode project
+      - name: Generate Xcode project
         run: xcodegen generate --spec project.yml
         working-directory: KoeApp
-
-      - name: Build full app
-        run: |
-          set -euo pipefail
-          xcodebuild \
-            -project Koe.xcodeproj \
-            -scheme Koe \
-            -configuration Release \
-            -derivedDataPath build-ci/arm64 \
-            -clonedSourcePackagesDirPath build-ci/arm64/SourcePackages \
-            ARCHS=arm64 \
-            ONLY_ACTIVE_ARCH=NO \
-            build
-        working-directory: KoeApp
-
-      - name: Package full app
-        run: |
-          set -euo pipefail
-          APP_PATH="KoeApp/build-ci/arm64/Build/Products/Release/Koe.app"
-          CLI_PATH="target/aarch64-apple-darwin/release/koe"
-          test -d "$APP_PATH"
-          test -x "$CLI_PATH"
-          cp "$CLI_PATH" "$APP_PATH/Contents/MacOS/koe-cli"
-          chmod +x "$APP_PATH/Contents/MacOS/koe-cli"
-          codesign --force --deep --sign - "$APP_PATH"
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" Koe-macOS-arm64.zip
-      - name: Generate lite Xcode project
-        run: xcodegen generate --spec project-lite.yml
-        working-directory: KoeApp
-
-      - name: Build lite app
-        run: |
-          set -euo pipefail
-          xcodebuild \
-            -project Koe.xcodeproj \
-            -scheme Koe-lite \
-            -configuration Release \
-            -derivedDataPath build-ci/arm64-lite \
-            -clonedSourcePackagesDirPath build-ci/arm64/SourcePackages \
-            ARCHS=arm64 \
-            ONLY_ACTIVE_ARCH=NO \
-            build
-        working-directory: KoeApp
-
-      - name: Package lite app
-        run: |
-          set -euo pipefail
-          APP_PATH="KoeApp/build-ci/arm64-lite/Build/Products/Release/Koe.app"
-          CLI_PATH="target/aarch64-apple-darwin/release/koe"
-          test -d "$APP_PATH"
-          test -x "$CLI_PATH"
-          cp "$CLI_PATH" "$APP_PATH/Contents/MacOS/koe-cli"
-          chmod +x "$APP_PATH/Contents/MacOS/koe-cli"
-          codesign --force --deep --sign - "$APP_PATH"
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" Koe-macOS-arm64-lite.zip
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Koe-macOS-arm64
-          path: Koe-macOS-arm64.zip
-          if-no-files-found: error
-
-      - name: Upload lite build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Koe-macOS-arm64-lite
-          path: Koe-macOS-arm64-lite.zip
-          if-no-files-found: error
-
-  build-x86_64:
-    name: Build macOS x86_64
-    needs: test
-    runs-on: macos-26-intel
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: x86_64-apple-darwin
-
-      - name: Install dependencies
-        run: brew install xcodegen cmake
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: 1
-
-      - name: Cache Swift packages
-        uses: actions/cache@v4
-        with:
-          path: KoeApp/build-ci/x86_64/SourcePackages
-          key: spm-x86_64-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Packages/**/Package.swift', 'Packages/**/Package.resolved') }}
-          restore-keys: |
-            spm-x86_64-${{ runner.os }}-${{ runner.arch }}-
-      - name: Show Xcode and Swift versions
-        run: |
-          xcodebuild -version
-          swift --version
-      - name: Generate Xcode project
-        run: xcodegen generate --spec project-x86.yml
-        working-directory: KoeApp
-
-      - name: Build CLI
-        run: cargo build --package koe-cli --release --target x86_64-apple-darwin
 
       - name: Build app
         run: |
           set -euo pipefail
           xcodebuild \
             -project Koe.xcodeproj \
-            -scheme Koe-x86 \
+            -scheme "${{ matrix.scheme }}" \
             -configuration Release \
-            -derivedDataPath build-ci/x86_64 \
-            -clonedSourcePackagesDirPath build-ci/x86_64/SourcePackages \
-            ARCHS=x86_64 \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            -derivedDataPath "build-ci/${{ matrix.variant }}" \
+            -clonedSourcePackagesDirPath build-ci/SourcePackages \
+            ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=NO \
             build
         working-directory: KoeApp
 
       - name: Package app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          set -euo pipefail
-          APP_PATH="KoeApp/build-ci/x86_64/Build/Products/Release/Koe.app"
-          CLI_PATH="target/x86_64-apple-darwin/release/koe"
-          test -d "$APP_PATH"
-          test -x "$CLI_PATH"
-          cp "$CLI_PATH" "$APP_PATH/Contents/MacOS/koe-cli"
-          chmod +x "$APP_PATH/Contents/MacOS/koe-cli"
-          codesign --force --deep --sign - "$APP_PATH"
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" Koe-macOS-x86_64.zip
+          .github/scripts/package-app.sh \
+            "KoeApp/build-ci/${{ matrix.variant }}/Build/Products/Release/Koe.app" \
+            "target/aarch64-apple-darwin/release/koe" \
+            "${{ matrix.zip }}"
+
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: Koe-macOS-x86_64
-          path: Koe-macOS-x86_64.zip
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.zip }}
+            ${{ matrix.zip }}.sparkle.json
           if-no-files-found: error
 
+      - name: Upload to GitHub Release
+        # Each variant is published the moment it is ready — the standard app
+        # must not wait for the slower MLX build. Creating the release can
+        # race with the other variant's job; `|| true` + upload handles the
+        # loser of that race.
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" --generate-notes || true
+          fi
+          gh release upload "$TAG" "${{ matrix.zip }}" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Clean up signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/sparkle_ed25519.key"
+
   release:
-    name: Create GitHub Release
-    needs:
-      - build-arm64
-      - build-x86_64
+    # The zips are uploaded by each build job as soon as they are ready; this
+    # job only updates the Sparkle feeds, which need BOTH variants' signing
+    # metadata, so it waits for the whole matrix.
+    name: Update Sparkle feeds
+    needs: build-arm64
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*.zip
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Update Sparkle appcasts on main
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/update-feeds.py \
+            --tag "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dist dist
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/appcast.xml docs/appcast-mlx.xml docs/update-feed.json
+          if git diff --cached --quiet; then
+            echo "No feed changes to commit"
+            exit 0
+          fi
+          git commit -m "chore(release): update appcasts for ${GITHUB_REF_NAME}"
+          git pull --rebase origin main
+          git push origin HEAD:main

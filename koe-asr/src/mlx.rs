@@ -24,11 +24,17 @@ extern "C" {
 
 // ─── Event callback trampoline ───────────────────────────────────────
 
+struct MlxEventSenders {
+    events: tokio::sync::mpsc::Sender<AsrEvent>,
+    terminal_events: tokio::sync::mpsc::UnboundedSender<AsrEvent>,
+}
+
 /// C callback that receives events from the Swift layer and forwards them
-/// into a tokio mpsc channel. The `ctx` pointer is a leaked
-/// `Box<tokio::sync::mpsc::Sender<AsrEvent>>`.
+/// into tokio mpsc channels. Terminal events use an unbounded side channel so
+/// interim traffic can never prevent Final/Error/Closed from reaching the
+/// consumer and turning a successful recognition into a timeout.
 extern "C" fn mlx_event_trampoline(ctx: *mut c_void, event_type: i32, text: *const c_char) {
-    let tx = unsafe { &*(ctx as *const tokio::sync::mpsc::Sender<AsrEvent>) };
+    let senders = unsafe { &*(ctx as *const MlxEventSenders) };
     let text_str = if text.is_null() {
         String::new()
     } else {
@@ -46,7 +52,21 @@ extern "C" fn mlx_event_trampoline(ctx: *mut c_void, event_type: i32, text: *con
         5 => AsrEvent::Closed(None),
         _ => return,
     };
-    let _ = tx.try_send(event);
+    let is_terminal = matches!(
+        &event,
+        AsrEvent::Final(_) | AsrEvent::Error(_) | AsrEvent::Closed(_)
+    );
+    let send_result = if is_terminal {
+        senders
+            .terminal_events
+            .send(event)
+            .map_err(|e| e.to_string())
+    } else {
+        senders.events.try_send(event).map_err(|e| e.to_string())
+    };
+    if let Err(e) = send_result {
+        log::warn!("MLX event delivery failed: {e}");
+    }
 }
 
 // ─── Provider ────────────────────────────────────────────────────────
@@ -69,7 +89,8 @@ pub struct MlxConfig {
 pub struct MlxProvider {
     config: MlxConfig,
     event_rx: Option<tokio::sync::mpsc::Receiver<AsrEvent>>,
-    /// Leaked sender pointer passed as callback context.
+    terminal_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AsrEvent>>,
+    /// Leaked sender bundle passed as callback context.
     /// Reclaimed in close()/drop.
     event_tx_ptr: Option<*mut c_void>,
     /// Session generation returned by the Swift singleton.
@@ -87,6 +108,7 @@ impl MlxProvider {
         Self {
             config,
             event_rx: None,
+            terminal_event_rx: None,
             event_tx_ptr: None,
             session_generation: 0,
         }
@@ -96,9 +118,7 @@ impl MlxProvider {
     fn reclaim_sender(&mut self) {
         if let Some(ptr) = self.event_tx_ptr.take() {
             unsafe {
-                drop(Box::from_raw(
-                    ptr as *mut tokio::sync::mpsc::Sender<AsrEvent>,
-                ));
+                drop(Box::from_raw(ptr as *mut MlxEventSenders));
             }
         }
     }
@@ -122,10 +142,15 @@ impl crate::provider::AsrProvider for MlxProvider {
 
         // Create event channel
         let (tx, rx) = tokio::sync::mpsc::channel::<AsrEvent>(256);
+        let (terminal_tx, terminal_rx) = tokio::sync::mpsc::unbounded_channel::<AsrEvent>();
         self.event_rx = Some(rx);
+        self.terminal_event_rx = Some(terminal_rx);
 
-        // Leak sender into a raw pointer for the C callback context
-        let tx_box = Box::new(tx);
+        // Leak senders into a raw pointer for the C callback context.
+        let tx_box = Box::new(MlxEventSenders {
+            events: tx,
+            terminal_events: terminal_tx,
+        });
         let tx_ptr = Box::into_raw(tx_box) as *mut c_void;
         self.event_tx_ptr = Some(tx_ptr);
 
@@ -174,12 +199,14 @@ impl crate::provider::AsrProvider for MlxProvider {
     }
 
     async fn next_event(&mut self) -> Result<AsrEvent> {
-        if let Some(ref mut rx) = self.event_rx {
-            rx.recv()
-                .await
-                .ok_or(AsrError::Connection("event channel closed".into()))
-        } else {
-            Err(AsrError::Connection("not connected".into()))
+        match (&mut self.terminal_event_rx, &mut self.event_rx) {
+            (Some(terminal_rx), Some(event_rx)) => tokio::select! {
+                biased;
+                event = terminal_rx.recv() => event,
+                event = event_rx.recv() => event,
+            }
+            .ok_or(AsrError::Connection("event channel closed".into())),
+            _ => Err(AsrError::Connection("not connected".into())),
         }
     }
 
@@ -195,6 +222,7 @@ impl crate::provider::AsrProvider for MlxProvider {
             koe_mlx_cancel(self.session_generation);
         }
         self.event_rx = None;
+        self.terminal_event_rx = None;
         self.reclaim_sender();
         Ok(())
     }

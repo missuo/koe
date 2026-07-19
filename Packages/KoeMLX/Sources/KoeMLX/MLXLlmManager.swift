@@ -2,8 +2,10 @@
 
 import Foundation
 import MLX
+import MLXHuggingFace
 import MLXLLM
 import MLXLMCommon
+import Tokenizers
 
 /// Manages local LLM model loading and text generation via MLX.
 class MLXLlmManager {
@@ -26,11 +28,9 @@ class MLXLlmManager {
         var success = false
         Task {
             do {
-                let config = ModelConfiguration(
-                    directory: URL(fileURLWithPath: path)
-                )
                 let newContainer = try await LLMModelFactory.shared.loadContainer(
-                    configuration: config
+                    from: URL(fileURLWithPath: path),
+                    using: #huggingFaceTokenizerLoader()
                 )
                 self.container = newContainer
                 self.loadedModelPath = path

@@ -15,6 +15,12 @@ typedef NS_ENUM(NSInteger, SPSessionModeObjC) {
 - (void)rustBridgeDidReceiveInterimText:(NSString *)text;
 - (void)rustBridgeDidReceiveAsrFinalText:(NSString *)text;
 - (void)rustBridgeDidReceiveRewriteText:(NSString *)text;
+/// Delivered just before rustBridgeDidReceiveFinalText: with metadata about
+/// the session result (raw ASR text, provider name, whether LLM correction
+/// was actually applied). Used for history recording.
+- (void)rustBridgeDidReceiveSessionMetaWithAsrText:(NSString *)asrText
+                                          provider:(NSString *)provider
+                                        llmApplied:(BOOL)llmApplied;
 @end
 
 @interface SPRustBridge : NSObject
@@ -54,12 +60,13 @@ typedef NS_ENUM(NSInteger, SPSessionModeObjC) {
 /// Return supported local provider names (e.g. @[@"mlx", @"sherpa-onnx"]).
 - (NSArray<NSString *> *)supportedLocalProviders;
 
-/// Return supported LLM provider names (e.g. @[@"openai", @"mlx"]).
+/// Return supported LLM provider names (e.g. OpenAI, Anthropic, APFEL, MLX).
 - (NSArray<NSString *> *)supportedLlmProviders;
 
-/// Fetch remote model IDs from an OpenAI-compatible `{base_url}/models` endpoint.
+/// Fetch remote model IDs using a complete LLM profile so the core can apply
+/// the correct OpenAI or Anthropic authentication headers.
 /// Returns dictionary: { success: BOOL, models: NSArray<NSString *>, message: NSString }
-- (NSDictionary *)llmRemoteModelsForBaseURL:(NSString *)baseURL apiKey:(NSString *)apiKey;
+- (NSDictionary *)llmRemoteModelsForProfile:(NSDictionary *)profile;
 
 /// Scan all models and return array of dictionaries.
 /// Each dict: path, provider, description, repo, total_size, status (0/1/2)

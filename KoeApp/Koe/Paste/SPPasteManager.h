@@ -10,6 +10,11 @@
 /// The completion block is called after the paste takes effect.
 - (void)simulateUndoThenPasteWithCompletion:(void (^)(void))completion;
 
+/// Simulate a bare Return keypress via CGEvent injection. Used by the
+/// "auto Return after paste" option to submit the pasted text (e.g. send a
+/// chat message) without the user touching the keyboard.
+- (void)simulateReturnKey;
+
 /// Cancel any scheduled paste/undo blocks. Called on quit so that pending
 /// CGEventPost injections cannot leak into the user's target app after the
 /// hotkey monitor and event tap have been torn down.

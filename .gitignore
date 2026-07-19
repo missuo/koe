@@ -43,3 +43,8 @@ koe-core/target/
 # Environment / secrets
 .env
 .env.*
+
+# Lucky local session notes (not project content)
+.memory/
+KoeApp/build-ci/
+KoeApp/build-local/

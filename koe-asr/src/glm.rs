@@ -23,7 +23,8 @@ pub struct GlmAsrProvider {
     prompt: Option<String>,
     audio_buffer: Vec<u8>,
     pending_events: VecDeque<AsrEvent>,
-    response_stream: Option<Pin<Box<dyn Stream<Item = std::result::Result<Bytes, reqwest::Error>> + Send>>>,
+    response_stream:
+        Option<Pin<Box<dyn Stream<Item = std::result::Result<Bytes, reqwest::Error>> + Send>>>,
     finished: bool,
     connected: bool,
 }
@@ -86,7 +87,14 @@ fn wrap_wav(pcm: &[u8]) -> Vec<u8> {
 /// Extract text from a JSON value, searching common fields.
 fn extract_text_from_json(json: &serde_json::Value) -> Option<String> {
     // Try preferred keys
-    for key in &["text", "delta", "transcript", "result_text", "content", "utterance"] {
+    for key in &[
+        "text",
+        "delta",
+        "transcript",
+        "result_text",
+        "content",
+        "utterance",
+    ] {
         if let Some(val) = json.get(key).and_then(|v| v.as_str()) {
             if !val.is_empty() {
                 return Some(val.to_string());
@@ -178,7 +186,11 @@ impl AsrProvider for GlmAsrProvider {
         );
 
         self.connected = true;
-        log::info!("[GLM ASR] Configured: url={}, model={}", self.url, self.model);
+        log::info!(
+            "[GLM ASR] Configured: url={}, model={}",
+            self.url,
+            self.model
+        );
 
         // HTTP approach has no persistent connection, emit Connected immediately
         self.pending_events.push_back(AsrEvent::Connected);
@@ -191,7 +203,11 @@ impl AsrProvider for GlmAsrProvider {
             return Err(AsrError::Connection("not connected".into()));
         }
         self.audio_buffer.extend_from_slice(frame);
-        log::debug!("[GLM ASR] Buffered audio: {} bytes (total: {})", frame.len(), self.audio_buffer.len());
+        log::debug!(
+            "[GLM ASR] Buffered audio: {} bytes (total: {})",
+            frame.len(),
+            self.audio_buffer.len()
+        );
         Ok(())
     }
 
@@ -203,7 +219,8 @@ impl AsrProvider for GlmAsrProvider {
 
         if self.audio_buffer.is_empty() {
             log::warn!("[GLM ASR] No audio data to send");
-            self.pending_events.push_back(AsrEvent::Final(String::new()));
+            self.pending_events
+                .push_back(AsrEvent::Final(String::new()));
             return Ok(());
         }
 
@@ -214,7 +231,11 @@ impl AsrProvider for GlmAsrProvider {
 
         // Build WAV from buffered PCM
         let wav_data = wrap_wav(&self.audio_buffer);
-        log::info!("[GLM ASR] Uploading audio: {} bytes PCM → {} bytes WAV", self.audio_buffer.len(), wav_data.len());
+        log::info!(
+            "[GLM ASR] Uploading audio: {} bytes PCM → {} bytes WAV",
+            self.audio_buffer.len(),
+            wav_data.len()
+        );
 
         // Build multipart form
         let model_part = reqwest::multipart::Part::text(self.model.clone())

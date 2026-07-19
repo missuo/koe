@@ -75,6 +75,7 @@ Reasons:
 - Minimal visible GUI (menu bar icon, floating status overlay, and an optional settings window only when needed)
 - Support hold-to-talk, release-to-end
 - Support tap-to-start, tap-again-to-end
+- Support double-tap-to-start, single-tap-to-end for modifier-key workflows
 - Support streaming WebSocket speech recognition
 - Support LLM secondary error correction
 - Support user dictionary
@@ -800,10 +801,10 @@ hotkey:
   # Supported symbolic values: fn | left_option | right_option | left_command | right_command | left_control | right_control
   # Raw macOS keycode numbers are also allowed, for example 96 (F5) or 122 (F1).
   trigger_key: "fn"
-  cancel_key: "left_option"
+  trigger_mode: "hold"  # hold | toggle | double_tap
 ```
 
-> **Note:** The tap/hold threshold (180ms), audio framing, and paste timing are still hardcoded. Provider credentials, local model or locale selection, hotkeys, cue sounds, and prompt file paths are user-configurable. Advanced fields such as custom ASR headers, raw keycodes, and `llm.no_reasoning_control` are currently edited in `config.yaml`.
+> **Note:** The tap/hold threshold (180ms), audio framing, and the pre-paste/post-event stabilization waits are still hardcoded; the clipboard restoration delay is configurable via `clipboard.restore_delay_ms`. Provider credentials, local model or locale selection, hotkeys, cue sounds, and prompt file paths are user-configurable. Advanced fields such as custom ASR headers, raw keycodes, and `llm.no_reasoning_control` are currently edited in `config.yaml`.
 
 ### 14.2 Configuration Rules
 
@@ -815,8 +816,7 @@ hotkey:
 
 ### 14.3 Hotkey Behavior
 
-The hotkey layer now exposes both a configurable `trigger_key` and a separate
-`cancel_key`. Supported values are:
+The hotkey layer exposes a configurable `trigger_key`. Supported values are:
 
 - `fn`
 - `left_option`
@@ -829,12 +829,16 @@ The hotkey layer now exposes both a configurable `trigger_key` and a separate
 
 Behavior:
 
-- `trigger_key` supports both **hold to talk** and **tap to toggle**
-- `cancel_key` aborts the current session immediately without producing output
+- `trigger_mode` supports **hold to talk**, **tap to toggle**, and
+  **double tap to start / single tap to stop**
 - The tap/hold boundary remains fixed at **180ms**
-- If the configured trigger and cancel keys collide, the config loader normalizes them and persists a valid pair back to `config.yaml`
 
-When the system is already in hands-free recording (tap mode), the next trigger `keyDown` immediately ends the session without waiting for key release.
+In `double_tap` mode, the first tap does not activate the microphone. A second
+tap within the user's macOS double-click interval starts hands-free recording;
+an intervening key press cancels the candidate so normal Command shortcuts do
+not trigger dictation. When the system is already in hands-free recording, the
+next trigger `keyDown` immediately ends the session without waiting for key
+release.
 
 ## 15. `dictionary.txt` Design
 
@@ -1356,10 +1360,12 @@ Recommended default:
 
 After pasting:
 
-1. Wait for 1500ms
+1. Wait for the configured `clipboard.restore_delay_ms` (default 1500ms, range 0–60000; 0 restores immediately after the paste completion callback). The effective value is validated at config load, snapshotted per session, and shared by both automatic paste flows (normal final-text and experimental ASR-first)
 2. Check whether the current clipboard still contains the content written by this application
 3. If the user copied new content during this period, do not restore, to avoid overwriting the user's new clipboard contents
 4. If the clipboard is unchanged, restore to the pre-session contents
+
+Output that is intentionally delivered via the clipboard (missing Accessibility permission, prompt-template rewrites, or an ASR-first correction that could not be applied in place) is not restored.
 
 ### 20.14 Session End
 

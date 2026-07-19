@@ -20,6 +20,7 @@ koe-core = { path = "../koe-core", default-features = false }
 clap = { workspace = true, features = ["derive"] }
 indicatif.workspace = true
 reqwest = { workspace = true, default-features = false, features = ["json", "rustls-tls", "system-proxy"] }
+rusqlite = "0.32"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

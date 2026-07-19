@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Koe MLX</title>
+    <description>Updates for the app with on-device MLX model support (Apple Silicon).</description>
+    <language>en</language>
+    <item>
+      <title>Version 1.0.21</title>
+      <link>https://github.com/missuo/koe/releases/tag/v1.0.21</link>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li>Further hardened the phantom-keypress-on-quit fix: the hotkey event tap now runs in listen-only mode whenever nothing needs to be consumed (which is all the time for modifier triggers like Fn or Option), upgrading to a consuming tap only while the template selector's number shortcuts are on screen. Quitting after long real-world use previously could still emit phantom Fn events from the long-lived consuming tap's teardown — listen-only taps demonstrably never do this.</li>
+</ul>
+      ]]></description>
+      <sparkle:version>22</sparkle:version>
+      <sparkle:shortVersionString>1.0.21</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 15 Jul 2026 19:27:15 GMT</pubDate>
+      <enclosure url="https://github.com/missuo/koe/releases/download/v1.0.21/Koe-MLX-macOS-arm64.zip"
+        sparkle:edSignature="pIOk75sxN5bkFSrUGY9Y1kiz9+QXox7zm3aH7ahx4SuiXLmLfvsaErjScMMmAThtP67M5zDkzYXFb/vztmvIAQ=="
+        length="32630696"
+        type="application/octet-stream" />
+    </item>
+    <item>
+      <title>Version 1.0.20</title>
+      <link>https://github.com/missuo/koe/releases/tag/v1.0.20</link>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li>Fixed a regression introduced in 1.0.19 where a quick tap of the trigger key (Fn, Option, …) started dictation and immediately ended it — the trigger only survived if held noticeably long. Fast taps now reliably start and stop recording.</li>
+<li>Trigger handling no longer freezes while a modal dialog (such as a Sparkle update prompt) is on screen.</li>
+</ul>
+      ]]></description>
+      <sparkle:version>21</sparkle:version>
+      <sparkle:shortVersionString>1.0.20</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 15 Jul 2026 18:44:57 GMT</pubDate>
+      <enclosure url="https://github.com/missuo/koe/releases/download/v1.0.20/Koe-MLX-macOS-arm64.zip"
+        sparkle:edSignature="RctsQ7ED7z64cBfVuBQSb8MYf2SEyZA7fb37sUOjisbzK2unooQIIaBhOiaiqiHgVXV67y7/IF7htrYq+CpOAA=="
+        length="32628307"
+        type="application/octet-stream" />
+    </item>
+    <item>
+      <title>Version 1.0.19</title>
+      <link>https://github.com/missuo/koe/releases/tag/v1.0.19</link>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li>The in-app update dialog now shows what changed in the new version: Sparkle appcast entries carry the release's changelog section as formatted release notes (effective for updates released from this version on).</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Fixed the long-standing phantom-keypress-on-quit bug: quitting Koe after a period of use could fire other apps' Fn/Globe hotkeys (screenshot tools, other dictation apps). The hotkey event tap ran on the main thread, so main-thread stalls (ASR finalization, pasting) could swallow in-flight modifier events; WindowServer then accumulated stale modifier state and flushed corrective Fn key events into the session when the tap was destroyed at quit. The tap now runs on a dedicated thread that never stalls, and it is torn down before any slow shutdown work. This also fixes real keystrokes being silently dropped for 1–2 seconds while Koe was quitting.</li>
+<li>Pending synthetic paste events are now cancelled on every termination path (Sparkle update relaunch, logout, shutdown), not just the status-bar Quit.</li>
+</ul>
+      ]]></description>
+      <sparkle:version>20</sparkle:version>
+      <sparkle:shortVersionString>1.0.19</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 15 Jul 2026 18:15:56 GMT</pubDate>
+      <enclosure url="https://github.com/missuo/koe/releases/download/v1.0.19/Koe-MLX-macOS-arm64.zip"
+        sparkle:edSignature="WzwmA5LHb25NZwhe3AF3HwKoPEhE+e88MKn6IZ/fHMTQ0KSD9MMp0WffRN9bdx3L8aYlMAU4IKKWN03QxlwvCQ=="
+        length="32629734"
+        type="application/octet-stream" />
+    </item>
+    <item>
+      <title>Version 1.0.18</title>
+      <link>https://github.com/missuo/koe/releases/tag/v1.0.18</link>
+      <sparkle:version>19</sparkle:version>
+      <sparkle:shortVersionString>1.0.18</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 15 Jul 2026 16:53:16 GMT</pubDate>
+      <enclosure url="https://github.com/missuo/koe/releases/download/v1.0.18/Koe-MLX-macOS-arm64.zip"
+        sparkle:edSignature="/3/ZTWxDIKzpZT4heI4vlj9ENkueBUxhYxT+49l3nFyQSxafW62w97j/z62GYvvb9nbH3gdOPaT2f0ONoZUHBA=="
+        length="32628880"
+        type="application/octet-stream" />
+    </item>
+    <item>
+      <title>Version 1.0.17</title>
+      <link>https://github.com/missuo/koe/releases/tag/v1.0.17</link>
+      <sparkle:version>18</sparkle:version>
+      <sparkle:shortVersionString>1.0.17</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Tue, 14 Jul 2026 09:32:46 GMT</pubDate>
+      <enclosure url="https://github.com/missuo/koe/releases/download/v1.0.17/Koe-MLX-macOS-arm64.zip"
+        sparkle:edSignature="lpI7kuSJPw4kJf/cqv5Gfa/HTQO2lbxbnowL58fLy8/4CVhWufuOzy3WkJ6JuVnJwj5+WXRgbZzYht5s/aqOCA=="
+        length="32113141"
+        type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>

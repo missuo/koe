@@ -43,26 +43,6 @@
 "statusBar.menu.launchAtLogin" = "开机启动";
 "statusBar.menu.quit" = "退出 Koe";
 
-/* ─── 更新管理 ─── */
-"update.unavailable.title" = "无法检查更新";
-"update.unavailable.message" = "此版本没有配置更新源。";
-"update.checking.title" = "正在检查";
-"update.checking.message" = "Koe 正在检查更新。";
-"update.failed.title" = "无法检查更新";
-"update.failed.http" = "更新源返回了 HTTP %ld。";
-"update.invalidFeed.title" = "无效的更新源";
-"update.notCompatible.title" = "更新不兼容";
-"update.notCompatible.message" = "版本 %@ 需要 macOS %@ 或更高版本。";
-"update.upToDate.title" = "已是最新版本";
-"update.upToDate.message" = "Koe %@（%ld）已经是最新版本。";
-"update.available.title" = "有可用更新";
-"update.available.message" = "Koe %@";
-"update.available.buildSuffix" = "（%ld）";
-"update.available.body" = " 可供更新。\n\n当前版本：%@（%ld）。";
-"update.button.download" = "下载";
-"update.button.later" = "稍后";
-"update.button.skip" = "跳过此版本";
-"update.button.ok" = "好";
 
 /* ─── 通知 ─── */
 "notification.error.title" = "Koe 出错";

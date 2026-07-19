@@ -22,9 +22,9 @@
 	<key>CFBundleDisplayName</key>
 	<string>Koe</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.16</string>
+	<string>1.0.21</string>
 	<key>CFBundleVersion</key>
-	<string>17</string>
+	<string>22</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSApplicationCategoryType</key>
@@ -37,7 +37,13 @@
 	<string>Koe uses on-device speech recognition to transcribe your voice input.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<key>SPUpdateFeedURL</key>
-	<string>$(APP_UPDATE_FEED_URL)</string>
+	<key>SUFeedURL</key>
+	<string>$(APP_APPCAST_URL)</string>
+	<key>SUPublicEDKey</key>
+	<string></string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>21600</integer>
 </dict>
 </plist>

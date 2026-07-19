@@ -146,6 +146,34 @@ static CGEventSourceRef createPrivateEventSource(void) {
     NSLog(@"[Koe] Cmd+Z simulated");
 }
 
+- (void)simulateReturnKey {
+    if (self.cancelled) return;
+
+    CGEventSourceRef source = createPrivateEventSource();
+    if (!source) {
+        NSLog(@"[Koe] Failed to create event source for return");
+        return;
+    }
+
+    CGEventRef keyDown = CGEventCreateKeyboardEvent(source, (CGKeyCode)kVK_Return, true);
+    CGEventRef keyUp = CGEventCreateKeyboardEvent(source, (CGKeyCode)kVK_Return, false);
+
+    // A bare Return: clear all modifier flags so the private source cannot
+    // carry anything over, and so a user still holding the trigger modifier
+    // (e.g. Fn) cannot turn this into a modified keypress.
+    CGEventSetFlags(keyDown, 0);
+    CGEventSetFlags(keyUp, 0);
+
+    CGEventPost(kCGSessionEventTap, keyDown);
+    CGEventPost(kCGSessionEventTap, keyUp);
+
+    CFRelease(keyDown);
+    CFRelease(keyUp);
+    CFRelease(source);
+
+    NSLog(@"[Koe] Return simulated");
+}
+
 - (void)cancel {
     self.cancelled = YES;
 }

@@ -3,6 +3,7 @@
 
 static NSString *const kSelectedDeviceUIDKey = @"SPSelectedAudioDeviceUID";
 static NSString *const kSelectedDeviceNameKey = @"SPSelectedAudioDeviceName";
+static const NSTimeInterval kAudioDeviceQueryTimeoutSec = 3.0;
 
 #pragma mark - SPAudioInputDevice
 
@@ -23,7 +24,13 @@ static NSString *const kSelectedDeviceNameKey = @"SPSelectedAudioDeviceName";
 #pragma mark - SPAudioDeviceManager
 
 @interface SPAudioDeviceManager ()
+@property (nonatomic) dispatch_queue_t deviceQueryQueue;
+@property (nonatomic, strong) NSObject *deviceQueryLock;
+@property (nonatomic, assign) BOOL deviceQueryInFlight;
+@property (nonatomic, copy) NSArray<SPAudioInputDevice *> *cachedInputDevices;
+
 - (void)handleDeviceListChanged;
+- (NSArray<SPAudioInputDevice *> *)queryAvailableInputDevices;
 @end
 
 static OSStatus deviceListChangedCallback(AudioObjectID inObjectID,
@@ -39,7 +46,55 @@ static OSStatus deviceListChangedCallback(AudioObjectID inObjectID,
 
 @implementation SPAudioDeviceManager
 
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _deviceQueryQueue = dispatch_queue_create("nz.owo.koe.audio-device-query",
+                                                  DISPATCH_QUEUE_SERIAL);
+        _deviceQueryLock = [[NSObject alloc] init];
+        _cachedInputDevices = @[];
+    }
+    return self;
+}
+
 - (NSArray<SPAudioInputDevice *> *)availableInputDevices {
+    @synchronized (self.deviceQueryLock) {
+        if (self.deviceQueryInFlight) {
+            NSLog(@"[Koe] Audio device query already in flight; using cached devices");
+            return self.cachedInputDevices;
+        }
+        self.deviceQueryInFlight = YES;
+    }
+
+    __block BOOL completed = NO;
+    __block NSArray<SPAudioInputDevice *> *result = nil;
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+
+    dispatch_async(self.deviceQueryQueue, ^{
+        NSArray<SPAudioInputDevice *> *devices = [self queryAvailableInputDevices];
+        @synchronized (self.deviceQueryLock) {
+            self.cachedInputDevices = devices ?: @[];
+            result = self.cachedInputDevices;
+            completed = YES;
+            self.deviceQueryInFlight = NO;
+            dispatch_semaphore_signal(semaphore);
+        }
+    });
+
+    dispatch_semaphore_wait(
+        semaphore,
+        dispatch_time(DISPATCH_TIME_NOW,
+                      (int64_t)(kAudioDeviceQueryTimeoutSec * NSEC_PER_SEC)));
+
+    @synchronized (self.deviceQueryLock) {
+        if (completed) return result;
+        NSLog(@"[Koe] Audio device query timed out after %.0fs; using cached devices",
+              kAudioDeviceQueryTimeoutSec);
+        return self.cachedInputDevices;
+    }
+}
+
+- (NSArray<SPAudioInputDevice *> *)queryAvailableInputDevices {
     // Get all audio devices
     AudioObjectPropertyAddress devicesAddress = {
         .mSelector = kAudioHardwarePropertyDevices,
@@ -200,8 +255,8 @@ static OSStatus deviceListChangedCallback(AudioObjectID inObjectID,
         NSLog(@"[Koe] Selected audio device %@ not found, falling back to system default", selectedUID);
     }
 
-    // Return kAudioObjectUnknown so SPAudioCaptureManager lets AVAudioEngine
-    // use its own default device handling instead of explicitly setting one.
+    // Return kAudioObjectUnknown so SPAudioCaptureManager lets AudioQueue use
+    // the system default instead of explicitly binding a device.
     return kAudioObjectUnknown;
 }
 
@@ -215,12 +270,12 @@ static OSStatus deviceListChangedCallback(AudioObjectID inObjectID,
 }
 
 - (void)startListening {
-    AudioObjectPropertyAddress address = {
+    AudioObjectPropertyAddress devicesAddress = {
         .mSelector = kAudioHardwarePropertyDevices,
         .mScope = kAudioObjectPropertyScopeGlobal,
         .mElement = kAudioObjectPropertyElementMain
     };
-    OSStatus status = AudioObjectAddPropertyListener(kAudioObjectSystemObject, &address,
+    OSStatus status = AudioObjectAddPropertyListener(kAudioObjectSystemObject, &devicesAddress,
                                                       deviceListChangedCallback,
                                                       (__bridge void *)self);
     if (status != noErr) {
@@ -228,15 +283,35 @@ static OSStatus deviceListChangedCallback(AudioObjectID inObjectID,
     } else {
         NSLog(@"[Koe] Audio device change listener registered");
     }
+
+    AudioObjectPropertyAddress defaultInputAddress = {
+        .mSelector = kAudioHardwarePropertyDefaultInputDevice,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain
+    };
+    status = AudioObjectAddPropertyListener(kAudioObjectSystemObject, &defaultInputAddress,
+                                             deviceListChangedCallback,
+                                             (__bridge void *)self);
+    if (status != noErr) {
+        NSLog(@"[Koe] Failed to register default input change listener: %d", (int)status);
+    }
 }
 
 - (void)stopListening {
-    AudioObjectPropertyAddress address = {
+    AudioObjectPropertyAddress devicesAddress = {
         .mSelector = kAudioHardwarePropertyDevices,
         .mScope = kAudioObjectPropertyScopeGlobal,
         .mElement = kAudioObjectPropertyElementMain
     };
-    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &address,
+    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &devicesAddress,
+                                       deviceListChangedCallback,
+                                       (__bridge void *)self);
+    AudioObjectPropertyAddress defaultInputAddress = {
+        .mSelector = kAudioHardwarePropertyDefaultInputDevice,
+        .mScope = kAudioObjectPropertyScopeGlobal,
+        .mElement = kAudioObjectPropertyElementMain
+    };
+    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &defaultInputAddress,
                                        deviceListChangedCallback,
                                        (__bridge void *)self);
 }

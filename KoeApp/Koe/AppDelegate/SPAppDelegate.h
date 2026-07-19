@@ -16,7 +16,7 @@
 @class SPHistoryManager;
 @class SPOverlayPanel;
 @class SPSetupWizardWindowController;
-@class SPUpdateManager;
+@class SPUStandardUpdaterController;
 
 @interface SPAppDelegate : NSObject <NSApplicationDelegate, SPRustBridgeDelegate, SPStatusBarDelegate, SPHotkeyMonitorDelegate, SPSetupWizardDelegate>
 
@@ -35,7 +35,7 @@
 @property (nonatomic, strong) SPCuePlayer *cuePlayer;
 @property (nonatomic, strong) SPStatusBarManager *statusBarManager;
 @property (nonatomic, strong) SPOverlayPanel *overlayPanel;
-@property (nonatomic, strong) SPUpdateManager *updateManager;
+@property (nonatomic, strong) SPUStandardUpdaterController *updaterController;
 @property (nonatomic, strong) dispatch_source_t configWatcher;
 @property (nonatomic, strong) SPSetupWizardWindowController *setupWizard;
 @property (nonatomic, copy) NSString *sessionState;

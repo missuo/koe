@@ -26,6 +26,14 @@ impl TranscriptAggregator {
         if !text.is_empty() {
             if self.interim_history.last().map(|s| s.as_str()) != Some(text) {
                 self.interim_history.push(text.to_string());
+                // Keep the tail; only the last ~10 entries are ever consumed
+                // (see interim_history()), so bounding at 64 is generous and
+                // prevents unbounded growth during very long dictation sessions.
+                const MAX_HISTORY: usize = 64;
+                if self.interim_history.len() > MAX_HISTORY {
+                    let drop = self.interim_history.len() - MAX_HISTORY;
+                    self.interim_history.drain(..drop);
+                }
             }
             self.interim_text = text.to_string();
         }
