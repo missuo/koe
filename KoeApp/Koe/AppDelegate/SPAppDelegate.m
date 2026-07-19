@@ -420,6 +420,7 @@ static BOOL configFlagEnabledWithDefault(const char *keyPath, BOOL defaultValue)
     [self.audioCaptureManager cancelPreCapture];
     if (self.preCaptureInterruptedPendingSessionEnd) {
         self.preCaptureInterruptedPendingSessionEnd = NO;
+        self.sessionWantsAudioCapture = NO;
         [self.audioCaptureManager stopCapture];
         [self.rustBridge endSession];
     }
@@ -938,6 +939,10 @@ static BOOL configFlagEnabledWithDefault(const char *keyPath, BOOL defaultValue)
 
     self.llmCorrectionInProgress = NO;
     [self deactivateRawAsrFallbackInteraction];
+    // Consume the triggering event even if the Rust send failed: a failure
+    // means the correction already finished and its final text is in flight,
+    // so letting the Return through would type a stray newline right before
+    // the paste lands.
     return YES;
 }
 

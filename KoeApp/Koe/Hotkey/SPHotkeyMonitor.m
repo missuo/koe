@@ -49,7 +49,9 @@ typedef NS_ENUM(NSInteger, SPHotkeyState) {
 // short-lived or listen-only taps.
 @property (nonatomic, assign) BOOL tapWantsActive;
 @property (nonatomic, assign, readwrite) BOOL canConsumeGlobalKeyEvents;
-@property (nonatomic, strong) NSMutableSet<NSNumber *> *suppressedNumberKeyCodes;
+// Key codes whose keyUp must also be swallowed after a handled keyDown
+// (template number shortcuts and the raw-ASR-accept Return key).
+@property (nonatomic, strong) NSMutableSet<NSNumber *> *suppressedKeyCodes;
 @property (nonatomic, strong) NSMutableSet<NSNumber *> *suppressedHotkeyKeyCodes;
 @property (nonatomic, strong) dispatch_block_t pendingModifierReleaseBlock;
 
@@ -62,7 +64,7 @@ typedef NS_ENUM(NSInteger, SPHotkeyState) {
 - (BOOL)hasUnconfirmedPreCapture;
 - (BOOL)handleNumberKeyWithKeyCode:(NSInteger)keyCode;
 - (BOOL)handleEnterKeyWithKeyCode:(NSInteger)keyCode;
-- (BOOL)consumeSuppressedNumberKeyForKeyCode:(NSInteger)keyCode isKeyUp:(BOOL)isKeyUp;
+- (BOOL)consumeSuppressedKeyForKeyCode:(NSInteger)keyCode isKeyUp:(BOOL)isKeyUp;
 - (BOOL)isSuppressedHotkeyKeyCode:(NSNumber *)keyCodeNumber;
 - (void)addSuppressedHotkeyKeyCode:(NSNumber *)keyCodeNumber;
 - (BOOL)removeSuppressedHotkeyKeyCodeIfPresent:(NSNumber *)keyCodeNumber;
@@ -151,7 +153,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         BOOL isRepeat = CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat) != 0;
         BOOL suppressedTriggerKey = [monitor isSuppressedHotkeyKeyCode:keyCodeNumber];
 
-        if ([monitor consumeSuppressedNumberKeyForKeyCode:keyCode isKeyUp:(type == kCGEventKeyUp)]) {
+        if ([monitor consumeSuppressedKeyForKeyCode:keyCode isKeyUp:(type == kCGEventKeyUp)]) {
             return monitor.canConsumeGlobalKeyEvents ? NULL : event;
         }
 
@@ -250,7 +252,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         _targetModifierFlag = 0x00800000; // NX_SECONDARYFNMASK
         _targetMatchKind = SPHotkeyMatchKindModifierOnly;
         _canConsumeGlobalKeyEvents = NO;
-        _suppressedNumberKeyCodes = [NSMutableSet set];
+        _suppressedKeyCodes = [NSMutableSet set];
         _suppressedHotkeyKeyCodes = [NSMutableSet set];
     }
     return self;
@@ -524,7 +526,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
     if (handled) {
         @synchronized (self) {
-            [self.suppressedNumberKeyCodes addObject:@(keyCode)];
+            [self.suppressedKeyCodes addObject:@(keyCode)];
         }
     }
     return handled;
@@ -579,20 +581,20 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
     if (handled) {
         @synchronized (self) {
-            [self.suppressedNumberKeyCodes addObject:@(keyCode)];
+            [self.suppressedKeyCodes addObject:@(keyCode)];
         }
     }
     return handled;
 }
 
-- (BOOL)consumeSuppressedNumberKeyForKeyCode:(NSInteger)keyCode isKeyUp:(BOOL)isKeyUp {
+- (BOOL)consumeSuppressedKeyForKeyCode:(NSInteger)keyCode isKeyUp:(BOOL)isKeyUp {
     NSNumber *keyCodeNumber = @(keyCode);
     @synchronized (self) {
-        if (![self.suppressedNumberKeyCodes containsObject:keyCodeNumber]) {
+        if (![self.suppressedKeyCodes containsObject:keyCodeNumber]) {
             return NO;
         }
         if (isKeyUp) {
-            [self.suppressedNumberKeyCodes removeObject:keyCodeNumber];
+            [self.suppressedKeyCodes removeObject:keyCodeNumber];
         }
     }
     return YES;
@@ -667,7 +669,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         if (event.type == NSEventTypeKeyDown && ![self isTargetKeyCode:keyCode]) {
             [self cancelDoubleTapCandidateForInterveningInput];
         }
-        if ([self consumeSuppressedNumberKeyForKeyCode:keyCode isKeyUp:(event.type == NSEventTypeKeyUp)]) {
+        if ([self consumeSuppressedKeyForKeyCode:keyCode isKeyUp:(event.type == NSEventTypeKeyUp)]) {
             return YES;
         }
         if ([event isARepeat]) return NO;
@@ -733,7 +735,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     self.state = SPHotkeyStateIdle;
     self.canConsumeGlobalKeyEvents = NO;
     @synchronized (self) {
-        [self.suppressedNumberKeyCodes removeAllObjects];
+        [self.suppressedKeyCodes removeAllObjects];
         [self.suppressedHotkeyKeyCodes removeAllObjects];
     }
     if (hadPendingTrigger) {
@@ -1000,7 +1002,7 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     self.triggerDown = NO;
     self.state = SPHotkeyStateIdle;
     @synchronized (self) {
-        [self.suppressedNumberKeyCodes removeAllObjects];
+        [self.suppressedKeyCodes removeAllObjects];
         [self.suppressedHotkeyKeyCodes removeAllObjects];
     }
     if (hadPendingTrigger) {

@@ -135,31 +135,6 @@ asrCustomHeaders(NSString *providerKey) {
   return out.count > 0 ? out : nil;
 }
 
-static BOOL configBoolValue(NSString *keyPath, BOOL defaultValue) {
-    NSString *rawValue = configGet(keyPath) ?: @"";
-    NSString *value = [[rawValue
-        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
-    if (value.length == 0) {
-        return defaultValue;
-    }
-
-    if ([value isEqualToString:@"1"] ||
-        [value isEqualToString:@"true"] ||
-        [value isEqualToString:@"yes"] ||
-        [value isEqualToString:@"on"]) {
-        return YES;
-    }
-
-    if ([value isEqualToString:@"0"] ||
-        [value isEqualToString:@"false"] ||
-        [value isEqualToString:@"no"] ||
-        [value isEqualToString:@"off"]) {
-        return NO;
-    }
-
-    return defaultValue;
-}
-
 static NSInteger clampedOverlayFontSizeValue(NSInteger value) {
   return MAX(kOverlayFontSizeMin, MIN(kOverlayFontSizeMax, value));
 }
@@ -3063,10 +3038,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   [self updateTemplateActionButtons];
 }
 
-/// Write current editor fields into templatesData[index] (in-memory only).
-/// File-based templates are NOT written to disk here — that happens in
-/// commitFileBasedTemplates, which is called during the save flow after
-/// the config snapshot has been taken so Cancel/rollback still works.
+/// Write current editor fields into templatesData[index]. Safe to call with -1.
 - (void)flushEditorToIndex:(NSInteger)index {
   if (index < 0 || index >= (NSInteger)self.templatesData.count)
     return;
@@ -3122,42 +3094,6 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   [templateData removeObjectForKey:@"system_prompt_path"];
   templateData[kTemplateOriginalPromptKey] = editedPrompt;
   self.templateEditorDirty = NO;
-}
-
-/// Write file-based template changes to disk. Called during save after
-/// the config snapshot is taken, so that Cancel / rollback is still possible.
-/// Returns YES if all writes succeeded.
-- (BOOL)commitFileBasedTemplates {
-    BOOL allOk = YES;
-    for (NSMutableDictionary *templateData in self.templatesData) {
-        NSString *promptPath = [templateData[@"system_prompt_path"] isKindOfClass:[NSString class]]
-            ? templateData[@"system_prompt_path"]
-            : nil;
-        if (promptPath.length == 0) continue;
-        // Only file-based templates that have no inline system_prompt
-        if ([templateData[@"system_prompt"] isKindOfClass:[NSString class]]) continue;
-
-        NSString *editedPrompt = [templateData[kTemplateEditablePromptKey] isKindOfClass:[NSString class]]
-            ? templateData[kTemplateEditablePromptKey]
-            : @"";
-        NSString *originalPrompt = [templateData[kTemplateOriginalPromptKey] isKindOfClass:[NSString class]]
-            ? templateData[kTemplateOriginalPromptKey]
-            : @"";
-
-        if ([editedPrompt isEqualToString:originalPrompt]) continue;
-
-        NSString *resolvedPath = promptPath.isAbsolutePath
-            ? promptPath
-            : [configDirPath() stringByAppendingPathComponent:promptPath];
-        NSError *writeError = nil;
-        if ([editedPrompt writeToFile:resolvedPath atomically:YES encoding:NSUTF8StringEncoding error:&writeError]) {
-            templateData[kTemplateOriginalPromptKey] = editedPrompt;
-        } else {
-            NSLog(@"[Koe] Failed to write template file %@: %@", resolvedPath, writeError.localizedDescription);
-            allOk = NO;
-        }
-    }
-    return allOk;
 }
 
 /// Load templatesData[index] into the editor fields. -1 clears everything.
