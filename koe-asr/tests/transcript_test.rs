@@ -82,6 +82,24 @@ fn live_preview_uses_definite_before_any_final() {
 }
 
 #[test]
+fn final_after_definite_replaces_cleanly_when_revised_mid_string() {
+    // A second-pass definite extends the committed view, then the third-pass
+    // final revises a character the definite had confirmed (八 → 吧). The
+    // final must wholesale-replace the committed text; baking the definite
+    // into final_text would defeat the prefix check in merge_committed_text
+    // and duplicate the transcript via the overlap fallback.
+    let mut agg = TranscriptAggregator::new();
+
+    agg.update_final("今天天气不错。");
+    agg.update_definite("今天天气不错。我们去公园八");
+    assert_eq!(agg.live_preview(), "今天天气不错。我们去公园八");
+
+    agg.update_final("今天天气不错。我们去公园吧。");
+    assert_eq!(agg.best_text(), "今天天气不错。我们去公园吧。");
+    assert_eq!(agg.live_preview(), "今天天气不错。我们去公园吧。");
+}
+
+#[test]
 fn live_preview_keeps_updating_when_new_segment_shares_a_char_with_prior_final() {
     // Reproduces the "live caption freezes after a pause" bug. Two segments
     // were finalized cumulatively, then a third segment begins whose first

@@ -5,7 +5,6 @@ pub struct TranscriptAggregator {
     definite_text: String,
     final_text: String,
     has_final: bool,
-    has_definite: bool,
     interim_history: Vec<String>,
 }
 
@@ -16,7 +15,6 @@ impl TranscriptAggregator {
             definite_text: String::new(),
             final_text: String::new(),
             has_final: false,
-            has_definite: false,
             interim_history: Vec::new(),
         }
     }
@@ -39,52 +37,64 @@ impl TranscriptAggregator {
         }
     }
 
-    /// Live preview that combines committed final text with the in-progress
-    /// interim. After a pause, providers like DoubaoIME emit `Interim` events
-    /// containing only the new segment, so showing `interim_text` alone would
-    /// hide previously-finalized sentences. Merge them with the same
-    /// overlap-trimming logic used for final segments.
+    /// Live preview that combines the committed text view with the
+    /// in-progress interim. After a pause, providers like DoubaoIME emit
+    /// `Interim` events containing only the new segment, so showing
+    /// `interim_text` alone would hide previously-finalized sentences. Merge
+    /// them with the same overlap-trimming logic used for final segments.
     pub fn live_preview(&self) -> String {
-        let committed_text = if !self.final_text.is_empty() {
-            self.final_text.as_str()
-        } else if !self.definite_text.is_empty() {
-            self.definite_text.as_str()
-        } else {
-            ""
-        };
+        let committed_text = self.committed_text();
 
         if committed_text.is_empty() {
             return self.interim_text.clone();
         }
         if self.interim_text.is_empty() {
-            return committed_text.to_string();
+            return committed_text;
         }
-        if self.interim_text.starts_with(committed_text) {
+        if self.interim_text.starts_with(&committed_text) {
             return self.interim_text.clone();
         }
         if committed_text.starts_with(&self.interim_text) {
-            return committed_text.to_string();
+            return committed_text;
         }
-        let overlap = longest_overlap(committed_text, &self.interim_text);
-        let mut out = committed_text.to_string();
+        let overlap = longest_overlap(&committed_text, &self.interim_text);
+        let mut out = committed_text;
         out.push_str(&self.interim_text[overlap..]);
+        out
+    }
+
+    /// Committed text view: the third-pass `final_text` extended by any
+    /// second-pass `definite_text` that reaches beyond it, merged at read
+    /// time. `final_text` itself is never contaminated by second-pass output:
+    /// second- and third-pass text can differ mid-string, and baking a
+    /// definite into `final_text` would defeat the wholesale-replace path of
+    /// `merge_committed_text` for the next cumulative final, duplicating
+    /// content in the delivered transcript via the overlap fallback.
+    fn committed_text(&self) -> String {
+        if self.final_text.is_empty() {
+            return self.definite_text.clone();
+        }
+        if self.definite_text.is_empty() {
+            return self.final_text.clone();
+        }
+        let mut out = self.final_text.clone();
+        merge_committed_text(&mut out, &self.definite_text);
         out
     }
 
     /// Update with a definite result from two-pass recognition.
     ///
-    /// A definite result is stable enough for live preview purposes even if it
-    /// is not the session's terminal `Final`. Merge it into the committed text
-    /// stream so later confirmed segments are not hidden behind an earlier
-    /// final segment.
+    /// A definite result is stable enough for preview and delivery purposes
+    /// even if it is not the session's terminal `Final`. It is kept separate
+    /// from `final_text` and merged into the committed view at read time
+    /// (see `committed_text`) so later confirmed segments are not hidden
+    /// behind an earlier final segment.
     pub fn update_definite(&mut self, text: &str) {
         if !text.is_empty() {
-            self.has_definite = true;
-            if self.has_final {
-                merge_committed_text(&mut self.final_text, text);
-                self.definite_text = self.final_text.clone();
-            } else {
-                self.definite_text = text.to_string();
+            self.definite_text = text.to_string();
+            if !self.has_final {
+                // The definite supersedes the interim it confirms; the next
+                // segment's interim re-arrives immediately.
                 self.interim_text.clear();
             }
             log::info!("definite segment confirmed: {} chars", text.len());
@@ -99,31 +109,27 @@ impl TranscriptAggregator {
     /// the new content or replay earlier content. Neither pure replace nor
     /// pure append is correct — we merge by prefix / suffix-overlap instead.
     pub fn update_final(&mut self, text: &str) {
-        let had_final = self.has_final;
         self.has_final = true;
         if text.is_empty() {
             return;
         }
-        if had_final {
-            merge_committed_text(&mut self.final_text, text);
-        } else {
-            self.final_text = text.to_string();
-        }
-        self.definite_text = self.final_text.clone();
+        merge_committed_text(&mut self.final_text, text);
+        // The final supersedes the definite that preceded it; drop it so a
+        // divergent second-pass leftover cannot distort the committed view.
+        self.definite_text.clear();
         // The segment this interim was tracking is now finalized; clear it so
         // the next segment's live preview starts clean.
         self.interim_text.clear();
     }
 
     /// Get the best available text.
-    /// Priority: final > definite > interim.
-    pub fn best_text(&self) -> &str {
-        if self.has_final && !self.final_text.is_empty() {
-            &self.final_text
-        } else if self.has_definite && !self.definite_text.is_empty() {
-            &self.definite_text
+    /// Priority: committed (final extended by definite) > interim.
+    pub fn best_text(&self) -> String {
+        let committed = self.committed_text();
+        if !committed.is_empty() {
+            committed
         } else {
-            &self.interim_text
+            self.interim_text.clone()
         }
     }
 

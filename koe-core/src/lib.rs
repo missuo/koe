@@ -956,7 +956,7 @@ async fn run_session(
         return;
     }
 
-    let asr_text = aggregator.best_text().to_string();
+    let asr_text = aggregator.best_text();
     if asr_text.trim().is_empty() {
         // A silent recording is a valid no-op, not a user-visible failure.
         // Exit quietly so the app returns to idle without error sounds or alerts.
