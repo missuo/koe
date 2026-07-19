@@ -644,18 +644,21 @@ static BOOL configFlagEnabledWithDefault(const char *keyPath, BOOL defaultValue)
         [self.clipboardManager cancelPendingRestore];
         [self.clipboardManager writeText:text];
 
-        NSString *displayText = text;
+        BOOL showCopiedBadge = NO;
         NSTimeInterval lingerDuration = 0;
         if (!shouldAutoPaste) {
             NSLog(@"[Koe] Auto-paste disabled — processed text copied to clipboard only");
-            displayText = [text stringByAppendingString:@"  ✓ Copied"];
+            showCopiedBadge = YES;
             lingerDuration = kManualPasteResultLingerDuration;
         } else {
             NSLog(@"[Koe] Accessibility not granted — text copied to clipboard only");
         }
 
-        [self.overlayPanel updateDisplayText:displayText];
+        [self.overlayPanel updateDisplayText:text];
         [self.overlayPanel updateState:@"pasting"];
+        if (showCopiedBadge) {
+            [self.overlayPanel showResultBadge:@"✓ Copied"];
+        }
         [self.statusBarManager updateState:@"idle"];
         [self showPromptTemplateButtonsIfNeededOrDismissWithLingerDuration:lingerDuration];
     }
@@ -843,8 +846,8 @@ static BOOL configFlagEnabledWithDefault(const char *keyPath, BOOL defaultValue)
         [self.clipboardManager cancelPendingRestore];
         [self.clipboardManager writeText:text];
         [self.statusBarManager updateState:@"idle"];
-        [self.overlayPanel updateDisplayText:[text stringByAppendingString:@"  ✓ Copied"]];
         [self.overlayPanel updateState:@"pasting"];
+        [self.overlayPanel showResultBadge:@"✓ Copied"];
         [self.overlayPanel lingerAndDismiss];
     }
 
@@ -870,8 +873,9 @@ static BOOL configFlagEnabledWithDefault(const char *keyPath, BOOL defaultValue)
 
     // Show result with "Copied" indicator
     [self.statusBarManager updateState:@"idle"];
-    [self.overlayPanel updateDisplayText:[text stringByAppendingString:@"  ✓ Copied"]];
+    [self.overlayPanel updateDisplayText:text];
     [self.overlayPanel updateState:@"pasting"];
+    [self.overlayPanel showResultBadge:@"✓ Copied"];
     [self.overlayPanel lingerAndDismiss];
 }
 

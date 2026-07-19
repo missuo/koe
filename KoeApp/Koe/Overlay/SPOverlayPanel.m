@@ -56,6 +56,10 @@ static const NSTimeInterval kDiffHighlightDuration = 0.8;  // How long to show d
 static const NSTimeInterval kDiffFadeSteps = 8;             // Animation steps for fading
 static const NSInteger kDiffMaxCharacters = 500;            // Beyond this, fall back to crossfade
 
+// ── Trailing status badge ("✓ Copied") ──────────────────────
+static const CGFloat kBadgeHorizontalPad = 7.0;
+static const CGFloat kBadgeVerticalPad   = 3.0;
+
 // ── Word Diff Algorithm ─────────────────────────────────────
 
 typedef NS_ENUM(NSInteger, SPDiffOp) {
@@ -279,6 +283,14 @@ static CGFloat SPOverlayHorizontalPadForFont(NSFont *font) {
 static CGFloat SPOverlayIconTextGapForFont(NSFont *font) {
     CGFloat lineHeight = SPOverlayLineHeightForFont(font);
     return ceil(MAX(6.0, MIN(10.0, lineHeight * 0.24)));
+}
+
+// The badge is UI chrome, not transcript content, so it always uses the
+// system font regardless of the configured transcript font family.
+static NSFont *SPOverlayBadgeFontForContentFont(NSFont *contentFont) {
+    CGFloat contentSize = contentFont ? contentFont.pointSize : kDefaultTextFontSize;
+    return [NSFont systemFontOfSize:fmax(9.0, round(contentSize * 0.82))
+                             weight:NSFontWeightSemibold];
 }
 
 static CGFloat SPOverlayTextTopPadForFont(NSFont *font) {
@@ -556,8 +568,14 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 /// When YES, refreshDisplayedTextAnimated: will not overwrite textStorage
 /// (the diff animation manages the attributed string directly).
 @property (nonatomic, assign) BOOL diffAnimationActive;
+/// Small capsule badge (e.g. "✓ Copied") drawn at the trailing edge of the
+/// pill. Chrome, not transcript: it never enters the text storage, so diff
+/// animations and text measurement never see it. nil hides the badge.
+@property (nonatomic, copy)   NSString      *badgeText;
 - (void)updateTextAttributes;
 - (void)refreshDisplayedTextAnimated:(BOOL)animated;
+/// Horizontal space the badge occupies (badge width + gap); 0 when hidden.
+- (CGFloat)badgeAreaWidth;
 @end
 
 @interface SPOverlayContentView ()
@@ -627,6 +645,26 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     return (self.interimText.length > 0) ? self.interimText : self.statusText;
 }
 
+- (void)setBadgeText:(NSString *)badgeText {
+    _badgeText = [badgeText copy];
+    [self setNeedsLayout:YES];
+    [self setNeedsDisplay:YES];
+}
+
+- (NSSize)badgeSize {
+    if (self.badgeText.length == 0) return NSZeroSize;
+    NSFont *font = SPOverlayBadgeFontForContentFont([self contentFont]);
+    NSSize textSize = [self.badgeText sizeWithAttributes:@{NSFontAttributeName: font}];
+    return NSMakeSize(ceil(textSize.width) + 2.0 * kBadgeHorizontalPad,
+                      ceil(textSize.height) + 2.0 * kBadgeVerticalPad);
+}
+
+- (CGFloat)badgeAreaWidth {
+    NSSize size = [self badgeSize];
+    if (size.width <= 0) return 0.0;
+    return size.width + SPOverlayIconTextGapForFont([self contentFont]);
+}
+
 - (void)setLayoutWidth:(CGFloat)layoutWidth {
     _layoutWidth = layoutWidth;
     [self setNeedsLayout:YES];
@@ -667,7 +705,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         ? self.textViewportHeight
         : fmax(1.0, NSHeight(self.bounds) - topPad - bottomPad);
     CGFloat textX = horizontalPad + (self.iconAreaWidth > 0 ? self.iconAreaWidth : 28.0) + iconGap;
-    CGFloat textWidth = fmax(1.0, effectiveWidth - textX - trailingPad);
+    CGFloat textWidth = fmax(1.0, effectiveWidth - textX - trailingPad - [self badgeAreaWidth]);
     return NSMakeRect(textX, bottomPad, textWidth, effectiveViewportHeight);
 }
 
@@ -769,6 +807,29 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
             break;
         default:
             break;
+    }
+
+    // ── Trailing status badge (e.g. "✓ Copied") ──
+    if (self.badgeText.length > 0) {
+        NSSize badgeSize = [self badgeSize];
+        CGFloat trailingPad = SPOverlayTextTrailingPadForFont([self contentFont]);
+        NSRect badgeRect = NSMakeRect(NSWidth(bounds) - trailingPad - badgeSize.width,
+                                      round((NSHeight(bounds) - badgeSize.height) / 2.0),
+                                      badgeSize.width,
+                                      badgeSize.height);
+        [[NSColor colorWithWhite:1.0 alpha:0.14] setFill];
+        [[NSBezierPath bezierPathWithRoundedRect:badgeRect
+                                         xRadius:badgeSize.height / 2.0
+                                         yRadius:badgeSize.height / 2.0] fill];
+
+        NSDictionary *badgeAttrs = @{
+            NSFontAttributeName: SPOverlayBadgeFontForContentFont([self contentFont]),
+            NSForegroundColorAttributeName: [NSColor colorWithWhite:1.0 alpha:0.92],
+        };
+        NSSize textSize = [self.badgeText sizeWithAttributes:badgeAttrs];
+        [self.badgeText drawAtPoint:NSMakePoint(NSMidX(badgeRect) - textSize.width / 2.0,
+                                                NSMidY(badgeRect) - textSize.height / 2.0)
+                     withAttributes:badgeAttrs];
     }
 }
 
@@ -1325,6 +1386,7 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
     [self clearLingerTimer];
     [self setRawAsrFallbackClickEnabled:NO];
     [self setMainPanelInteractive:NO];
+    self.contentView.badgeText = nil;
     self.mainPanelHovered = NO;
     self.templateBarHovered = NO;
 
@@ -1422,6 +1484,12 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
 - (void)setRawAsrFallbackClickEnabled:(BOOL)enabled {
     _rawAsrFallbackClickEnabled = enabled;
     [self setMainPanelInteractive:enabled];
+}
+
+- (void)showResultBadge:(NSString *)badgeText {
+    self.contentView.badgeText = badgeText;
+    [self resizeAndCenterAnimated:YES];
+    [self.contentView setNeedsDisplay:YES];
 }
 
 - (void)cancelDiffAnimation {
@@ -1935,10 +2003,11 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
     CGFloat iconGap = SPOverlayIconTextGapForFont(font);
     CGFloat trailingPad = SPOverlayTextTrailingPadForFont(font);
     CGFloat iconSpace = horizontalPad + [self iconAreaWidth] + iconGap;
+    CGFloat badgeSpace = [self.contentView badgeAreaWidth];
 
     // 1. Determine natural single-line width
     CGFloat naturalW = [str size].width;
-    CGFloat desiredW = iconSpace + naturalW + trailingPad;
+    CGFloat desiredW = iconSpace + naturalW + trailingPad + badgeSpace;
 
     // 2. Clamp to screen/max limits
     NSScreen *screen = [NSScreen mainScreen];
@@ -1961,7 +2030,7 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
             pillW = fmax(pillW, self.sessionMaxWidth);
         }
 
-        CGFloat textMaxW = fmax(1.0, pillW - iconSpace - trailingPad);
+        CGFloat textMaxW = fmax(1.0, pillW - iconSpace - trailingPad - badgeSpace);
         CGFloat measuredTextHeight = SPOverlayMeasureTextHeight(displayText, font, textMaxW);
 
         if (usesScrollingTranscriptLayout) {
@@ -2075,6 +2144,7 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
     [self stopAnimation];
     [self setRawAsrFallbackClickEnabled:NO];
     [self setMainPanelInteractive:NO];
+    self.contentView.badgeText = nil;
 
     if (!self.panel.isVisible || self.panel.alphaValue <= 0.01) {
         [self.panel orderOut:nil];

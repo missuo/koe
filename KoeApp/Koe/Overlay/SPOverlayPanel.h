@@ -30,6 +30,12 @@
 /// Enable clicking the main subtitle bubble to accept the raw ASR result.
 - (void)setRawAsrFallbackClickEnabled:(BOOL)enabled;
 
+/// Show a small capsule badge (e.g. "✓ Copied") at the trailing edge of the
+/// pill. The badge is chrome, not transcript: it stays out of the display
+/// text, so diff animations and text measurement never see it. Cleared on
+/// every state change and when the overlay hides; call after updateState:.
+- (void)showResultBadge:(NSString *)badgeText;
+
 /// Dismiss the overlay after a dynamic linger period based on text length.
 - (void)lingerAndDismiss;
 /// Dismiss the overlay after a caller-specified linger duration (seconds).
