@@ -5,6 +5,31 @@
     <description>Updates for the app with on-device MLX model support (Apple Silicon).</description>
     <language>en</language>
     <item>
+      <title>Version 1.0.22</title>
+      <link>https://github.com/missuo/koe/releases/tag/v1.0.22</link>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li>Added an LLM auto-paste toggle (<code>llm.auto_paste_processed_text</code>, on by default) in the LLM pane. When off, the processed text is copied to the clipboard and the overlay shows it with a "✓ Copied" badge instead of pasting into the focused app — for workflows where you want to review before inserting.</li>
+<li>While the LLM correction is running ("Thinking…"), you can now accept the raw ASR transcript immediately by pressing Return or clicking the overlay. The correction is cancelled and the raw text is delivered right away — useful when the correction is slow and the transcript is already good enough.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>The overlay pill no longer shows blank rows during voice input. Two causes fixed: the transcript document kept a stale (taller) height when the live transcript shrank, pinning the leftover space into view; and trailing whitespace/newlines in ASR or LLM output rendered as phantom empty lines.</li>
+<li>The live caption no longer freezes after a speech pause when a new sentence happens to begin with the same character as the previous one (DoubaoIME segment tracking).</li>
+<li>GLM and MiMo transcriptions no longer lose results at stream end: internal streaming state was reset between reads, which could drop the final transcript (and any updates buffered in the same network read) — most visible as a session ending with no text despite a successful recognition.</li>
+</ul>
+      ]]></description>
+      <sparkle:version>23</sparkle:version>
+      <sparkle:shortVersionString>1.0.22</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Sun, 19 Jul 2026 11:22:55 GMT</pubDate>
+      <enclosure url="https://github.com/missuo/koe/releases/download/v1.0.22/Koe-MLX-macOS-arm64.zip"
+        sparkle:edSignature="HS+FnH/pqNqQfQx5FWKZNYFY5lRwDutAeN7FZzmtgINLakTydbz3JSdKHs7XtA4fLyWlwxrkHnJDQSA54pguCQ=="
+        length="32638330"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 1.0.21</title>
       <link>https://github.com/missuo/koe/releases/tag/v1.0.21</link>
       <description><![CDATA[
