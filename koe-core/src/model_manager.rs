@@ -115,6 +115,8 @@ pub fn supported_providers() -> &'static [&'static str] {
         "mlx",
         #[cfg(feature = "sherpa-onnx")]
         "sherpa-onnx",
+        #[cfg(feature = "wetype-offline")]
+        "wetype",
     ]
 }
 

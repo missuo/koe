@@ -1,0 +1,20 @@
+{
+    "provider": "wetype",
+    "mode": "asr",
+    "description": "WeType 微信输入法",
+    "repo": "model.koe.li",
+    "files": [
+        {
+            "name": "embed140m.koepack",
+            "size": 134809044,
+            "sha256": "8b01be7ca614b399e6a4d90a9774faf47ac9c62f982d0b734cd134ddac999dae",
+            "url": "https://model.koe.li/embed140m.koepack"
+        },
+        {
+            "name": "dict.decoder.utf8.txt",
+            "size": 129706,
+            "sha256": "08a16004cfcf5b9f1668e055f3100de9b8a44f88541819def2bbd56bfd42f484",
+            "url": "https://model.koe.li/dict.decoder.utf8.txt"
+        }
+    ]
+}

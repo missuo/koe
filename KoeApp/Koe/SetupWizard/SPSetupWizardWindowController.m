@@ -1079,6 +1079,7 @@ static void ensureCustomHotkeyInPopup(NSPopUpButton *popup, NSString *value) {
   NSDictionary *localProviderLabels = @{
     @"mlx" : @"MLX (Apple Silicon)",
     @"sherpa-onnx" : @"Sherpa-ONNX",
+    @"wetype" : @"WeType (On-Device)",
   };
   for (NSString *provider in supportedLocalProviders) {
     NSString *label = localProviderLabels[provider];
@@ -5332,6 +5333,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
       currentModel = configGet(@"asr.mlx.model");
     } else if ([provider isEqualToString:@"sherpa-onnx"]) {
       currentModel = configGet(@"asr.sherpa-onnx.model");
+    } else if ([provider isEqualToString:@"wetype"]) {
+      currentModel = configGet(@"asr.wetype.model");
     }
     if (currentModel.length > 0) {
       for (NSInteger i = 0; i < self.localModelPopup.numberOfItems; i++) {
@@ -5674,6 +5677,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
       NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
       if (modelPath)
         saveOk &= configSet(@"asr.sherpa-onnx.model", modelPath);
+    } else if ([selectedProvider isEqualToString:@"wetype"]) {
+      NSString *modelPath = self.localModelPopup.selectedItem.representedObject;
+      if (modelPath)
+        saveOk &= configSet(@"asr.wetype.model", modelPath);
     }
   }
 

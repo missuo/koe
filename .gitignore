@@ -48,3 +48,7 @@ koe-core/target/
 .memory/
 KoeApp/build-ci/
 KoeApp/build-local/
+
+# leftover / caches
+koe-asr/_backup_online_ws/
+**/__pycache__/

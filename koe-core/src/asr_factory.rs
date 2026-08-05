@@ -15,6 +15,8 @@ use koe_asr::{
 use koe_asr::{MlxConfig, MlxProvider};
 #[cfg(feature = "sherpa-onnx")]
 use koe_asr::{SherpaOnnxConfig, SherpaOnnxProvider};
+#[cfg(feature = "wetype-offline")]
+use koe_asr::WeTypeOfflineProvider;
 
 /// Provider names that can be constructed in this build.
 /// Local engines (mlx, sherpa-onnx, apple-speech) only appear when their
@@ -26,6 +28,8 @@ pub fn supported_providers() -> Vec<&'static str> {
     providers.push("mlx");
     #[cfg(feature = "sherpa-onnx")]
     providers.push("sherpa-onnx");
+    #[cfg(feature = "wetype-offline")]
+    providers.push("wetype");
     #[cfg(feature = "apple-speech")]
     providers.push("apple-speech");
     providers
@@ -195,6 +199,14 @@ pub fn create_asr_provider(
             (
                 AsrConfig::default(),
                 Box::new(SherpaOnnxProvider::new(sherpa_config)),
+            )
+        }
+        #[cfg(feature = "wetype-offline")]
+        "wetype" => {
+            let model_dir = config::resolve_model_dir(&cfg.asr.wetype.model);
+            (
+                AsrConfig::default(),
+                Box::new(WeTypeOfflineProvider::new(model_dir)),
             )
         }
         #[cfg(feature = "apple-speech")]

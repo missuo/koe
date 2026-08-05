@@ -81,6 +81,29 @@ pub struct AsrSection {
     /// MiMo (Xiaomi) ASR configuration
     #[serde(default)]
     pub mimo: MimoAsrConfig,
+
+    /// WeType (微信输入法) offline local ASR configuration (embed_140m)
+    #[serde(default)]
+    pub wetype: WeTypeAsrConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct WeTypeAsrConfig {
+    /// Model directory name under ~/.koe/models/ (holds embed140m.koepack + dict.decoder.utf8.txt)
+    #[serde(default = "default_wetype_model")]
+    pub model: String,
+}
+
+impl Default for WeTypeAsrConfig {
+    fn default() -> Self {
+        Self {
+            model: default_wetype_model(),
+        }
+    }
+}
+
+fn default_wetype_model() -> String {
+    "wetype/embed140m".into()
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -2179,6 +2202,7 @@ const DEFAULT_MANIFESTS: &[(&str, &str)] = &[
     manifest!("sherpa-onnx/bilingual-zh-en"),
     manifest!("sherpa-onnx/multilingual-8lang"),
     manifest!("sherpa-onnx/zh-xlarge"),
+    manifest!("wetype/embed140m"),
 ];
 
 #[cfg(test)]

@@ -51,6 +51,8 @@ pub mod mimo;
 pub mod mlx;
 pub mod provider;
 pub mod qwen;
+#[cfg(feature = "wetype-offline")]
+pub mod wetype;
 #[cfg(feature = "sherpa-onnx")]
 pub mod sherpa_onnx;
 pub mod transcript;
@@ -70,4 +72,6 @@ pub use provider::AsrProvider;
 pub use qwen::QwenAsrProvider;
 #[cfg(feature = "sherpa-onnx")]
 pub use sherpa_onnx::{SherpaOnnxConfig, SherpaOnnxProvider};
+#[cfg(feature = "wetype-offline")]
+pub use wetype::{ensure_model, model_present, ModelAsset, WeTypeModelSpec, WeTypeOfflineProvider};
 pub use transcript::TranscriptAggregator;

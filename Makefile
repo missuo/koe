@@ -12,7 +12,7 @@ generate:
 	cd KoeApp && xcodegen generate
 
 build-rust:
-	cargo build --manifest-path koe-core/Cargo.toml --release --target $(ARCH) --no-default-features --features "apple-speech"
+	cargo build --manifest-path koe-core/Cargo.toml --release --target $(ARCH) --no-default-features --features "apple-speech,wetype-offline"
 	cargo build --package koe-cli --release --target $(ARCH)
 
 build-xcode:

@@ -2,6 +2,19 @@
 members = ["koe-asr", "koe-core", "koe-cli"]
 resolver = "2"
 
+# macOS 26+/Darwin 27 fix: the release proc-macro dylibs (codegen-units=16,
+# no debuginfo) come out with a "mis-aligned LINKEDIT string pool" that dyld
+# refuses to dlopen, breaking `cargo build --release`. Building the host-side
+# proc-macros/build-scripts like the dev profile (many codegen units + debuginfo)
+# yields valid dylibs. This does NOT change the optimization of the final
+# release binaries — only how the compile-time macros are built.
+[profile.release.build-override]
+debug = 2
+codegen-units = 256
+[profile.bench.build-override]
+debug = 2
+codegen-units = 256
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
