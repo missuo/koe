@@ -1055,8 +1055,11 @@ static BOOL configFlagEnabledWithDefault(const char *keyPath, BOOL defaultValue)
     }
     NSLog(@"[Koe] Voice input started from menu");
     [self hotkeyMonitorDidBeginTrigger];
-    [self hotkeyMonitorDidDetectTapStart];
+    // Arm before starting: if the session fails to begin, the resetToIdle
+    // inside handleAudioCaptureError must be the last write to the state
+    // machine, otherwise it is left in a recording state with no session.
     [self.hotkeyMonitor markExternalToggleRecording];
+    [self hotkeyMonitorDidDetectTapStart];
 }
 
 - (void)statusBarDidSelectAudioDeviceWithUID:(NSString *)uid {
