@@ -25,6 +25,7 @@ static const CGFloat kIconSize = 18.0;
 @property (nonatomic, strong) NSMenuItem *notificationPermissionItem;
 @property (nonatomic, strong) NSMenuItem *speechRecognitionPermissionItem;
 @property (nonatomic, strong) NSMenuItem *hotkeyDisplayItem;
+@property (nonatomic, strong) NSMenuItem *voiceInputItem;
 @property (nonatomic, strong) NSMenuItem *statsCountItem;
 @property (nonatomic, strong) NSMenuItem *statsTimeItem;
 @property (nonatomic, strong) NSMenuItem *statsSpeedItem;
@@ -269,6 +270,12 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
                                                  keyEquivalent:@""];
     self.hotkeyDisplayItem.enabled = NO;
     [menu addItem:self.hotkeyDisplayItem];
+
+    self.voiceInputItem = [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"statusBar.menu.startVoiceInput")
+                                                     action:@selector(toggleVoiceInput:)
+                                              keyEquivalent:@""];
+    self.voiceInputItem.target = self;
+    [menu addItem:self.voiceInputItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
 
@@ -754,6 +761,7 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
 - (void)updateState:(NSString *)state {
     self.currentState = state;
     [self stopAnimation];
+    [self refreshVoiceInputItem];
 
     if ([state isEqualToString:@"idle"] || [state isEqualToString:@"completed"]) {
         NSDictionary *info = [[NSBundle mainBundle] infoDictionary];
@@ -792,6 +800,18 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     }
 }
 
+/// The manual voice-input item mirrors `currentState`: idle/completed can start
+/// a session, any `recording*` state can stop it, and every intermediate state
+/// (connecting, finalizing, correcting, pasting, error) offers neither.
+- (void)refreshVoiceInputItem {
+    BOOL recording = [self.currentState hasPrefix:@"recording"];
+    BOOL idle = [self.currentState isEqualToString:@"idle"] ||
+                [self.currentState isEqualToString:@"completed"];
+    self.voiceInputItem.title = KoeLocalizedString(recording ? @"statusBar.menu.stopVoiceInput"
+                                                             : @"statusBar.menu.startVoiceInput");
+    self.voiceInputItem.enabled = recording || idle;
+}
+
 #pragma mark - Animations
 
 - (void)startRecordingAnimation {
@@ -827,6 +847,12 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
 - (void)openSetupWizard:(id)sender {
     if ([self.delegate respondsToSelector:@selector(statusBarDidSelectSetupWizard)]) {
         [self.delegate statusBarDidSelectSetupWizard];
+    }
+}
+
+- (void)toggleVoiceInput:(id)sender {
+    if ([self.delegate respondsToSelector:@selector(statusBarDidSelectToggleVoiceInput)]) {
+        [self.delegate statusBarDidSelectToggleVoiceInput];
     }
 }
 

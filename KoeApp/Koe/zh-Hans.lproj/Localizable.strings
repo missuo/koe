@@ -33,6 +33,9 @@
 "statusBar.permission.notifications" = "  通知：%@";
 "statusBar.permission.speechRecognition" = "  语音识别：%@";
 
+"statusBar.menu.startVoiceInput" = "开始语音输入";
+"statusBar.menu.stopVoiceInput" = "停止语音输入";
+
 "statusBar.menu.microphone" = "麦克风";
 "statusBar.menu.systemDefault" = "系统默认";
 "statusBar.menu.unavailable" = "%@（不可用）";

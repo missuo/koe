@@ -446,7 +446,13 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         [self cancelDoubleTapTimer];
         [self cancelPendingModifierRelease];
         self.triggerDown = NO;
-        self.state = SPHotkeyStateIdle;
+        // A confirmed toggle recording is hands-free: no key is held, so
+        // nothing about it can be stale. It must survive the menu round-trip,
+        // otherwise the next trigger press starts a second session on top of
+        // the running one instead of stopping it.
+        if (self.state != SPHotkeyStateRecordingToggle) {
+            self.state = SPHotkeyStateIdle;
+        }
     }
 }
 
@@ -1008,6 +1014,14 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     if (hadPendingTrigger) {
         [self.delegate hotkeyMonitorDidCancelTrigger];
     }
+}
+
+- (void)markExternalToggleRecording {
+    [self cancelHoldTimer];
+    [self cancelDoubleTapTimer];
+    [self cancelPendingModifierRelease];
+    self.triggerDown = NO;
+    self.state = SPHotkeyStateRecordingToggle;
 }
 
 @end

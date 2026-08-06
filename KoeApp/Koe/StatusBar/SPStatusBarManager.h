@@ -12,6 +12,8 @@
 - (void)statusBarMenuDidOpen;
 - (void)statusBarMenuDidClose;
 - (void)statusBarDidSelectAudioDeviceWithUID:(nullable NSString *)uid;
+/// Start a hands-free session when idle, end the running one while recording.
+- (void)statusBarDidSelectToggleVoiceInput;
 @end
 
 NS_ASSUME_NONNULL_BEGIN

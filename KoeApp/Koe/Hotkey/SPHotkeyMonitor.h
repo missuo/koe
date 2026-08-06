@@ -58,6 +58,12 @@ typedef NS_ENUM(uint8_t, SPHotkeyTriggerMode) {
 /// terminates a recording session outside the normal hotkey flow.
 - (void)resetToIdle;
 
+/// Arm the state machine as a confirmed hands-free (toggle) recording. Call when
+/// an external source (e.g. the status bar menu) starts a session outside the
+/// hotkey flow, so the next trigger press ends that session instead of starting
+/// a second one. Pair with `resetToIdle` when the same source ends the session.
+- (void)markExternalToggleRecording;
+
 /// Whether the current CGEventTap can consume handled key events globally.
 @property (nonatomic, assign, readonly) BOOL canConsumeGlobalKeyEvents;
 

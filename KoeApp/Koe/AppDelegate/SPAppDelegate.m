@@ -1043,6 +1043,22 @@ static BOOL configFlagEnabledWithDefault(const char *keyPath, BOOL defaultValue)
     [NSApp terminate:nil];
 }
 
+- (void)statusBarDidSelectToggleVoiceInput {
+    // Reuse the hotkey toggle path verbatim so a menu-driven session is
+    // indistinguishable from a tap-started one, and keep the hotkey state
+    // machine in sync so the trigger key stops (not restarts) this session.
+    if ([self.sessionState hasPrefix:@"recording"]) {
+        NSLog(@"[Koe] Voice input stopped from menu");
+        [self hotkeyMonitorDidDetectTapEnd];
+        [self.hotkeyMonitor resetToIdle];
+        return;
+    }
+    NSLog(@"[Koe] Voice input started from menu");
+    [self hotkeyMonitorDidBeginTrigger];
+    [self hotkeyMonitorDidDetectTapStart];
+    [self.hotkeyMonitor markExternalToggleRecording];
+}
+
 - (void)statusBarDidSelectAudioDeviceWithUID:(NSString *)uid {
     NSLog(@"[Koe] Audio input device changed: %@", uid ?: @"System Default");
     if (self.audioCaptureManager.isCapturing) return;
