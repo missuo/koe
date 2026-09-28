@@ -990,8 +990,41 @@ typedef NS_ENUM(NSInteger, SPOverlayMode) {
         _configuredMaxVisibleLines = kDefaultMaxVisibleLines;
         [self setupPanel];
         [self reloadAppearanceFromConfig];
+        [[NSWorkspace sharedWorkspace].notificationCenter
+            addObserver:self
+               selector:@selector(activeSpaceDidChange:)
+                   name:NSWorkspaceActiveSpaceDidChangeNotification
+                 object:nil];
     }
     return self;
+}
+
+#pragma mark - Spaces
+
+/// Order a panel in on the Space the user is looking at.
+///
+/// The panels are CanJoinAllSpaces, but when a Space switch happens while one
+/// is on screen (e.g. lingering after a paste, then the user swipes to a
+/// full-screen app), WindowServer can leave it pinned to the previous Space.
+/// orderFrontRegardless alone keeps it there — ordered in, opaque, and
+/// invisible — until the user switches windows. Ordering it out first makes
+/// the next order-in attach it to the active Space again.
+static void SPOrderFrontOnActiveSpace(NSWindow *window) {
+    if (!window) return;
+    if (window.isVisible && !window.isOnActiveSpace) {
+        NSLog(@"[Koe] Overlay window was stranded on another Space; re-attaching to the active Space");
+        [window orderOut:nil];
+    }
+    [window orderFrontRegardless];
+}
+
+- (void)activeSpaceDidChange:(NSNotification *)notification {
+    if (self.panel.isVisible && self.panel.alphaValue > 0.01) {
+        SPOrderFrontOnActiveSpace(self.panel);
+    }
+    if (self.buttonBarPanel.isVisible && self.buttonBarPanel.alphaValue > 0.01) {
+        SPOrderFrontOnActiveSpace(self.buttonBarPanel);
+    }
 }
 
 - (NSFont *)contentFont {
@@ -1905,7 +1938,7 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
 
     // Fade in
     bar.alphaValue = 0.0;
-    [bar orderFrontRegardless];
+    SPOrderFrontOnActiveSpace(bar);
     [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
         ctx.duration = 0.2;
         bar.animator.alphaValue = 1.0;
@@ -2085,7 +2118,7 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
 - (void)show {
     BOOL wasVisible = self.panel.isVisible && self.panel.alphaValue > 0.01;
     [self resetMotionPresentationState];
-    [self.panel orderFrontRegardless];
+    SPOrderFrontOnActiveSpace(self.panel);
 
     if (wasVisible || SPOverlayShouldReduceMotion()) {
         if (!wasVisible) {
@@ -2205,6 +2238,7 @@ static NSArray<SPDiffEntry *> *SPMergeReplacements(NSArray<SPDiffEntry *> *diff)
 }
 
 - (void)dealloc {
+    [[NSWorkspace sharedWorkspace].notificationCenter removeObserver:self];
     [self stopAnimation];
 }
 
