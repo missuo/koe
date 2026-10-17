@@ -4,6 +4,10 @@ All notable user-facing changes to Koe are documented here.
 
 ## Unreleased
 
+### Added
+
+- **LLM servers on your own network can now use plain HTTP, if you opt in.** Koe only accepts `https://` for LLM endpoints (plain `http://` is allowed for `localhost` only), so an HTTP server on your LAN or Tailscale network, such as `http://192.168.1.10:8000/v1`, was rejected. Add `allow_private_http: true` to that profile in `~/.koe/config.yaml` to allow it. The setting only covers private-network addresses (RFC 1918, Tailscale `100.64.0.0/10`, link-local, IPv6 unique-local, `*.local`), never public hosts. Requests to that server, including your API key and transcribed speech, are not encrypted. HTTPS-only stays the default, and the redirect protections are unchanged. When a private HTTP endpoint is rejected, the error message now names the setting. (#119)
+
 ### Fixed
 
 - **The live caption now always shows up over full-screen apps.** If you switched Spaces while the caption was still on screen — for example, it was lingering after a paste and you swiped into a full-screen app — macOS could leave it stuck on the previous Space. The next time you dictated, the caption was invisible until you switched windows. Koe now moves the caption (and the template buttons) to the Space you are on before showing it, and again whenever you switch Spaces while it is visible.

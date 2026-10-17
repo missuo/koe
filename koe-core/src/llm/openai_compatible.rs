@@ -3,7 +3,7 @@ use crate::config::{
 };
 use crate::errors::{KoeError, Result};
 use crate::llm::{CorrectionRequest, LlmProvider};
-use koe_asr::endpoint::validate_endpoint_url;
+use koe_asr::endpoint::{is_plain_private_network_url, validate_endpoint_url_with};
 use reqwest::{Client, RequestBuilder};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
@@ -39,7 +39,7 @@ impl OpenAiCompatibleProvider {
     }
 
     pub async fn warmup(&self) -> Result<()> {
-        validate_endpoint_url(&self.profile.base_url).map_err(KoeError::LlmFailed)?;
+        validate_profile_endpoint(&self.profile)?;
         let model = encode(&self.profile.model);
         let url = format!(
             "{}/models/{}",
@@ -71,6 +71,21 @@ impl OpenAiCompatibleProvider {
             ))),
         }
     }
+}
+
+/// Validate the profile's base URL, honoring its private-network http opt-in.
+fn validate_profile_endpoint(profile: &LlmProfileRuntimeConfig) -> Result<()> {
+    validate_endpoint_url_with(&profile.base_url, profile.allow_private_http).map_err(|e| {
+        if !profile.allow_private_http && is_plain_private_network_url(&profile.base_url) {
+            KoeError::LlmFailed(format!(
+                "{e}; to send unencrypted requests to this private-network \
+                 server, set `allow_private_http: true` on the LLM profile in \
+                 ~/.koe/config.yaml"
+            ))
+        } else {
+            KoeError::LlmFailed(e)
+        }
+    })
 }
 
 fn authentication_headers(profile: &LlmProfileRuntimeConfig) -> Vec<(&'static str, String)> {
@@ -147,6 +162,7 @@ pub async fn list_models(client: Client, base_url: &str, api_key: &str) -> Resul
         endpoint_path: String::new(),
         max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
         no_reasoning_control: LlmNoReasoningControl::None,
+        allow_private_http: false,
         mlx: Default::default(),
     };
     list_models_for_profile(client, &profile).await
@@ -156,7 +172,7 @@ pub async fn list_models_for_profile(
     client: Client,
     profile: &LlmProfileRuntimeConfig,
 ) -> Result<Vec<String>> {
-    validate_endpoint_url(&profile.base_url).map_err(KoeError::LlmFailed)?;
+    validate_profile_endpoint(profile)?;
     let mut url = build_models_url(&profile.base_url);
     if profile.effective_api_protocol() == LlmApiProtocol::AnthropicMessages {
         url.push_str("?limit=1000");
@@ -503,7 +519,7 @@ fn parse_protocol_response(protocol: LlmApiProtocol, json: &Value) -> Result<Str
 #[async_trait::async_trait]
 impl LlmProvider for OpenAiCompatibleProvider {
     async fn correct(&self, request: &CorrectionRequest) -> Result<String> {
-        validate_endpoint_url(&self.profile.base_url).map_err(KoeError::LlmFailed)?;
+        validate_profile_endpoint(&self.profile)?;
         let protocol = self.profile.effective_api_protocol();
         let url = build_endpoint_url(
             &self.profile.base_url,
@@ -581,8 +597,25 @@ mod tests {
             endpoint_path: protocol.default_endpoint_path().into(),
             max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
+            allow_private_http: false,
             mlx: Default::default(),
         }
+    }
+
+    #[test]
+    fn private_http_endpoint_requires_profile_opt_in() {
+        let mut profile = profile(LlmApiProtocol::OpenaiChat);
+        profile.base_url = "http://192.168.1.10:8000/v1".into();
+
+        let err = validate_profile_endpoint(&profile).unwrap_err().to_string();
+        assert!(err.contains("allow_private_http: true"), "{err}");
+
+        profile.allow_private_http = true;
+        assert!(validate_profile_endpoint(&profile).is_ok());
+
+        profile.base_url = "http://api.example.com/v1".into();
+        let err = validate_profile_endpoint(&profile).unwrap_err().to_string();
+        assert!(!err.contains("allow_private_http"), "{err}");
     }
 
     #[test]
@@ -598,6 +631,7 @@ mod tests {
             endpoint_path: "/chat/completions".into(),
             max_token_parameter: LlmMaxTokenParameter::MaxTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
+            allow_private_http: false,
             mlx: Default::default(),
         };
 
@@ -623,6 +657,7 @@ mod tests {
             endpoint_path: "/chat/completions".into(),
             max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
             no_reasoning_control: LlmNoReasoningControl::ReasoningEffort,
+            allow_private_http: false,
             mlx: Default::default(),
         };
 

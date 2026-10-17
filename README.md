@@ -142,7 +142,7 @@ the menu bar. The settings window includes tabs for ASR, LLM, Controls, Dictiona
 System Prompt, Templates, and About. The System Prompt tab edits `system_prompt.txt`;
 the Templates tab manages prompt-template visibility, ordering, and prompts; advanced
 knobs such as `user_prompt.txt`, ASR custom `headers`, and advanced profile fields such as
-`no_reasoning_control` remain file-based settings. When a local ASR provider is selected, the ASR tab shows
+`no_reasoning_control` and `allow_private_http` remain file-based settings. When a local ASR provider is selected, the ASR tab shows
 provider-specific controls: model picker with download/delete for MLX and
 Sherpa-ONNX, or language picker with asset status and download for Apple Speech.
 The LLM tab supports multiple profiles for OpenAI-compatible APIs, APFEL, and
@@ -363,6 +363,18 @@ llm:
       mlx:
         model: "mlx/Qwen3-0.6B-4bit"  # relative to ~/.koe/models/, or absolute path
 ```
+
+Remote LLM endpoints must use `https://`; plain `http://` is accepted only for
+`localhost` / `127.0.0.1` / `::1`. To use an HTTP-only server on your own
+network (e.g. `http://192.168.1.10:8000/v1`), add `allow_private_http: true` to
+that profile. The opt-in only covers private-network hosts — RFC 1918
+addresses, Tailscale/CGNAT `100.64.0.0/10`, link-local, IPv6 unique-local, and
+`*.local` names — never public hosts or other DNS names.
+
+> **Warning:** with `allow_private_http` enabled, the API key and your
+> transcribed speech travel unencrypted and can be read by anyone on that
+> network. Only enable it for networks you trust (a VPN such as Tailscale
+> already encrypts traffic between your devices).
 
 #### Feedback (Sound Effects)
 

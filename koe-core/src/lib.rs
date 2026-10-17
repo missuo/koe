@@ -1549,6 +1549,7 @@ pub unsafe extern "C" fn sp_llm_test(
         endpoint_path: "/chat/completions".into(),
         max_token_parameter,
         no_reasoning_control: config::LlmNoReasoningControl::None,
+        allow_private_http: false,
         mlx: Default::default(),
     };
 

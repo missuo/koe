@@ -3,7 +3,10 @@
 //! Configured endpoints carry credentials plus audio/transcripts, so
 //! `https://` and `wss://` are always allowed while plain `http://` and
 //! `ws://` are only allowed when the host is loopback (localhost,
-//! 127.0.0.0/8, ::1) — e.g. a local Ollama server.
+//! 127.0.0.0/8, ::1) — e.g. a local Ollama server. Callers may opt in to
+//! plain http/ws for private-network hosts too (see
+//! [`validate_endpoint_url_with`]); public hosts are never allowed in plain
+//! text.
 //!
 //! Validation is performed on the *parsed* URL using the same `url` crate
 //! that reqwest uses to build requests. Hand-rolled host extraction is
@@ -19,18 +22,35 @@ use url::{Host, Url};
 /// Returns a human-readable error message on failure so callers can wrap
 /// it in their own error type.
 pub fn validate_endpoint_url(url: &str) -> Result<(), String> {
+    validate_endpoint_url_with(url, false)
+}
+
+/// Like [`validate_endpoint_url`], but when `allow_private_http` is true plain
+/// http/ws is also accepted for private-network hosts (see
+/// [`is_private_network_host`]). This is an explicit user opt-in: traffic to
+/// those hosts — credentials included — is unencrypted.
+pub fn validate_endpoint_url_with(url: &str, allow_private_http: bool) -> Result<(), String> {
     let parsed = Url::parse(url).map_err(|_| insecure_endpoint_error(url))?;
-    validate_parsed_endpoint(&parsed)
+    validate_parsed_endpoint(&parsed, allow_private_http)
 }
 
 /// Validate an already-parsed URL. Used both for the initial endpoint check
 /// and to re-validate every hop of an HTTP redirect chain.
-pub fn validate_parsed_endpoint(parsed: &Url) -> Result<(), String> {
+pub fn validate_parsed_endpoint(parsed: &Url, allow_private_http: bool) -> Result<(), String> {
     match parsed.scheme() {
         "https" | "wss" => Ok(()),
         "http" | "ws" if is_loopback_host(parsed.host()) => Ok(()),
+        "http" | "ws" if allow_private_http && is_private_network_host(parsed.host()) => Ok(()),
         _ => Err(insecure_endpoint_error(parsed.as_str())),
     }
+}
+
+/// True when `url` is a plain http/ws URL whose host is on a private network.
+/// Lets callers that offer the opt-in point users at it in error messages.
+pub fn is_plain_private_network_url(url: &str) -> bool {
+    Url::parse(url).is_ok_and(|parsed| {
+        matches!(parsed.scheme(), "http" | "ws") && is_private_network_host(parsed.host())
+    })
 }
 
 /// Maximum number of redirect hops followed before the chain is failed.
@@ -84,8 +104,10 @@ fn check_redirect(previous: &[Url], next: &Url) -> Result<(), String> {
     };
 
     // Cheap sanity check first so a redirect to e.g. ftp:// reports the more
-    // specific scheme error.
-    validate_parsed_endpoint(next).map_err(|e| format!("redirect blocked: {e}"))?;
+    // specific scheme error. Private-network http is accepted here because the
+    // origin check below pins every hop to the original URL, which the caller
+    // already validated under its own policy.
+    validate_parsed_endpoint(next, true).map_err(|e| format!("redirect blocked: {e}"))?;
 
     let (Some(next_host), Some(original_host)) = (next.host_str(), original.host_str()) else {
         return Err(format!(
@@ -131,9 +153,31 @@ fn is_loopback_host(host: Option<Host<&str>>) -> bool {
     }
 }
 
+/// Hosts that are only reachable on a private network: RFC 1918 IPv4,
+/// CGNAT 100.64.0.0/10 (Tailscale), link-local, IPv6 unique-local and
+/// link-local, and mDNS `.local` names. Other DNS names are rejected because
+/// they may resolve to a public address.
+fn is_private_network_host(host: Option<Host<&str>>) -> bool {
+    match host {
+        Some(Host::Domain(domain)) => {
+            let domain = domain.trim_end_matches('.');
+            domain.len() > ".local".len() && domain.to_ascii_lowercase().ends_with(".local")
+        }
+        Some(Host::Ipv4(ip)) => {
+            let [a, b, ..] = ip.octets();
+            ip.is_private() || ip.is_link_local() || (a == 100 && (64..128).contains(&b))
+        }
+        Some(Host::Ipv6(ip)) => {
+            let first = ip.segments()[0];
+            (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
+        }
+        None => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::validate_endpoint_url;
+    use super::{is_plain_private_network_url, validate_endpoint_url, validate_endpoint_url_with};
 
     #[test]
     fn secure_schemes_always_allowed() {
@@ -159,6 +203,51 @@ mod tests {
         assert!(validate_endpoint_url("ws://10.0.0.5/asr").is_err());
         assert!(validate_endpoint_url("http://localhost.evil.com/v1").is_err());
         assert!(validate_endpoint_url("http://evil-localhost/v1").is_err());
+    }
+
+    #[test]
+    fn private_network_http_requires_opt_in() {
+        let private = [
+            "http://192.168.1.10:8000/v1",
+            "http://10.0.0.5/v1",
+            "http://172.16.3.4/v1",
+            "http://172.31.255.255/v1",
+            "http://100.101.102.103:8000/v1",
+            "http://169.254.10.10/v1",
+            "http://[fd7a:115c:a1e0::1]:8000/v1",
+            "http://[fe80::1]/v1",
+            "http://gpu-box.local:8000/v1",
+            "http://GPU-Box.LOCAL./v1",
+            "ws://192.168.1.10/asr",
+        ];
+        for url in private {
+            assert!(validate_endpoint_url(url).is_err(), "{url}");
+            assert!(validate_endpoint_url_with(url, true).is_ok(), "{url}");
+            assert!(is_plain_private_network_url(url), "{url}");
+        }
+    }
+
+    #[test]
+    fn opt_in_never_allows_public_plain_http() {
+        let public = [
+            "http://api.example.com/v1",
+            "http://8.8.8.8/v1",
+            "http://172.32.0.1/v1",
+            "http://100.128.0.1/v1",
+            "http://192.169.1.1/v1",
+            "http://[2001:db8::1]/v1",
+            "http://local/v1",
+            "http://.local/v1",
+            "http://evil.local.example.com/v1",
+            "http://evil.example\\@192.168.1.10/v1",
+            "http://192.168.1.10@evil.example/v1",
+        ];
+        for url in public {
+            assert!(validate_endpoint_url_with(url, true).is_err(), "{url}");
+            assert!(!is_plain_private_network_url(url), "{url}");
+        }
+        assert!(validate_endpoint_url_with("ftp://192.168.1.10/", true).is_err());
+        assert!(!is_plain_private_network_url("https://192.168.1.10/v1"));
     }
 
     #[test]
@@ -258,6 +347,17 @@ mod tests {
         // scheme check, which fires first).
         let err = hop("https://api.example.com/v1", "http://api.example.com/v1").unwrap_err();
         assert!(err.contains("redirect blocked"), "{err}");
+    }
+
+    #[test]
+    fn private_network_redirects_stay_same_origin() {
+        assert!(hop(
+            "http://192.168.1.10:8000/v1",
+            "http://192.168.1.10:8000/v1/models"
+        )
+        .is_ok());
+        assert!(hop("http://192.168.1.10:8000/v1", "http://192.168.1.11:8000/v1").is_err());
+        assert!(hop("https://api.example.com/v1", "http://192.168.1.10/v1").is_err());
     }
 
     #[test]

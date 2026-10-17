@@ -423,6 +423,11 @@ pub struct LlmProfileConfig {
     pub max_token_parameter: LlmMaxTokenParameter,
     #[serde(default)]
     pub no_reasoning_control: LlmNoReasoningControl,
+    /// Opt in to plain `http://` for a private-network `base_url` (RFC 1918,
+    /// Tailscale 100.64/10, link-local, IPv6 ULA, `*.local`). Requests — API
+    /// key and transcript included — are then sent unencrypted.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_private_http: bool,
     /// MLX local LLM configuration (Apple Silicon only).
     #[serde(default)]
     pub mlx: MlxLlmConfig,
@@ -442,6 +447,8 @@ pub struct LlmProfileRuntimeConfig {
     pub endpoint_path: String,
     pub max_token_parameter: LlmMaxTokenParameter,
     pub no_reasoning_control: LlmNoReasoningControl,
+    #[serde(default)]
+    pub allow_private_http: bool,
     pub mlx: MlxLlmConfig,
 }
 
@@ -478,6 +485,7 @@ impl LlmProfileConfig {
             endpoint_path: self.endpoint_path.clone(),
             max_token_parameter: self.max_token_parameter,
             no_reasoning_control: self.no_reasoning_control,
+            allow_private_http: self.allow_private_http,
             mlx: self.mlx.clone(),
         }
     }
@@ -536,6 +544,7 @@ impl Default for LlmProfileConfig {
             endpoint_path: String::new(),
             max_token_parameter: default_llm_max_token_parameter(),
             no_reasoning_control: LlmNoReasoningControl::default(),
+            allow_private_http: false,
             mlx: MlxLlmConfig::default(),
         }
     }
@@ -1223,6 +1232,7 @@ fn default_llm_profiles() -> BTreeMap<String, LlmProfileConfig> {
             endpoint_path: "/chat/completions".into(),
             max_token_parameter: LlmMaxTokenParameter::MaxTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
+            allow_private_http: false,
             mlx: MlxLlmConfig::default(),
         },
     );
@@ -1238,6 +1248,7 @@ fn default_llm_profiles() -> BTreeMap<String, LlmProfileConfig> {
             endpoint_path: String::new(),
             max_token_parameter: LlmMaxTokenParameter::MaxTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
+            allow_private_http: false,
             mlx: MlxLlmConfig::default(),
         },
     );
@@ -1253,6 +1264,7 @@ fn default_llm_profiles() -> BTreeMap<String, LlmProfileConfig> {
             endpoint_path: "/chat/completions".into(),
             max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
+            allow_private_http: false,
             mlx: MlxLlmConfig::default(),
         },
     );
@@ -1268,6 +1280,7 @@ fn default_llm_profiles() -> BTreeMap<String, LlmProfileConfig> {
             endpoint_path: "/responses".into(),
             max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
+            allow_private_http: false,
             mlx: MlxLlmConfig::default(),
         },
     );
@@ -1283,6 +1296,7 @@ fn default_llm_profiles() -> BTreeMap<String, LlmProfileConfig> {
             endpoint_path: "/messages".into(),
             max_token_parameter: LlmMaxTokenParameter::MaxTokens,
             no_reasoning_control: LlmNoReasoningControl::None,
+            allow_private_http: false,
             mlx: MlxLlmConfig::default(),
         },
     );
@@ -2466,6 +2480,26 @@ mod tests {
     }
 
     #[test]
+    fn allow_private_http_defaults_off_and_round_trips() {
+        let profile: LlmProfileConfig = serde_yaml::from_str(
+            "provider: openai\nbase_url: http://192.168.1.10:8000/v1\nmodel: m\n",
+        )
+        .unwrap();
+        assert!(!profile.allow_private_http);
+        // Profiles that never opted in are saved without the key.
+        let saved = serde_yaml::to_string(&profile).unwrap();
+        assert!(!saved.contains("allow_private_http"), "{saved}");
+
+        let profile: LlmProfileConfig = serde_yaml::from_str(
+            "provider: openai\nbase_url: http://192.168.1.10:8000/v1\nmodel: m\nallow_private_http: true\n",
+        )
+        .unwrap();
+        assert!(profile.to_runtime_config("lan").allow_private_http);
+        let saved = serde_yaml::to_string(&profile).unwrap();
+        assert!(saved.contains("allow_private_http: true"), "{saved}");
+    }
+
+    #[test]
     fn empty_endpoint_uses_each_protocol_default() {
         for (protocol, expected) in [
             (LlmApiProtocol::OpenaiChat, "/chat/completions"),
@@ -2483,6 +2517,7 @@ mod tests {
                 endpoint_path: String::new(),
                 max_token_parameter: LlmMaxTokenParameter::MaxCompletionTokens,
                 no_reasoning_control: LlmNoReasoningControl::None,
+                allow_private_http: false,
                 mlx: Default::default(),
             };
             assert_eq!(profile.effective_endpoint_path(), expected);
