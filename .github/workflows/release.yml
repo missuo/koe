@@ -227,8 +227,16 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Release notes are the tag's CHANGELOG.md section; gh appends the
+            # generated PR list and compare link after it. Pre-release tags
+            # have no section and get only the generated notes.
+            NOTES="$RUNNER_TEMP/release-notes.md"
+            awk -v v="${TAG#v}" '
+              /^## / { if (found) exit; split(substr($0, 4), h, " - "); found = (h[1] == v); next }
+              found
+            ' CHANGELOG.md > "$NOTES"
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
-              --title "$TAG" --generate-notes || true
+              --title "$TAG" --notes-file "$NOTES" --generate-notes || true
           fi
           gh release upload "$TAG" "${{ matrix.zip }}" \
             --repo "$GITHUB_REPOSITORY" --clobber
