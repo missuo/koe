@@ -86,3 +86,279 @@
 "error.asr.auth" = "ASR authentication failed";
 "error.audio" = "Microphone unavailable";
 "error.asr.unknown" = "ASR error";
+
+/* ─── UI strings added by the Simplified Chinese localization pass ─── */
+
+
+/* common */
+"common.save" = "Save";
+"common.cancel" = "Cancel";
+"common.ok" = "OK";
+"common.test" = "Test";
+"common.choose" = "Choose";
+"common.hide" = "Hide";
+"common.refresh" = "Refresh";
+"common.record" = "Record";
+"common.reset" = "Reset";
+"common.resetToDefault" = "Reset to Default";
+"common.remove" = "Remove";
+"common.release" = "Release";
+"common.saveAndDownload" = "Save & Download";
+"common.saveAnyway" = "Save Anyway";
+"common.name" = "Name";
+"common.model" = "Model";
+"common.apiKey" = "API Key";
+
+/* settings */
+"settings.sidebar.group.recognition" = "Recognition";
+"settings.sidebar.group.input" = "Input";
+"settings.sidebar.group.text" = "Text";
+"settings.sidebar.asr" = "ASR";
+"settings.sidebar.llm" = "LLM";
+"settings.sidebar.controls" = "Controls";
+"settings.sidebar.overlay" = "Overlay";
+"settings.sidebar.dictionary" = "Dictionary";
+"settings.sidebar.prompt" = "Prompt";
+"settings.sidebar.templates" = "Templates";
+"settings.sidebar.about" = "About";
+
+/* pane */
+"pane.asr" = "ASR";
+"pane.llm" = "LLM";
+"pane.overlay" = "Overlay";
+"pane.controls" = "Controls";
+"pane.dictionary" = "Dictionary";
+"pane.prompt" = "Prompt";
+"pane.systemPrompt" = "System Prompt";
+"pane.templates" = "Templates";
+"pane.about" = "About";
+
+/* wizard */
+"wizard.windowTitle" = "Koe Settings";
+
+/* asr */
+"asr.section.connection" = "Connection";
+"asr.description" = "Choose the ASR provider used for transcription.";
+"asr.provider" = "Provider";
+"asr.provider.doubaoime" = "DoubaoIME (Built-in, Free)";
+"asr.provider.doubao" = "Doubao (ByteDance)";
+"asr.provider.qwen" = "Qwen (Alibaba Cloud)";
+"asr.provider.glm" = "GLM (Zhipu)";
+"asr.provider.mimo" = "MiMo (Xiaomi)";
+"asr.provider.appleSpeech" = "Apple Speech (On-Device)";
+"asr.provider.mlx" = "MLX (Apple Silicon)";
+"asr.provider.sherpaOnnx" = "Sherpa-ONNX";
+"asr.provider.wetype" = "WeType (On-Device)";
+"asr.authMode" = "Auth Mode";
+"asr.authMode.newConsole" = "New Console";
+"asr.authMode.legacyConsole" = "Legacy Console";
+"asr.appKey" = "App Key";
+"asr.accessKey" = "Access Key";
+"asr.language" = "Language";
+"asr.endpointSilence" = "Endpoint Silence";
+"asr.msMin200" = "ms (min 200)";
+"asr.outputVariant" = "Output Variant";
+"asr.variant.simplified" = "Simplified";
+"asr.variant.traditional" = "Traditional";
+"asr.variant.taiwan" = "Taiwan";
+"asr.variant.hongKong" = "Hong Kong";
+"asr.lang.auto" = "Auto (中英文+方言)";
+"asr.lang.zhMandarin" = "中文普通话";
+"asr.lang.en" = "English";
+"asr.lang.ja" = "日本語";
+"asr.lang.ko" = "한국어";
+"asr.lang.de" = "Deutsch";
+"asr.lang.fr" = "Français";
+"asr.lang.es" = "Español";
+"asr.lang.pt" = "Português";
+"asr.lang.yue" = "粤語";
+"asr.noLanguagesAvailable" = "No languages available";
+"asr.placeholder.volcengineApiKey" = "API Key from Volcengine Console";
+"asr.placeholder.volcengineAppId" = "Volcengine App ID";
+"asr.placeholder.volcengineAccessToken" = "Volcengine Access Token";
+"asr.placeholder.dashscopeApiKey" = "DashScope API Key (sk-xxx)";
+"asr.placeholder.bigmodelApiKey" = "API Key from bigmodel.cn";
+"asr.placeholder.mimoApiKey" = "API Key from xiaomimimo.com";
+"asr.hint.doubaoime" = "No configuration needed — no API key or account required. Recognition runs on a built-in free cloud service, so an active network connection is required while dictating.";
+"asr.hint.wetype" = "Note: in our testing this on-device model supports Chinese only. Other languages are not recognized.";
+
+/* llm */
+"llm.section.profiles" = "Profiles";
+"llm.description" = "Configure an LLM to polish the transcription after speech recognition.";
+"llm.type" = "Type";
+"llm.baseUrl" = "Base URL";
+"llm.apiPath" = "API Path";
+"llm.tokenParameter" = "Token Parameter";
+"llm.modelList" = "Model List";
+"llm.noModelsLoaded" = "No models loaded";
+"llm.noModelsFound" = "No models found";
+"llm.noModelsAvailable" = "No models available";
+"llm.enterBaseUrlFirst" = "Enter Base URL first";
+"llm.loadingModels" = "Loading models...";
+"llm.loadFailed" = "Load failed";
+"llm.testConnection" = "Test Connection";
+"llm.correction" = "LLM Correction";
+"llm.autoPaste" = "Auto-paste processed text";
+"llm.profilePlaceholder" = "My profile";
+"llm.apiKeyPlaceholder" = "sk-... (leave empty if not required)";
+"llm.tokenHint" = "GPT-4o and older models use max_tokens. GPT-5 and reasoning models (o1/o3) use max_completion_tokens.";
+"llm.hint.off" = "LLM correction is off by default. While it is off, the raw speech-recognition output is used directly as the final result.";
+"llm.protocol.openaiChat" = "OpenAI Chat Completions";
+"llm.protocol.openaiResponses" = "OpenAI Responses";
+"llm.protocol.anthropicMessages" = "Anthropic Messages";
+"llm.protocol.apfel" = "APFEL";
+
+/* overlay */
+"overlay.section.style" = "Style Controls";
+"overlay.font" = "Font";
+"overlay.fontSystemDefault" = "System Default";
+"overlay.textSize" = "Text Size";
+"overlay.bottomMargin" = "Distance from Bottom";
+"overlay.limitLines" = "Limit Visible Lines";
+"overlay.maxLines" = "Max Visible Lines";
+"overlay.defaults" = "Defaults";
+"overlay.lineCount" = "%ld lines";
+"overlay.description" = "Adjust the bottom live transcript overlay. Choose a system font, tune text size, set the bottom distance, and decide whether long live text stays capped to a few lines or expands fully. Every change is previewed directly in the real desktop overlay position.";
+"overlay.status.listening" = "Listening…";
+"overlay.status.connecting" = "Connecting…";
+"overlay.status.recognizing" = "Recognizing…";
+"overlay.status.thinking" = "Thinking…";
+"overlay.status.pasting" = "Pasting…";
+"overlay.status.working" = "Working…";
+"overlay.status.error" = "Error";
+
+/* controls */
+"controls.advancedSettings" = "Advanced Settings";
+"controls.accelerateFirstChar" = "Accelerate first character (may reduce accuracy)";
+"controls.section.trigger" = "Trigger";
+"controls.triggerShortcut" = "Trigger Shortcut";
+"controls.triggerMode" = "Trigger Mode";
+"controls.pressHotkey" = "Press...";
+"controls.mode.hold" = "Hold (Press & Hold)";
+"controls.mode.toggle" = "Toggle (Tap to Start/Stop)";
+"controls.mode.doubleTap" = "DoubleTap";
+"controls.section.pasteBehavior" = "Paste Behavior";
+"controls.pressReturnAfterPaste" = "Press Return after paste";
+"controls.section.feedbackSounds" = "Feedback Sounds";
+"controls.recordingStarts" = "Recording starts";
+"controls.recordingStops" = "Recording stops";
+"controls.errorOccurs" = "Error occurs";
+"controls.section.recording" = "Recording";
+"controls.muteSystemAudio" = "Mute system audio while recording";
+
+/* keycap */
+"keycap.space" = "Space";
+"keycap.escape" = "Escape";
+"keycap.tab" = "Tab";
+"keycap.capslock" = "Caps Lock";
+"keycap.return" = "Return";
+"keycap.delete" = "Delete";
+"keycap.forwardDelete" = "Forward Delete";
+"keycap.home" = "Home";
+"keycap.end" = "End";
+"keycap.pageUp" = "Page Up";
+"keycap.pageDown" = "Page Down";
+"keycap.leftArrow" = "Left Arrow";
+"keycap.rightArrow" = "Right Arrow";
+"keycap.downArrow" = "Down Arrow";
+"keycap.upArrow" = "Up Arrow";
+"keycap.command" = "Command";
+"keycap.option" = "Option";
+"keycap.control" = "Control";
+"keycap.shift" = "Shift";
+"keycap.fn" = "Fn";
+"keycap.keyWithCode" = "Key %d";
+
+/* hotkey */
+"hotkey.leftOption" = "Left Option (⌥)";
+"hotkey.rightOption" = "Right Option (⌥)";
+"hotkey.leftCommand" = "Left Command (⌘)";
+"hotkey.rightCommand" = "Right Command (⌘)";
+"hotkey.leftControl" = "Left Control (⌃)";
+"hotkey.rightControl" = "Right Control (⌃)";
+"hotkey.fnGlobe" = "Fn (Globe)";
+
+/* dictionary */
+"dictionary.description" = "User dictionary — one term per line. These terms are prioritized during LLM correction. Lines starting with # are comments.";
+
+/* prompt */
+"prompt.description" = "System prompt sent to the LLM for text correction. Edit to customize behavior.";
+
+/* templates */
+"templates.library" = "Template Library";
+"templates.editor" = "Template Editor";
+"templates.description" = "Manage overlay templates. Reorder them, control visibility, and edit each prompt here.";
+"templates.column.template" = "Template";
+"templates.namePlaceholder" = "Template name";
+"templates.visibleInOverlay" = "Visible in overlay";
+"templates.showButtons" = "Show template buttons in overlay";
+"templates.add" = "Add template";
+"templates.remove" = "Remove selected template";
+"templates.moveUp" = "Move selected template up";
+"templates.moveDown" = "Move selected template down";
+"templates.new" = "New Template";
+"templates.untitled" = "Untitled";
+
+/* status */
+"status.installed" = "● Installed";
+"status.verifying" = "● Verifying…";
+"status.incomplete" = "◐ Incomplete";
+"status.downloading" = "Downloading…";
+"status.downloadingDot" = "◐ Downloading…";
+"status.notInstalled" = "○ Not installed";
+"status.notSupportedForLanguage" = "✕ Not supported for this language";
+"status.downloadFailed" = "Download failed";
+"status.connected" = "Connected";
+"status.testing" = "Testing...";
+"status.needApiKey" = "Please fill in API Key first";
+"status.needAppKeys" = "Please fill in App Key and Access Key first";
+"status.needLlmProfile" = "Please select an LLM profile first.";
+"status.needBaseUrlAndModel" = "Please fill in Base URL and Model first.";
+"status.unknownResult" = "Unknown result";
+"status.modelList" = "Model list: %@";
+
+/* alert */
+"alert.removeModel.title" = "Remove Model Files?";
+"alert.removeModel.message" = "Downloaded model files will be deleted. The model can be re-downloaded later.";
+"alert.releaseAssets.title" = "Release Speech Assets?";
+"alert.releaseAssets.message" = "The system may reclaim storage for this language's speech model. You can re-download it later.";
+"alert.speechAssetsMissing.title" = "Speech Assets Not Installed";
+"alert.speechAssetsMissing.message" = "The speech recognition model for the selected language has not been downloaded yet. Saving will start downloading automatically.";
+"alert.modelMissing.title" = "Model Not Installed";
+"alert.modelMissing.message" = "The selected model has not been downloaded yet. ASR will not work until the model is installed.";
+"alert.invalidTemplates.title" = "Invalid prompt templates";
+"alert.invalidTemplates.message" = "Check your templates and try again.";
+"alert.saveFailed.title" = "Some settings failed to save";
+"alert.saveFailed.message" = "Check that ~/.koe/config.yaml is writable and try again.";
+"alert.saveTemplatesFailed.title" = "Failed to save prompt templates";
+"alert.saveTemplatesFailed.message" = "Check your prompt templates and ~/.koe/config.yaml, then try again.";
+"alert.saveDictionaryFailed.title" = "Failed to save dictionary.txt";
+"alert.savePromptFailed.title" = "Failed to save system_prompt.txt";
+"alert.templateLimit.title" = "Template limit reached";
+"alert.templateLimit.message" = "You can add up to 9 prompt templates because the overlay only supports number keys 1-9.";
+"alert.templateShortcut.title" = "Each prompt template needs a shortcut between 1 and 9.";
+"alert.templateUnique.title" = "Each prompt template shortcut must be unique.";
+"alert.templateEmpty.title" = "Each prompt template needs a non-empty prompt.";
+
+/* about */
+"about.githubRepository" = "GitHub Repository";
+"about.documentation" = "Documentation";
+"about.tagline" = "A background-first macOS voice input tool.\nPress a hotkey, speak, and the corrected text is pasted into whatever app you’re using.";
+"about.license" = "MIT License · Made with Rust + Objective-C";
+"about.thanks" = "Thanks to everyone who has contributed to Koe ❤️";
+"about.version" = "Version %@ (%@)";
+
+/* ─── Runtime status and provider hints ─── */
+"asr.hint.mimoPrivacy" = "By selecting a Xiaomi (MiMo) model, you voluntarily consent to Xiaomi collecting your personal information and voice data. Koe collects nothing and runs no servers. For any questions, please contact the Xiaomi team.";
+"status.connectedDeviceRegistration" = "Connected (device registration will complete on first use)";
+"status.connectionFailedWithFormat" = "Connection failed: %@";
+"status.connectionTimedOut" = "Connection timed out: please check your network";
+"status.networkError" = "Network error: please check your network settings";
+"status.connectionFailedConfig" = "Connection failed: please check your configuration";
+"status.connectionFailedNoResponse" = "Connection failed: no response from server";
+"status.authFailedApiKey" = "Auth failed: please check API Key";
+"status.authFailedAppKeys" = "Auth failed: please check App Key and Access Key";
+"status.errorWithFormat" = "Error: %@";
+"status.httpUnexpected" = "HTTP %ld: unexpected response";
+"status.testFailedInvalidProfile" = "Test failed: invalid profile data";
+"status.testFailedInvalidResponse" = "Test failed: invalid response from core";
