@@ -32,7 +32,12 @@ static NSString *const kLlmProtocolOpenAIChat = @"openai_chat";
 static NSString *const kLlmProtocolOpenAIResponses = @"openai_responses";
 static NSString *const kLlmProtocolAnthropicMessages = @"anthropic_messages";
 static NSString *const kOverlayFontFamilyDefault = @"system";
-static NSString *const kOverlayFontFamilySystemLabel = @"System Default";
+// "System Default" is a display label, so it is localized at use sites rather
+// than in a static initializer (Objective-C function calls are not allowed in
+// static initializers).
+static NSString *overlayFontFamilySystemLabel(void) {
+  return KoeLocalizedString(@"overlay.fontSystemDefault");
+}
 static const NSInteger kOverlayFontSizeDefault = 13;
 static const NSInteger kOverlayFontSizeMin = 12;
 static const NSInteger kOverlayFontSizeMax = 28;
@@ -305,35 +310,35 @@ static NSString *displayNameForKeycodeValue(NSString *value) {
   case 111:
     return @"F12";
   case 49:
-    return @"Space";
+    return KoeLocalizedString(@"keycap.space");
   case 53:
-    return @"Escape";
+    return KoeLocalizedString(@"keycap.escape");
   case 48:
-    return @"Tab";
+    return KoeLocalizedString(@"keycap.tab");
   case 57:
-    return @"Caps Lock";
+    return KoeLocalizedString(@"keycap.capslock");
   case 36:
-    return @"Return";
+    return KoeLocalizedString(@"keycap.return");
   case 51:
-    return @"Delete";
+    return KoeLocalizedString(@"keycap.delete");
   case 117:
-    return @"Forward Delete";
+    return KoeLocalizedString(@"keycap.forwardDelete");
   case 115:
-    return @"Home";
+    return KoeLocalizedString(@"keycap.home");
   case 119:
-    return @"End";
+    return KoeLocalizedString(@"keycap.end");
   case 116:
-    return @"Page Up";
+    return KoeLocalizedString(@"keycap.pageUp");
   case 121:
-    return @"Page Down";
+    return KoeLocalizedString(@"keycap.pageDown");
   case 123:
-    return @"Left Arrow";
+    return KoeLocalizedString(@"keycap.leftArrow");
   case 124:
-    return @"Right Arrow";
+    return KoeLocalizedString(@"keycap.rightArrow");
   case 125:
-    return @"Down Arrow";
+    return KoeLocalizedString(@"keycap.downArrow");
   case 126:
-    return @"Up Arrow";
+    return KoeLocalizedString(@"keycap.upArrow");
   default: {
     NSString *displayCharacter = displayCharacterForKeycode(keycode);
     return displayCharacter.length > 0
@@ -369,11 +374,11 @@ static NSDictionary<NSString *, NSString *> *comboModifierDisplayNames(void) {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     displayNames = @{
-      @"command" : @"Command",
-      @"option" : @"Option",
-      @"control" : @"Control",
-      @"shift" : @"Shift",
-      @"fn" : @"Fn",
+      @"command" : KoeLocalizedString(@"keycap.command"),
+      @"option" : KoeLocalizedString(@"keycap.option"),
+      @"control" : KoeLocalizedString(@"keycap.control"),
+      @"shift" : KoeLocalizedString(@"keycap.shift"),
+      @"fn" : KoeLocalizedString(@"keycap.fn"),
     };
   });
   return displayNames;
@@ -453,19 +458,19 @@ static NSString *normalizedHotkeyValue(NSString *value) {
 static NSString *displayNameForHotkeyValue(NSString *value) {
   NSString *normalizedValue = normalizedHotkeyValue(value);
   if ([normalizedValue isEqualToString:@"left_option"])
-    return @"Left Option (⌥)";
+    return KoeLocalizedString(@"hotkey.leftOption");
   if ([normalizedValue isEqualToString:@"right_option"])
-    return @"Right Option (⌥)";
+    return KoeLocalizedString(@"hotkey.rightOption");
   if ([normalizedValue isEqualToString:@"left_command"])
-    return @"Left Command (⌘)";
+    return KoeLocalizedString(@"hotkey.leftCommand");
   if ([normalizedValue isEqualToString:@"right_command"])
-    return @"Right Command (⌘)";
+    return KoeLocalizedString(@"hotkey.rightCommand");
   if ([normalizedValue isEqualToString:@"left_control"])
-    return @"Left Control (⌃)";
+    return KoeLocalizedString(@"hotkey.leftControl");
   if ([normalizedValue isEqualToString:@"right_control"])
-    return @"Right Control (⌃)";
+    return KoeLocalizedString(@"hotkey.rightControl");
   if ([normalizedValue isEqualToString:@"fn"])
-    return @"Fn (Globe)";
+    return KoeLocalizedString(@"hotkey.fnGlobe");
   NSString *normalizedCombo = normalizedHotkeyComboValue(normalizedValue);
   if (normalizedCombo.length > 0) {
     NSMutableArray<NSString *> *parts = [NSMutableArray array];
@@ -909,7 +914,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
                           NSWindowStyleMaskFullSizeContentView
                   backing:NSBackingStoreBuffered
                     defer:YES];
-  window.title = @"Koe Settings";
+  window.title = KoeLocalizedString(@"wizard.windowTitle");
   window.titlebarAppearsTransparent = YES;
   window.titleVisibility = NSWindowTitleHidden;
   window.movableByWindowBackground = YES;
@@ -1026,7 +1031,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   NSView *footer = [NSView new];
   footer.translatesAutoresizingMaskIntoConstraints = NO;
 
-  NSButton *saveButton = [NSButton buttonWithTitle:@"Save"
+  NSButton *saveButton = [NSButton buttonWithTitle:KoeLocalizedString(@"common.save")
                                             target:self
                                             action:@selector(saveConfig:)];
   saveButton.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1034,7 +1039,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   saveButton.keyEquivalent = @"\r";
   [footer addSubview:saveButton];
 
-  NSButton *cancelButton = [NSButton buttonWithTitle:@"Cancel"
+  NSButton *cancelButton = [NSButton buttonWithTitle:KoeLocalizedString(@"common.cancel")
                                               target:self
                                               action:@selector(cancelSetup:)];
   cancelButton.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1089,21 +1094,21 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
 - (NSString *)pageTitleForPane:(NSString *)identifier {
   if ([identifier isEqualToString:kToolbarASR])
-    return @"ASR";
+    return KoeLocalizedString(@"pane.asr");
   if ([identifier isEqualToString:kToolbarLLM])
-    return @"LLM";
+    return KoeLocalizedString(@"pane.llm");
   if ([identifier isEqualToString:kToolbarOverlay])
-    return @"Overlay";
+    return KoeLocalizedString(@"pane.overlay");
   if ([identifier isEqualToString:kToolbarHotkey])
-    return @"Controls";
+    return KoeLocalizedString(@"pane.controls");
   if ([identifier isEqualToString:kToolbarDictionary])
-    return @"Dictionary";
+    return KoeLocalizedString(@"pane.dictionary");
   if ([identifier isEqualToString:kToolbarSystemPrompt])
-    return @"Prompt";
+    return KoeLocalizedString(@"pane.prompt");
   if ([identifier isEqualToString:kToolbarTemplates])
-    return @"Templates";
+    return KoeLocalizedString(@"pane.templates");
   if ([identifier isEqualToString:kToolbarAbout])
-    return @"About";
+    return KoeLocalizedString(@"pane.about");
   return @"";
 }
 
@@ -1201,8 +1206,11 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   CGFloat contentW = paneWidth - 2.0 * contentX;
   // Label column measured from the actual strings so no label ever clips.
   CGFloat labelW = [self formLabelColumnWidthForTitles:@[
-    @"Provider", @"Auth Mode", @"API Key", @"App Key", @"Access Key",
-    @"Language", @"Model", @"Endpoint Silence", @"Output Variant"
+    KoeLocalizedString(@"asr.provider"), KoeLocalizedString(@"asr.authMode"),
+    KoeLocalizedString(@"common.apiKey"), KoeLocalizedString(@"asr.appKey"),
+    KoeLocalizedString(@"asr.accessKey"), KoeLocalizedString(@"asr.language"),
+    KoeLocalizedString(@"common.model"), KoeLocalizedString(@"asr.endpointSilence"),
+    KoeLocalizedString(@"asr.outputVariant")
   ]];
   // The form sits inside a card, so its columns are inset by the card padding.
   CGFloat formX = contentX + SPTheme.cardPadding;
@@ -1224,14 +1232,14 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   // Description
   NSTextField *desc =
       [self addSettingsDescriptionText:
-                @"Choose the ASR provider used for transcription."
+                KoeLocalizedString(@"asr.description")
                                 toPane:pane
                                   topY:y
                                      x:contentX
                                  width:contentW];
 
   NSTextField *sectionTitle = [self
-      sectionTitleLabel:@"Connection"
+      sectionTitleLabel:KoeLocalizedString(@"asr.section.connection")
                   frame:NSMakeRect(contentX, floor(NSMinY(desc.frame) - 36.0),
                                    contentW, 20)];
   [pane addSubview:sectionTitle];
@@ -1250,20 +1258,20 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   CGFloat formStartY = y;
 
   // Provider
-  [pane addSubview:[self formLabel:@"Provider"
+  [pane addSubview:[self formLabel:KoeLocalizedString(@"asr.provider")
                              frame:NSMakeRect(formX, y, labelW, 22)]];
   self.asrProviderPopup =
       [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 2, 200, 26)
                                  pullsDown:NO];
-  [self.asrProviderPopup addItemWithTitle:@"DoubaoIME (Built-in, Free)"];
+  [self.asrProviderPopup addItemWithTitle:KoeLocalizedString(@"asr.provider.doubaoime")];
   [self.asrProviderPopup lastItem].representedObject = @"doubaoime";
-  [self.asrProviderPopup addItemWithTitle:@"Doubao (ByteDance)"];
+  [self.asrProviderPopup addItemWithTitle:KoeLocalizedString(@"asr.provider.doubao")];
   [self.asrProviderPopup lastItem].representedObject = @"doubao";
-  [self.asrProviderPopup addItemWithTitle:@"Qwen (Alibaba Cloud)"];
+  [self.asrProviderPopup addItemWithTitle:KoeLocalizedString(@"asr.provider.qwen")];
   [self.asrProviderPopup lastItem].representedObject = @"qwen";
-  [self.asrProviderPopup addItemWithTitle:@"GLM (Zhipu)"];
+  [self.asrProviderPopup addItemWithTitle:KoeLocalizedString(@"asr.provider.glm")];
   [self.asrProviderPopup lastItem].representedObject = @"glm";
-  [self.asrProviderPopup addItemWithTitle:@"MiMo (Xiaomi)"];
+  [self.asrProviderPopup addItemWithTitle:KoeLocalizedString(@"asr.provider.mimo")];
   [self.asrProviderPopup lastItem].representedObject = @"mimo";
   NSArray<NSString *> *supportedLocalProviders =
       [self.rustBridge supportedLocalProviders];
@@ -1272,15 +1280,15 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   // x86_64)
   if (@available(macOS 26.0, *)) {
     if ([supportedLocalProviders containsObject:@"apple-speech"]) {
-      [self.asrProviderPopup addItemWithTitle:@"Apple Speech (On-Device)"];
+      [self.asrProviderPopup addItemWithTitle:KoeLocalizedString(@"asr.provider.appleSpeech")];
       [self.asrProviderPopup lastItem].representedObject = @"apple-speech";
     }
   }
   // Add local providers supported by this build (model-based)
   NSDictionary *localProviderLabels = @{
-    @"mlx" : @"MLX (Apple Silicon)",
-    @"sherpa-onnx" : @"Sherpa-ONNX",
-    @"wetype" : @"WeType (On-Device)",
+    @"mlx" : KoeLocalizedString(@"asr.provider.mlx"),
+    @"sherpa-onnx" : KoeLocalizedString(@"asr.provider.sherpaOnnx"),
+    @"wetype" : KoeLocalizedString(@"asr.provider.wetype"),
   };
   for (NSString *provider in supportedLocalProviders) {
     NSString *label = localProviderLabels[provider];
@@ -1294,7 +1302,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   [pane addSubview:self.asrProviderPopup];
 
   // Test button next to Provider
-  self.asrTestButton = [NSButton buttonWithTitle:@"Test"
+  self.asrTestButton = [NSButton buttonWithTitle:KoeLocalizedString(@"common.test")
                                           target:self
                                           action:@selector(testAsrConnection:)];
   self.asrTestButton.bezelStyle = NSBezelStyleRounded;
@@ -1303,7 +1311,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   y -= rowH;
 
   // Auth Mode segmented control (Doubao only)
-  NSTextField *authModeLabel = [self formLabel:@"Auth Mode"
+  NSTextField *authModeLabel = [self formLabel:KoeLocalizedString(@"asr.authMode")
                                          frame:NSMakeRect(formX, y, labelW, 22)];
   authModeLabel.tag = 1006;
   authModeLabel.hidden = YES;
@@ -1311,8 +1319,8 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.asrAuthModeControl = [[NSSegmentedControl alloc]
       initWithFrame:NSMakeRect(fieldX, y - 1, 240, 24)];
   [self.asrAuthModeControl setSegmentCount:2];
-  [self.asrAuthModeControl setLabel:@"New Console" forSegment:0];
-  [self.asrAuthModeControl setLabel:@"Legacy Console" forSegment:1];
+  [self.asrAuthModeControl setLabel:KoeLocalizedString(@"asr.authMode.newConsole") forSegment:0];
+  [self.asrAuthModeControl setLabel:KoeLocalizedString(@"asr.authMode.legacyConsole") forSegment:1];
   [self.asrAuthModeControl setSelectedSegment:0];
   [self.asrAuthModeControl setTarget:self];
   [self.asrAuthModeControl setAction:@selector(asrAuthModeChanged:)];
@@ -1326,12 +1334,12 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.asrApiKeySecureField = [[NSSecureTextField alloc]
       initWithFrame:NSMakeRect(fieldX, y, secFieldW, 22)];
   self.asrApiKeySecureField.placeholderString =
-      @"API Key from Volcengine Console";
+      KoeLocalizedString(@"asr.placeholder.volcengineApiKey");
   self.asrApiKeySecureField.font = [NSFont systemFontOfSize:13];
   self.asrApiKeySecureField.hidden = YES;
   [pane addSubview:self.asrApiKeySecureField];
   self.asrApiKeyField = [self formTextField:NSMakeRect(fieldX, y, secFieldW, 22)
-                                placeholder:@"API Key from Volcengine Console"];
+                                placeholder:KoeLocalizedString(@"asr.placeholder.volcengineApiKey")];
   self.asrApiKeyField.hidden = YES;
   [pane addSubview:self.asrApiKeyField];
   self.asrApiKeyToggle = [self
@@ -1339,7 +1347,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
                   action:@selector(toggleAsrApiKeyVisibility:)];
   self.asrApiKeyToggle.hidden = YES;
   [pane addSubview:self.asrApiKeyToggle];
-  NSTextField *apiKeyLabel = [self formLabel:@"API Key"
+  NSTextField *apiKeyLabel = [self formLabel:KoeLocalizedString(@"common.apiKey")
                                        frame:NSMakeRect(formX, y, labelW, 22)];
   apiKeyLabel.tag = 1007;
   apiKeyLabel.hidden = YES;
@@ -1347,15 +1355,15 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // App Key (Doubao legacy mode)
   self.asrAppKeyField = [self formTextField:NSMakeRect(fieldX, y, fieldW, 22)
-                                placeholder:@"Volcengine App ID"];
+                                placeholder:KoeLocalizedString(@"asr.placeholder.volcengineAppId")];
   [pane addSubview:self.asrAppKeyField];
-  NSTextField *appKeyLabel = [self formLabel:@"App Key"
+  NSTextField *appKeyLabel = [self formLabel:KoeLocalizedString(@"asr.appKey")
                                        frame:NSMakeRect(formX, y, labelW, 22)];
   appKeyLabel.tag = 1001;
   [pane addSubview:appKeyLabel];
 
   // Apple Speech locale popup (same row as App Key / Model, tag 1005)
-  NSTextField *localeLabel = [self formLabel:@"Language"
+  NSTextField *localeLabel = [self formLabel:KoeLocalizedString(@"asr.language")
                                        frame:NSMakeRect(formX, y, labelW, 22)];
   localeLabel.tag = 1005;
   localeLabel.hidden = YES;
@@ -1371,7 +1379,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   [pane addSubview:self.appleSpeechLocalePopup];
 
   // Row 1: Model popup + Download button (Local providers, same row as App Key)
-  self.localModelLabel = [self formLabel:@"Model"
+  self.localModelLabel = [self formLabel:KoeLocalizedString(@"common.model")
                                    frame:NSMakeRect(formX, y, labelW, 22)];
   self.localModelLabel.tag = 1004;
   self.localModelLabel.hidden = YES;
@@ -1459,12 +1467,12 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   self.asrAccessKeySecureField = [[NSSecureTextField alloc]
       initWithFrame:NSMakeRect(fieldX, accessKeyY, secFieldW, 22)];
-  self.asrAccessKeySecureField.placeholderString = @"Volcengine Access Token";
+  self.asrAccessKeySecureField.placeholderString = KoeLocalizedString(@"asr.placeholder.volcengineAccessToken");
   self.asrAccessKeySecureField.font = [NSFont systemFontOfSize:13];
   [pane addSubview:self.asrAccessKeySecureField];
   self.asrAccessKeyField =
       [self formTextField:NSMakeRect(fieldX, accessKeyY, secFieldW, 22)
-              placeholder:@"Volcengine Access Token"];
+              placeholder:KoeLocalizedString(@"asr.placeholder.volcengineAccessToken")];
   self.asrAccessKeyField.hidden = YES;
   [pane addSubview:self.asrAccessKeyField];
   self.asrAccessKeyToggle =
@@ -1473,7 +1481,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
                         action:@selector(toggleAsrAccessKeyVisibility:)];
   [pane addSubview:self.asrAccessKeyToggle];
   NSTextField *accessKeyLabel =
-      [self formLabel:@"Access Key"
+      [self formLabel:KoeLocalizedString(@"asr.accessKey")
                 frame:NSMakeRect(formX, accessKeyY, labelW, 22)];
   accessKeyLabel.tag = 1002;
   [pane addSubview:accessKeyLabel];
@@ -1483,13 +1491,13 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.asrQwenApiKeySecureField = [[NSSecureTextField alloc]
       initWithFrame:NSMakeRect(fieldX, qwenY, secFieldW, 22)];
   self.asrQwenApiKeySecureField.placeholderString =
-      @"DashScope API Key (sk-xxx)";
+      KoeLocalizedString(@"asr.placeholder.dashscopeApiKey");
   self.asrQwenApiKeySecureField.font = [NSFont systemFontOfSize:13];
   self.asrQwenApiKeySecureField.hidden = YES;
   [pane addSubview:self.asrQwenApiKeySecureField];
   self.asrQwenApiKeyField =
       [self formTextField:NSMakeRect(fieldX, qwenY, secFieldW, 22)
-              placeholder:@"DashScope API Key (sk-xxx)"];
+              placeholder:KoeLocalizedString(@"asr.placeholder.dashscopeApiKey")];
   self.asrQwenApiKeyField.hidden = YES;
   [pane addSubview:self.asrQwenApiKeyField];
   self.asrQwenApiKeyToggle = [self
@@ -1498,7 +1506,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.asrQwenApiKeyToggle.hidden = YES;
   [pane addSubview:self.asrQwenApiKeyToggle];
   NSTextField *qwenKeyLabel =
-      [self formLabel:@"API Key" frame:NSMakeRect(formX, qwenY, labelW, 22)];
+      [self formLabel:KoeLocalizedString(@"common.apiKey") frame:NSMakeRect(formX, qwenY, labelW, 22)];
   qwenKeyLabel.tag = 1003;
   qwenKeyLabel.hidden = YES;
   [pane addSubview:qwenKeyLabel];
@@ -1508,13 +1516,13 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.asrGlmApiKeySecureField = [[NSSecureTextField alloc]
       initWithFrame:NSMakeRect(fieldX, glmY, secFieldW, 22)];
   self.asrGlmApiKeySecureField.placeholderString =
-      @"API Key from bigmodel.cn";
+      KoeLocalizedString(@"asr.placeholder.bigmodelApiKey");
   self.asrGlmApiKeySecureField.font = [NSFont systemFontOfSize:13];
   self.asrGlmApiKeySecureField.hidden = YES;
   [pane addSubview:self.asrGlmApiKeySecureField];
   self.asrGlmApiKeyField =
       [self formTextField:NSMakeRect(fieldX, glmY, secFieldW, 22)
-              placeholder:@"API Key from bigmodel.cn"];
+              placeholder:KoeLocalizedString(@"asr.placeholder.bigmodelApiKey")];
   self.asrGlmApiKeyField.hidden = YES;
   [pane addSubview:self.asrGlmApiKeyField];
   self.asrGlmApiKeyToggle = [self
@@ -1523,7 +1531,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.asrGlmApiKeyToggle.hidden = YES;
   [pane addSubview:self.asrGlmApiKeyToggle];
   NSTextField *glmKeyLabel =
-      [self formLabel:@"API Key" frame:NSMakeRect(formX, glmY, labelW, 22)];
+      [self formLabel:KoeLocalizedString(@"common.apiKey") frame:NSMakeRect(formX, glmY, labelW, 22)];
   glmKeyLabel.tag = 1010;
   glmKeyLabel.hidden = YES;
   [pane addSubview:glmKeyLabel];
@@ -1533,13 +1541,13 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.asrMimoApiKeySecureField = [[NSSecureTextField alloc]
       initWithFrame:NSMakeRect(fieldX, mimoY, secFieldW, 22)];
   self.asrMimoApiKeySecureField.placeholderString =
-      @"API Key from xiaomimimo.com";
+      KoeLocalizedString(@"asr.placeholder.mimoApiKey");
   self.asrMimoApiKeySecureField.font = [NSFont systemFontOfSize:13];
   self.asrMimoApiKeySecureField.hidden = YES;
   [pane addSubview:self.asrMimoApiKeySecureField];
   self.asrMimoApiKeyField =
       [self formTextField:NSMakeRect(fieldX, mimoY, secFieldW, 22)
-              placeholder:@"API Key from xiaomimimo.com"];
+              placeholder:KoeLocalizedString(@"asr.placeholder.mimoApiKey")];
   self.asrMimoApiKeyField.hidden = YES;
   [pane addSubview:self.asrMimoApiKeyField];
   self.asrMimoApiKeyToggle = [self
@@ -1548,16 +1556,13 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.asrMimoApiKeyToggle.hidden = YES;
   [pane addSubview:self.asrMimoApiKeyToggle];
   NSTextField *mimoKeyLabel =
-      [self formLabel:@"API Key" frame:NSMakeRect(formX, mimoY, labelW, 22)];
+      [self formLabel:KoeLocalizedString(@"common.apiKey") frame:NSMakeRect(formX, mimoY, labelW, 22)];
   mimoKeyLabel.tag = 1011;
   mimoKeyLabel.hidden = YES;
   [pane addSubview:mimoKeyLabel];
   // Privacy notice — audio is sent to Xiaomi's servers, not ours.
   NSTextField *mimoPrivacyNotice = [NSTextField wrappingLabelWithString:
-      @"By selecting a Xiaomi (MiMo) model, you voluntarily consent to "
-      @"Xiaomi collecting your personal information and voice data. Koe "
-      @"collects nothing and runs no servers. For any questions, please "
-      @"contact the Xiaomi team."];
+      KoeLocalizedString(@"asr.hint.mimoPrivacy")];
   mimoPrivacyNotice.font = [NSFont systemFontOfSize:11];
   // Measured height so the full notice is always visible; sits below the
   // test result row, growing downward. All provider notes share the same
@@ -1581,9 +1586,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   // DoubaoIME note — the built-in provider needs no setup at all, but it is
   // a cloud service; make both facts explicit right under the provider row.
   NSTextField *doubaoImeNote = [NSTextField wrappingLabelWithString:
-      @"No configuration needed — no API key or account required. "
-      @"Recognition runs on a built-in free cloud service, so an active "
-      @"network connection is required while dictating."];
+      KoeLocalizedString(@"asr.hint.doubaoime")];
   doubaoImeNote.font = [NSFont systemFontOfSize:11];
   // Same orange as the other provider notes — one visual voice for all of
   // them (the user-visible convention: orange text = provider caveat).
@@ -1602,8 +1605,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   // WeType language note — in testing the on-device model only reliably
   // recognizes Chinese; say so under its model rows.
   NSTextField *wetypeNote = [NSTextField wrappingLabelWithString:
-      @"Note: in our testing this on-device model supports Chinese only. "
-      @"Other languages are not recognized."];
+      KoeLocalizedString(@"asr.hint.wetype")];
   wetypeNote.font = [NSFont systemFontOfSize:11];
   wetypeNote.textColor = [NSColor systemOrangeColor];
   CGFloat wetypeNoteH = [self fittingHeightForWrappingLabel:wetypeNote
@@ -1636,7 +1638,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // Language popup (Doubao + DoubaoIME)
   CGFloat langY = testResultY - rowH;
-  NSTextField *langLabel = [self formLabel:@"Language"
+  NSTextField *langLabel = [self formLabel:KoeLocalizedString(@"asr.language")
                                      frame:NSMakeRect(formX, langY, labelW, 22)];
   langLabel.tag = 1008;
   langLabel.hidden = YES;
@@ -1644,25 +1646,25 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.asrLanguagePopup = [[NSPopUpButton alloc]
       initWithFrame:NSMakeRect(fieldX, langY - 2, 200, 26)
           pullsDown:NO];
-  [self.asrLanguagePopup addItemWithTitle:@"Auto (中英文+方言)"];
+  [self.asrLanguagePopup addItemWithTitle:KoeLocalizedString(@"asr.lang.auto")];
   [self.asrLanguagePopup lastItem].representedObject = @"";
-  [self.asrLanguagePopup addItemWithTitle:@"中文普通话"];
+  [self.asrLanguagePopup addItemWithTitle:KoeLocalizedString(@"asr.lang.zhMandarin")];
   [self.asrLanguagePopup lastItem].representedObject = @"zh-CN";
-  [self.asrLanguagePopup addItemWithTitle:@"English"];
+  [self.asrLanguagePopup addItemWithTitle:KoeLocalizedString(@"asr.lang.en")];
   [self.asrLanguagePopup lastItem].representedObject = @"en-US";
-  [self.asrLanguagePopup addItemWithTitle:@"日本語"];
+  [self.asrLanguagePopup addItemWithTitle:KoeLocalizedString(@"asr.lang.ja")];
   [self.asrLanguagePopup lastItem].representedObject = @"ja-JP";
-  [self.asrLanguagePopup addItemWithTitle:@"한국어"];
+  [self.asrLanguagePopup addItemWithTitle:KoeLocalizedString(@"asr.lang.ko")];
   [self.asrLanguagePopup lastItem].representedObject = @"ko-KR";
-  [self.asrLanguagePopup addItemWithTitle:@"Deutsch"];
+  [self.asrLanguagePopup addItemWithTitle:KoeLocalizedString(@"asr.lang.de")];
   [self.asrLanguagePopup lastItem].representedObject = @"de-DE";
-  [self.asrLanguagePopup addItemWithTitle:@"Français"];
+  [self.asrLanguagePopup addItemWithTitle:KoeLocalizedString(@"asr.lang.fr")];
   [self.asrLanguagePopup lastItem].representedObject = @"fr-FR";
-  [self.asrLanguagePopup addItemWithTitle:@"Español"];
+  [self.asrLanguagePopup addItemWithTitle:KoeLocalizedString(@"asr.lang.es")];
   [self.asrLanguagePopup lastItem].representedObject = @"es-MX";
-  [self.asrLanguagePopup addItemWithTitle:@"Português"];
+  [self.asrLanguagePopup addItemWithTitle:KoeLocalizedString(@"asr.lang.pt")];
   [self.asrLanguagePopup lastItem].representedObject = @"pt-BR";
-  [self.asrLanguagePopup addItemWithTitle:@"粤語"];
+  [self.asrLanguagePopup addItemWithTitle:KoeLocalizedString(@"asr.lang.yue")];
   [self.asrLanguagePopup lastItem].representedObject = @"yue-CN";
   self.asrLanguagePopup.hidden = YES;
   [pane addSubview:self.asrLanguagePopup];
@@ -1670,7 +1672,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   // Advanced Settings toggle button (Doubao only)
   CGFloat advY = langY - rowH;
   self.asrAdvancedDisclosure =
-      [NSButton checkboxWithTitle:@"Advanced Settings"
+      [NSButton checkboxWithTitle:KoeLocalizedString(@"controls.advancedSettings")
                            target:self
                            action:@selector(asrAdvancedToggled:)];
   self.asrAdvancedDisclosure.frame = NSMakeRect(fieldX, advY, 200, 22);
@@ -1689,7 +1691,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // Advanced row 1: Endpoint Silence
   CGFloat advRowY = rowH * 2;
-  NSTextField *endLabel = [self formLabel:@"Endpoint Silence"
+  NSTextField *endLabel = [self formLabel:KoeLocalizedString(@"asr.endpointSilence")
                                     frame:NSMakeRect(formX, advRowY, labelW, 22)];
   [self.asrAdvancedContainer addSubview:endLabel];
   self.asrEndWindowField =
@@ -1697,7 +1699,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
               placeholder:@"800"];
   [self.asrAdvancedContainer addSubview:self.asrEndWindowField];
   NSTextField *endUnit =
-      [self formLabel:@"ms (min 200)"
+      [self formLabel:KoeLocalizedString(@"asr.msMin200")
                 frame:NSMakeRect(fieldX + 86, advRowY, 100, 22)];
   endUnit.alignment = NSTextAlignmentLeft;
   endUnit.font = [NSFont systemFontOfSize:11];
@@ -1707,26 +1709,26 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   // Advanced row 2: Output Variant
   advRowY -= rowH;
   NSTextField *variantLabel =
-      [self formLabel:@"Output Variant"
+      [self formLabel:KoeLocalizedString(@"asr.outputVariant")
                 frame:NSMakeRect(formX, advRowY, labelW, 22)];
   [self.asrAdvancedContainer addSubview:variantLabel];
   self.asrOutputVariantPopup = [[NSPopUpButton alloc]
       initWithFrame:NSMakeRect(fieldX, advRowY - 2, 160, 26)
           pullsDown:NO];
-  [self.asrOutputVariantPopup addItemWithTitle:@"Simplified"];
+  [self.asrOutputVariantPopup addItemWithTitle:KoeLocalizedString(@"asr.variant.simplified")];
   [self.asrOutputVariantPopup lastItem].representedObject = @"";
-  [self.asrOutputVariantPopup addItemWithTitle:@"Traditional"];
+  [self.asrOutputVariantPopup addItemWithTitle:KoeLocalizedString(@"asr.variant.traditional")];
   [self.asrOutputVariantPopup lastItem].representedObject = @"traditional";
-  [self.asrOutputVariantPopup addItemWithTitle:@"Taiwan"];
+  [self.asrOutputVariantPopup addItemWithTitle:KoeLocalizedString(@"asr.variant.taiwan")];
   [self.asrOutputVariantPopup lastItem].representedObject = @"tw";
-  [self.asrOutputVariantPopup addItemWithTitle:@"Hong Kong"];
+  [self.asrOutputVariantPopup addItemWithTitle:KoeLocalizedString(@"asr.variant.hongKong")];
   [self.asrOutputVariantPopup lastItem].representedObject = @"hk";
   [self.asrAdvancedContainer addSubview:self.asrOutputVariantPopup];
 
   // Advanced row 3: Accelerate First Character
   advRowY -= rowH;
   self.asrAccelerateCheckbox = [NSButton
-      checkboxWithTitle:@"Accelerate first character (may reduce accuracy)"
+      checkboxWithTitle:KoeLocalizedString(@"controls.accelerateFirstChar")
                  target:nil
                  action:nil];
   self.asrAccelerateCheckbox.frame = NSMakeRect(fieldX, advRowY, fieldW, 22);
@@ -1772,9 +1774,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   // much (the pane scrolls) so the profiles area keeps its full height and
   // the Test Connection button stays inside the detail card.
   NSTextField *correctionNote = [self
-      descriptionLabel:@"LLM correction is off by default. While it is off, "
-                       @"the raw speech-recognition output is used directly "
-                       @"as the final result."];
+      descriptionLabel:KoeLocalizedString(@"llm.hint.off")];
   CGFloat correctionNoteH =
       [self fittingHeightForWrappingLabel:correctionNote width:contentW];
   contentHeight += correctionNoteH + 10.0;
@@ -1798,8 +1798,10 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   // Detail form geometry (right of sidebar). The label column is measured
   // from the actual strings so no label ever clips.
   CGFloat labelW = [self formLabelColumnWidthForTitles:@[
-    @"Name", @"Type", @"Base URL", @"API Key", @"Model", @"Model List",
-    @"API Path", @"Token Parameter"
+    KoeLocalizedString(@"common.name"), KoeLocalizedString(@"llm.type"),
+    KoeLocalizedString(@"llm.baseUrl"), KoeLocalizedString(@"common.apiKey"),
+    KoeLocalizedString(@"common.model"), KoeLocalizedString(@"llm.modelList"),
+    KoeLocalizedString(@"llm.apiPath"), KoeLocalizedString(@"llm.tokenParameter")
   ]];
   CGFloat detailLabelX = detailCardX + cardPad;
   CGFloat fieldX = detailLabelX + labelW + 8;
@@ -1814,8 +1816,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // Description
   NSTextField *desc = [self
-      addSettingsDescriptionText:@"Configure an LLM to polish the "
-                                 @"transcription after speech recognition."
+      addSettingsDescriptionText:KoeLocalizedString(@"llm.description")
                           toPane:pane
                             topY:y
                                x:contentX
@@ -1830,9 +1831,9 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   NSView *behaviourCard = [self
       cardWithTitle:@""
                rows:@[
-                 [self cardRowWithLabel:@"LLM Correction"
+                 [self cardRowWithLabel:KoeLocalizedString(@"llm.correction")
                                 control:self.llmEnabledCheckbox],
-                 [self cardRowWithLabel:@"Auto-paste processed text"
+                 [self cardRowWithLabel:KoeLocalizedString(@"llm.autoPaste")
                                 control:self.llmAutoPasteProcessedTextSwitch],
                ]
               width:contentW];
@@ -1850,7 +1851,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   y = NSMinY(correctionNote.frame) - SPTheme.sectionGap;
 
   NSTextField *sectionTitle = [self
-      sectionTitleLabel:@"Profiles"
+      sectionTitleLabel:KoeLocalizedString(@"llm.section.profiles")
                   frame:NSMakeRect(contentX, floor(y - 20.0), contentW, 20.0)];
   [pane addSubview:sectionTitle];
   y = NSMinY(sectionTitle.frame) - 16.0;
@@ -1932,12 +1933,12 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // Name field (editable custom display name for this profile)
   NSTextField *nameLabel =
-      [self formLabel:@"Name"
+      [self formLabel:KoeLocalizedString(@"common.name")
                 frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
   [pane addSubview:nameLabel];
   self.llmProfileNameField =
       [self formTextField:NSMakeRect(fieldX, detailY, fieldW, 22)
-              placeholder:@"My profile"];
+              placeholder:KoeLocalizedString(@"llm.profilePlaceholder")];
   self.llmProfileNameField.target = self;
   self.llmProfileNameField.action = @selector(llmProfileNameChanged:);
   self.llmProfileNameField.delegate = self;
@@ -1946,7 +1947,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // Type (read-only label — locked at creation)
   NSTextField *typeLabelLeft =
-      [self formLabel:@"Type"
+      [self formLabel:KoeLocalizedString(@"llm.type")
                 frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
   [pane addSubview:typeLabelLeft];
   self.llmProfileTypeLabel = [NSTextField labelWithString:@""];
@@ -1962,7 +1963,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // Base URL
   NSTextField *baseUrlLabel =
-      [self formLabel:@"Base URL"
+      [self formLabel:KoeLocalizedString(@"llm.baseUrl")
                 frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
   baseUrlLabel.tag = 2001;
   [pane addSubview:baseUrlLabel];
@@ -1977,20 +1978,20 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   CGFloat eyeW = 28;
   CGFloat secFieldW = fieldW - eyeW - 4;
   NSTextField *apiKeyLabel =
-      [self formLabel:@"API Key"
+      [self formLabel:KoeLocalizedString(@"common.apiKey")
                 frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
   apiKeyLabel.tag = 2002;
   [pane addSubview:apiKeyLabel];
   self.llmApiKeySecureField = [[NSSecureTextField alloc]
       initWithFrame:NSMakeRect(fieldX, detailY, secFieldW, 22)];
   self.llmApiKeySecureField.placeholderString =
-      @"sk-... (leave empty if not required)";
+      KoeLocalizedString(@"llm.apiKeyPlaceholder");
   self.llmApiKeySecureField.font = [NSFont systemFontOfSize:13];
   self.llmApiKeySecureField.tag = 2002;
   [pane addSubview:self.llmApiKeySecureField];
   self.llmApiKeyField =
       [self formTextField:NSMakeRect(fieldX, detailY, secFieldW, 22)
-              placeholder:@"sk-... (leave empty if not required)"];
+              placeholder:KoeLocalizedString(@"llm.apiKeyPlaceholder")];
   self.llmApiKeyField.hidden = YES;
   self.llmApiKeyField.tag = 2002;
   [pane addSubview:self.llmApiKeyField];
@@ -2005,7 +2006,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   CGFloat modelPickerButtonW = 74;
   CGFloat modelFieldW = fieldW - modelPickerButtonW - 6;
   NSTextField *modelLabel =
-      [self formLabel:@"Model"
+      [self formLabel:KoeLocalizedString(@"common.model")
                 frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
   modelLabel.tag = 2003;
   [pane addSubview:modelLabel];
@@ -2015,7 +2016,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.llmModelField.tag = 2003;
   [pane addSubview:self.llmModelField];
   self.llmToggleModelPickerButton =
-      [NSButton buttonWithTitle:@"Choose"
+      [NSButton buttonWithTitle:KoeLocalizedString(@"common.choose")
                          target:self
                          action:@selector(toggleLlmRemoteModelPicker:)];
   self.llmToggleModelPickerButton.frame =
@@ -2027,7 +2028,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // Model List (OpenAI /models) — initially hidden, toggled by Choose button
   NSTextField *modelListLabel =
-      [self formLabel:@"Model List"
+      [self formLabel:KoeLocalizedString(@"llm.modelList")
                 frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
   modelListLabel.tag = 2004;
   [pane addSubview:modelListLabel];
@@ -2035,13 +2036,13 @@ static NSString *SPCondensedProviderError(NSString *raw) {
       initWithFrame:NSMakeRect(fieldX, detailY - 2, fieldW - 74, 26)
           pullsDown:NO];
   self.llmRemoteModelPopup.tag = 2004;
-  [self.llmRemoteModelPopup addItemWithTitle:@"No models loaded"];
+  [self.llmRemoteModelPopup addItemWithTitle:KoeLocalizedString(@"llm.noModelsLoaded")];
   self.llmRemoteModelPopup.enabled = NO;
   [self.llmRemoteModelPopup setTarget:self];
   [self.llmRemoteModelPopup setAction:@selector(llmRemoteModelChanged:)];
   [pane addSubview:self.llmRemoteModelPopup];
   self.llmRefreshModelsButton =
-      [NSButton buttonWithTitle:@"Refresh"
+      [NSButton buttonWithTitle:KoeLocalizedString(@"common.refresh")
                          target:self
                          action:@selector(refreshLlmRemoteModels:)];
   self.llmRefreshModelsButton.frame =
@@ -2056,7 +2057,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // Protocol endpoint path
   NSTextField *chatPathLabel =
-      [self formLabel:@"API Path"
+      [self formLabel:KoeLocalizedString(@"llm.apiPath")
                 frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
   chatPathLabel.tag = 2005;
   [pane addSubview:chatPathLabel];
@@ -2069,7 +2070,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // Max Token Parameter
   NSTextField *tokenParamLabel =
-      [self formLabel:@"Token Parameter"
+      [self formLabel:KoeLocalizedString(@"llm.tokenParameter")
                 frame:NSMakeRect(detailLabelX, detailY, labelW, 22)];
   tokenParamLabel.tag = 2006;
   [pane addSubview:tokenParamLabel];
@@ -2088,8 +2089,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // Hint text — measured so the full text is always visible
   NSTextField *tokenHint = [self
-      descriptionLabel:@"GPT-4o and older models use max_tokens. GPT-5 and "
-                       @"reasoning models (o1/o3) use max_completion_tokens."];
+      descriptionLabel:KoeLocalizedString(@"llm.tokenHint")];
   // The hint spans the card's full inner width, not just the field column —
   // at the field width it wraps to three lines and pushes the button out.
   CGFloat tokenHintW = detailCardX + detailCardW - cardPad - detailLabelX;
@@ -2104,7 +2104,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   detailY = NSMinY(tokenHint.frame) - 16.0 - 28.0;
 
   // Test button
-  self.llmTestButton = [NSButton buttonWithTitle:@"Test Connection"
+  self.llmTestButton = [NSButton buttonWithTitle:KoeLocalizedString(@"llm.testConnection")
                                           target:self
                                           action:@selector(testLlmConnection:)];
   self.llmTestButton.bezelStyle = NSBezelStyleRounded;
@@ -2130,7 +2130,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // MLX Model popup + Download button
   NSTextField *llmModelLabel =
-      [self formLabel:@"Model"
+      [self formLabel:KoeLocalizedString(@"common.model")
                 frame:NSMakeRect(detailLabelX, mlxY, labelW, 22)];
   llmModelLabel.tag = 2010;
   llmModelLabel.hidden = YES;
@@ -2283,11 +2283,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   CGFloat paneWidth = [self paneContentWidth];
   CGFloat contentX = SPTheme.pageMargin;
   CGFloat contentW = paneWidth - 2.0 * contentX;
-  NSString *descriptionText =
-      @"Adjust the bottom live transcript overlay. Choose a system font, tune "
-      @"text size, set the bottom distance, and decide whether long live text "
-      @"stays capped to a few lines or expands fully. Every change is "
-      @"previewed directly in the real desktop overlay position.";
+  NSString *descriptionText = KoeLocalizedString(@"overlay.description");
 
   self.overlayFontFamilyPopup = [self overlayFontFamilyPopupControl];
 
@@ -2316,25 +2312,25 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.overlayMaxVisibleLinesPopup = [self overlayMaxVisibleLinesPopupControl];
 
   NSButton *resetButton =
-      [NSButton buttonWithTitle:@"Reset to Default"
+      [NSButton buttonWithTitle:KoeLocalizedString(@"common.resetToDefault")
                          target:self
                          action:@selector(resetOverlaySettings:)];
   resetButton.bezelStyle = NSBezelStyleRounded;
   resetButton.frame = NSMakeRect(0, 0, 126.0, 28.0);
 
   NSView *controlsCard = [self
-      cardWithTitle:@"Style Controls"
+      cardWithTitle:KoeLocalizedString(@"overlay.section.style")
                rows:@[
-                 [self cardRowWithLabel:@"Font"
+                 [self cardRowWithLabel:KoeLocalizedString(@"overlay.font")
                                 control:self.overlayFontFamilyPopup],
-                 [self cardRowWithLabel:@"Text Size" control:fontSliderControl],
-                 [self cardRowWithLabel:@"Distance from Bottom"
+                 [self cardRowWithLabel:KoeLocalizedString(@"overlay.textSize") control:fontSliderControl],
+                 [self cardRowWithLabel:KoeLocalizedString(@"overlay.bottomMargin")
                                 control:bottomSliderControl],
-                 [self cardRowWithLabel:@"Limit Visible Lines"
+                 [self cardRowWithLabel:KoeLocalizedString(@"overlay.limitLines")
                                 control:self.overlayLimitVisibleLinesSwitch],
-                 [self cardRowWithLabel:@"Max Visible Lines"
+                 [self cardRowWithLabel:KoeLocalizedString(@"overlay.maxLines")
                                 control:self.overlayMaxVisibleLinesPopup],
-                 [self cardRowWithLabel:@"Defaults" control:resetButton],
+                 [self cardRowWithLabel:KoeLocalizedString(@"overlay.defaults") control:resetButton],
                ]
               width:contentW];
   CGFloat descriptionHeight = [self
@@ -2455,21 +2451,21 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.hotkeyPopup.target = self;
   self.hotkeyPopup.action = @selector(triggerHotkeyChanged:);
   self.recordTriggerHotkeyButton =
-      [NSButton buttonWithTitle:@"Record"
+      [NSButton buttonWithTitle:KoeLocalizedString(@"common.record")
                          target:self
                          action:@selector(recordTriggerHotkey:)];
   self.recordTriggerHotkeyButton.bezelStyle = NSBezelStyleRounded;
   // Wide enough for both runtime titles ("Record" / "Press...")
-  self.recordTriggerHotkeyButton.title = @"Press...";
+  self.recordTriggerHotkeyButton.title = KoeLocalizedString(@"controls.pressHotkey");
   [self.recordTriggerHotkeyButton sizeToFit];
   CGFloat recordButtonW = self.recordTriggerHotkeyButton.frame.size.width;
-  self.recordTriggerHotkeyButton.title = @"Record";
+  self.recordTriggerHotkeyButton.title = KoeLocalizedString(@"common.record");
   [self.recordTriggerHotkeyButton sizeToFit];
   recordButtonW =
       MAX(recordButtonW, self.recordTriggerHotkeyButton.frame.size.width);
   self.recordTriggerHotkeyButton.frame = NSMakeRect(0, 0, recordButtonW, 28);
   self.resetTriggerHotkeyButton =
-      [NSButton buttonWithTitle:@"Reset"
+      [NSButton buttonWithTitle:KoeLocalizedString(@"common.reset")
                          target:self
                          action:@selector(resetTriggerHotkey:)];
   self.resetTriggerHotkeyButton.bezelStyle = NSBezelStyleRounded;
@@ -2484,9 +2480,9 @@ static NSString *SPCondensedProviderError(NSString *raw) {
       [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 220, 26)
                                  pullsDown:NO];
   [self.triggerModePopup addItemsWithTitles:@[
-    @"Hold (Press & Hold)",
-    @"Toggle (Tap to Start/Stop)",
-    @"DoubleTap",
+    KoeLocalizedString(@"controls.mode.hold"),
+    KoeLocalizedString(@"controls.mode.toggle"),
+    KoeLocalizedString(@"controls.mode.doubleTap"),
   ]];
   [self.triggerModePopup itemAtIndex:0].representedObject = @"hold";
   [self.triggerModePopup itemAtIndex:1].representedObject = @"toggle";
@@ -2494,11 +2490,11 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // ── Trigger card ──
   NSView *triggerCard =
-      [self cardWithTitle:@"Trigger"
+      [self cardWithTitle:KoeLocalizedString(@"controls.section.trigger")
                      rows:@[
-                       [self cardRowWithLabel:@"Trigger Shortcut"
+                       [self cardRowWithLabel:KoeLocalizedString(@"controls.triggerShortcut")
                                       control:triggerShortcutControl],
-                       [self cardRowWithLabel:@"Trigger Mode"
+                       [self cardRowWithLabel:KoeLocalizedString(@"controls.triggerMode")
                                       control:self.triggerModePopup],
                      ]
                     width:cardWidth];
@@ -2507,9 +2503,9 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.autoReturnSwitch = [self settingsSwitchWithAction:NULL];
 
   NSView *pasteCard =
-      [self cardWithTitle:@"Paste Behavior"
+      [self cardWithTitle:KoeLocalizedString(@"controls.section.pasteBehavior")
                      rows:@[
-                       [self cardRowWithLabel:@"Press Return after paste"
+                       [self cardRowWithLabel:KoeLocalizedString(@"controls.pressReturnAfterPaste")
                                       control:self.autoReturnSwitch],
                      ]
                     width:cardWidth];
@@ -2520,13 +2516,13 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.errorSoundCheckbox = [self settingsSwitchWithAction:NULL];
 
   NSView *feedbackCard =
-      [self cardWithTitle:@"Feedback Sounds"
+      [self cardWithTitle:KoeLocalizedString(@"controls.section.feedbackSounds")
                      rows:@[
-                       [self cardRowWithLabel:@"Recording starts"
+                       [self cardRowWithLabel:KoeLocalizedString(@"controls.recordingStarts")
                                       control:self.startSoundCheckbox],
-                       [self cardRowWithLabel:@"Recording stops"
+                       [self cardRowWithLabel:KoeLocalizedString(@"controls.recordingStops")
                                       control:self.stopSoundCheckbox],
-                       [self cardRowWithLabel:@"Error occurs"
+                       [self cardRowWithLabel:KoeLocalizedString(@"controls.errorOccurs")
                                       control:self.errorSoundCheckbox],
                      ]
                     width:cardWidth];
@@ -2534,9 +2530,9 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   // ── Recording ──
   self.muteSystemOutputCheckbox = [self settingsSwitchWithAction:NULL];
   NSView *recordingCard =
-      [self cardWithTitle:@"Recording"
+      [self cardWithTitle:KoeLocalizedString(@"controls.section.recording")
                      rows:@[
-                       [self cardRowWithLabel:@"Mute system audio while recording"
+                       [self cardRowWithLabel:KoeLocalizedString(@"controls.muteSystemAudio")
                                       control:self.muteSystemOutputCheckbox],
                      ]
                     width:cardWidth];
@@ -2597,13 +2593,13 @@ static NSString *SPCondensedProviderError(NSString *raw) {
       [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 168, 26)
                                  pullsDown:NO];
   NSArray<NSString *> *titles = @[
-    @"Fn (Globe)",
-    @"Left Option (\u2325)",
-    @"Right Option (\u2325)",
-    @"Left Command (\u2318)",
-    @"Right Command (\u2318)",
-    @"Left Control (\u2303)",
-    @"Right Control (\u2303)",
+    KoeLocalizedString(@"hotkey.fnGlobe"),
+    KoeLocalizedString(@"hotkey.leftOption"),
+    KoeLocalizedString(@"hotkey.rightOption"),
+    KoeLocalizedString(@"hotkey.leftCommand"),
+    KoeLocalizedString(@"hotkey.rightCommand"),
+    KoeLocalizedString(@"hotkey.leftControl"),
+    KoeLocalizedString(@"hotkey.rightControl"),
   ];
   NSArray<NSString *> *values = @[
     @"fn",
@@ -2706,7 +2702,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.recordTriggerHotkeyButton.enabled = YES;
   self.resetTriggerHotkeyButton.enabled = !recordingTrigger;
   [self.recordTriggerHotkeyButton
-      setTitle:(recordingTrigger ? @"Press..." : @"Record")];
+      setTitle:(recordingTrigger ? KoeLocalizedString(@"controls.pressHotkey") : KoeLocalizedString(@"common.record"))];
 }
 
 - (NSString *)recordedHotkeyValueFromEvent:(NSEvent *)event {
@@ -2820,16 +2816,14 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   // Description
   NSTextField *desc =
       [self addSettingsDescriptionText:
-                @"User dictionary \u2014 one term per line. These terms are "
-                @"prioritized during LLM correction. Lines starting with # are "
-                @"comments."
+                KoeLocalizedString(@"dictionary.description")
                                 toPane:pane
                                   topY:y
                                      x:contentX
                                  width:contentW];
 
   NSTextField *sectionTitle = [self
-      sectionTitleLabel:@"Dictionary"
+      sectionTitleLabel:KoeLocalizedString(@"pane.dictionary")
                   frame:NSMakeRect(contentX, floor(NSMinY(desc.frame) - 36.0),
                                    contentW, 20)];
   [pane addSubview:sectionTitle];
@@ -2887,15 +2881,14 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // Description
   NSTextField *desc = [self
-      addSettingsDescriptionText:@"System prompt sent to the LLM for text "
-                                 @"correction. Edit to customize behavior."
+      addSettingsDescriptionText:KoeLocalizedString(@"prompt.description")
                           toPane:pane
                             topY:y
                                x:contentX
                            width:contentW];
 
   NSTextField *sectionTitle = [self
-      sectionTitleLabel:@"System Prompt"
+      sectionTitleLabel:KoeLocalizedString(@"pane.systemPrompt")
                   frame:NSMakeRect(contentX, floor(NSMinY(desc.frame) - 36.0),
                                    contentW, 20)];
   [pane addSubview:sectionTitle];
@@ -2955,8 +2948,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   NSTextField *desc =
       [self addSettingsDescriptionText:
-                @"Manage overlay templates. Reorder them, control visibility, "
-                @"and edit each prompt here."
+                KoeLocalizedString(@"templates.description")
                                 toPane:pane
                                   topY:y
                                      x:contentX
@@ -2966,7 +2958,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.templatesEnabledSwitch = [self settingsSwitchWithAction:NULL];
   NSView *visibilityCard = [self
       settingsToggleCardWithFrame:NSMakeRect(contentX, y - 48, contentW, 48)
-                            title:@"Show template buttons in overlay"
+                            title:KoeLocalizedString(@"templates.showButtons")
                            toggle:self.templatesEnabledSwitch];
   [pane addSubview:visibilityCard];
 
@@ -2979,12 +2971,12 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   CGFloat editorX = contentX + listW + cardGap;
 
   NSTextField *listTitle =
-      [self sectionTitleLabel:@"Template Library"
+      [self sectionTitleLabel:KoeLocalizedString(@"templates.library")
                         frame:NSMakeRect(contentX, sectionTitleY, listW, 20)];
   [pane addSubview:listTitle];
 
   NSTextField *editorTitle =
-      [self sectionTitleLabel:@"Template Editor"
+      [self sectionTitleLabel:KoeLocalizedString(@"templates.editor")
                         frame:NSMakeRect(editorX, sectionTitleY, editorW, 20)];
   [pane addSubview:editorTitle];
 
@@ -3001,7 +2993,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   CGFloat headerH = 34.0;
   CGFloat footerH = 34.0;
 
-  NSTextField *libraryCaption = [NSTextField labelWithString:@"Templates"];
+  NSTextField *libraryCaption = [NSTextField labelWithString:KoeLocalizedString(@"pane.templates")];
   libraryCaption.font = SPTheme.cardTitleFont;
   libraryCaption.textColor = SPTheme.primaryText;
   libraryCaption.frame = NSMakeRect(14, mainCardH - headerH + 9, 120, 18);
@@ -3020,8 +3012,8 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.templatePrimaryActionsControl =
       [self templateActionSegmentedControlWithSymbols:@[ @"plus", @"minus" ]
                                              toolTips:@[
-                                               @"Add template",
-                                               @"Remove selected template"
+                                               KoeLocalizedString(@"templates.add"),
+                                               KoeLocalizedString(@"templates.remove")
                                              ]
                                                action:@selector
                                                (handleTemplatePrimaryActions:)];
@@ -3031,8 +3023,8 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.templateReorderActionsControl = [self
       templateActionSegmentedControlWithSymbols:@[ @"arrow.up", @"arrow.down" ]
                                        toolTips:@[
-                                         @"Move selected template up",
-                                         @"Move selected template down"
+                                         KoeLocalizedString(@"templates.moveUp"),
+                                         KoeLocalizedString(@"templates.moveDown")
                                        ]
                                          action:@selector
                                          (handleTemplateReorderActions:)];
@@ -3057,7 +3049,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   self.templatesTableView =
       [[NSTableView alloc] initWithFrame:scrollView.bounds];
   NSTableColumn *col = [[NSTableColumn alloc] initWithIdentifier:@"name"];
-  col.title = @"Template";
+  col.title = KoeLocalizedString(@"templates.column.template");
   col.width = scrollView.bounds.size.width;
   col.resizingMask = NSTableColumnAutoresizingMask;
   [self.templatesTableView addTableColumn:col];
@@ -3075,13 +3067,13 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   scrollView.documentView = self.templatesTableView;
 
   NSTextField *nameLabel =
-      [self sectionTitleLabel:@"Name"
+      [self sectionTitleLabel:KoeLocalizedString(@"common.name")
                         frame:NSMakeRect(16, mainCardH - 34, editorW - 32, 18)];
   [editorCard addSubview:nameLabel];
 
   self.templateNameField =
       [self formTextField:NSMakeRect(16, mainCardH - 64, editorW - 32, 24)
-              placeholder:@"Template name"];
+              placeholder:KoeLocalizedString(@"templates.namePlaceholder")];
   self.templateNameField.delegate = self;
   [editorCard addSubview:self.templateNameField];
 
@@ -3094,7 +3086,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   CGFloat templateVisibilityCenterY = mainCardH - 86.0;
 
   NSTextField *templateVisibilityLabel =
-      [self settingsRowLabelWithString:@"Visible in overlay"];
+      [self settingsRowLabelWithString:KoeLocalizedString(@"templates.visibleInOverlay")];
   templateVisibilityLabel.frame =
       NSMakeRect(16, floor(templateVisibilityCenterY - 10.0),
                  editorW - templateItemToggleW - 44.0, 20);
@@ -3107,7 +3099,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   [editorCard addSubview:self.templateItemEnabledSwitch];
 
   NSTextField *promptLabel = [self
-      sectionTitleLabel:@"Prompt"
+      sectionTitleLabel:KoeLocalizedString(@"pane.prompt")
                   frame:NSMakeRect(16, mainCardH - 124, editorW - 32, 18)];
   [editorCard addSubview:promptLabel];
 
@@ -3235,7 +3227,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   if (row < (NSInteger)self.templatesData.count) {
     NSDictionary *tmpl = self.templatesData[row];
-    NSString *name = tmpl[@"name"] ?: @"Untitled";
+    NSString *name = tmpl[@"name"] ?: KoeLocalizedString(@"templates.untitled");
     BOOL enabled = [self isTemplateEnabled:tmpl];
 
     NSTextField *titleLabel = nil;
@@ -3630,17 +3622,17 @@ static NSString *SPCondensedProviderError(NSString *raw) {
     NSInteger value = shortcut.integerValue;
     if (!shortcut || value < 1 || value > 9) {
       if (message)
-        *message = @"Each prompt template needs a shortcut between 1 and 9.";
+        *message = KoeLocalizedString(@"alert.templateShortcut.title");
       return NO;
     }
     if ([used containsObject:@(value)]) {
       if (message)
-        *message = @"Each prompt template shortcut must be unique.";
+        *message = KoeLocalizedString(@"alert.templateUnique.title");
       return NO;
     }
     if ([self trimmedResolvedPromptTextForTemplate:tmpl].length == 0) {
       if (message)
-        *message = @"Each prompt template needs a non-empty prompt.";
+        *message = KoeLocalizedString(@"alert.templateEmpty.title");
       return NO;
     }
     [used addObject:@(value)];
@@ -3651,16 +3643,15 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
 - (void)addTemplate:(id)sender {
   if (self.templatesData.count >= 9) {
-    [self showAlert:@"Template limit reached"
-               info:@"You can add up to 9 prompt templates because the overlay "
-                    @"only supports number keys 1-9."];
+    [self showAlert:KoeLocalizedString(@"alert.templateLimit.title")
+               info:KoeLocalizedString(@"alert.templateLimit.message")];
     return;
   }
 
   [self flushEditorToIndex:self.selectedTemplateIndex];
   [self.templatesData
       addObject:[NSMutableDictionary dictionaryWithDictionary:@{
-        @"name" : @"New Template",
+        @"name" : KoeLocalizedString(@"templates.new"),
         @"enabled" : @YES,
         @"shortcut" : @((NSInteger)self.templatesData.count + 1),
         @"system_prompt" : @"",
@@ -3734,9 +3725,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   CGFloat paneWidth = [self paneContentWidth];
   // Measure the description first — the pane height grows to fit it.
   NSTextField *desc = [self
-      descriptionLabel:@"A background-first macOS voice input tool.\nPress a "
-                       @"hotkey, speak, and the corrected text is pasted into "
-                       @"whatever app you’re using."];
+      descriptionLabel:KoeLocalizedString(@"about.tagline")];
   desc.alignment = NSTextAlignmentCenter;
   CGFloat descH = [self fittingHeightForWrappingLabel:desc
                                                 width:paneWidth - 120];
@@ -3811,7 +3800,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
       [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"]
           ?: @"0";
   NSTextField *versionLabel =
-      [self descriptionLabel:[NSString stringWithFormat:@"Version %@ (%@)",
+      [self descriptionLabel:[NSString stringWithFormat:KoeLocalizedString(@"about.version"),
                                                         version, build]];
   versionLabel.alignment = NSTextAlignmentCenter;
   versionLabel.frame = NSMakeRect(24, y, paneWidth - 48, 20);
@@ -3824,7 +3813,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   y = NSMinY(desc.frame) - 46;
 
   // GitHub button
-  NSButton *githubButton = [NSButton buttonWithTitle:@"GitHub Repository"
+  NSButton *githubButton = [NSButton buttonWithTitle:KoeLocalizedString(@"about.githubRepository")
                                               target:self
                                               action:@selector(openGitHub:)];
   githubButton.bezelStyle = NSBezelStyleRounded;
@@ -3836,7 +3825,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   y -= 40;
 
   // Documentation link
-  NSButton *docsButton = [NSButton buttonWithTitle:@"Documentation"
+  NSButton *docsButton = [NSButton buttonWithTitle:KoeLocalizedString(@"about.documentation")
                                             target:self
                                             action:@selector(openDocs:)];
   docsButton.bezelStyle = NSBezelStyleRounded;
@@ -3849,7 +3838,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // License
   NSTextField *license = [self
-      descriptionLabel:@"MIT License \u00b7 Made with Rust + Objective-C"];
+      descriptionLabel:KoeLocalizedString(@"about.license")];
   license.alignment = NSTextAlignmentCenter;
   license.frame = NSMakeRect(24, y, paneWidth - 48, 20);
   [pane addSubview:license];
@@ -3857,7 +3846,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   // Contributors (pre-measured above)
   NSTextField *contributorsTitle = [self
-      descriptionLabel:@"Thanks to everyone who has contributed to Koe ❤️"];
+      descriptionLabel:KoeLocalizedString(@"about.thanks")];
   contributorsTitle.alignment = NSTextAlignmentCenter;
   contributorsTitle.font = [NSFont systemFontOfSize:11 weight:NSFontWeightSemibold];
   contributorsTitle.frame = NSMakeRect(24, y, paneWidth - 48, 16);
@@ -3980,12 +3969,12 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   [popup removeAllItems];
 
   NSMenuItem *systemItem =
-      [[NSMenuItem alloc] initWithTitle:kOverlayFontFamilySystemLabel
+      [[NSMenuItem alloc] initWithTitle:overlayFontFamilySystemLabel()
                                  action:nil
                           keyEquivalent:@""];
   systemItem.representedObject = kOverlayFontFamilyDefault;
   systemItem.attributedTitle =
-      [self overlayFontMenuTitleWithLabel:kOverlayFontFamilySystemLabel
+      [self overlayFontMenuTitleWithLabel:overlayFontFamilySystemLabel()
                                     value:kOverlayFontFamilyDefault];
   [popup.menu addItem:systemItem];
 
@@ -4011,7 +4000,7 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
   for (NSInteger value = kOverlayMaxVisibleLinesMin;
        value <= kOverlayMaxVisibleLinesMax; value++) {
-    NSString *title = [NSString stringWithFormat:@"%ld lines", (long)value];
+    NSString *title = [NSString stringWithFormat:KoeLocalizedString(@"overlay.lineCount"), (long)value];
     [popup addItemWithTitle:title];
     popup.lastItem.representedObject = @(value);
   }
@@ -4710,7 +4699,7 @@ static const CGFloat kAsrStatusStripHeight = 34.0;
 
   // If selected model is currently downloading, show progress UI
   if ([self.downloadingModels containsObject:modelPath]) {
-    self.modelStatusLabel.stringValue = @"Downloading";
+    self.modelStatusLabel.stringValue = KoeLocalizedString(@"status.downloading");
     self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
     self.modelDownloadButton.image =
         [NSImage imageWithSystemSymbolName:@"stop.circle"
@@ -4759,7 +4748,7 @@ static const CGFloat kAsrStatusStripHeight = 34.0;
   switch (status) {
   case 2:
     self.modelStatusLabel.stringValue =
-        verifying ? @"● Verifying…" : @"● Installed";
+        verifying ? KoeLocalizedString(@"status.verifying") : KoeLocalizedString(@"status.installed");
     self.modelStatusLabel.textColor =
         verifying ? [NSColor secondaryLabelColor] : [NSColor systemGreenColor];
     self.modelDownloadButton.enabled = NO;
@@ -4767,14 +4756,14 @@ static const CGFloat kAsrStatusStripHeight = 34.0;
     break;
   case 1:
     self.modelStatusLabel.stringValue =
-        verifying ? @"◐ Verifying…" : @"◐ Incomplete";
+        verifying ? @"◐ Verifying…" : KoeLocalizedString(@"status.incomplete");
     self.modelStatusLabel.textColor =
         verifying ? [NSColor secondaryLabelColor] : [NSColor systemOrangeColor];
     self.modelDownloadButton.enabled = YES;
     self.modelDeleteButton.enabled = YES;
     break;
   default:
-    self.modelStatusLabel.stringValue = @"○ Not installed";
+    self.modelStatusLabel.stringValue = KoeLocalizedString(@"status.notInstalled");
     self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
     self.modelDownloadButton.enabled = YES;
     self.modelDeleteButton.enabled = NO;
@@ -4811,7 +4800,7 @@ static const CGFloat kAsrStatusStripHeight = 34.0;
       [NSImage imageWithSystemSymbolName:@"stop.circle"
                 accessibilityDescription:@"Stop"];
   self.modelDownloadButton.hidden = NO;
-  self.modelStatusLabel.stringValue = @"Downloading...";
+  self.modelStatusLabel.stringValue = KoeLocalizedString(@"status.downloading");
   self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
   self.modelProgressBar.hidden = NO;
   self.modelProgressBar.doubleValue = 0;
@@ -4854,7 +4843,7 @@ static const CGFloat kAsrStatusStripHeight = 34.0;
                 ? (double)totalDownloaded / (double)totalBytesAllFiles * 100.0
                 : 0;
         strongSelf.modelProgressBar.doubleValue = pct;
-        strongSelf.modelStatusLabel.stringValue = @"Downloading";
+        strongSelf.modelStatusLabel.stringValue = KoeLocalizedString(@"status.downloading");
         strongSelf.modelProgressSizeLabel.stringValue =
             [NSString stringWithFormat:@"%.1f / %.1f MB",
                                        (double)totalDownloaded / 1048576.0,
@@ -4883,11 +4872,10 @@ static const CGFloat kAsrStatusStripHeight = 34.0;
     return;
 
   NSAlert *alert = [[NSAlert alloc] init];
-  alert.messageText = @"Remove Model Files?";
-  alert.informativeText = @"Downloaded model files will be deleted. The model "
-                          @"can be re-downloaded later.";
-  [alert addButtonWithTitle:@"Remove"];
-  [alert addButtonWithTitle:@"Cancel"];
+  alert.messageText = KoeLocalizedString(@"alert.removeModel.title");
+  alert.informativeText = KoeLocalizedString(@"alert.removeModel.message");
+  [alert addButtonWithTitle:KoeLocalizedString(@"common.remove")];
+  [alert addButtonWithTitle:KoeLocalizedString(@"common.cancel")];
   alert.alertStyle = NSAlertStyleWarning;
 
   if ([alert runModal] == NSAlertFirstButtonReturn) {
@@ -4944,7 +4932,7 @@ static const CGFloat kAsrStatusStripHeight = 34.0;
     }
   } else {
     // Fallback if API unavailable
-    [self.appleSpeechLocalePopup addItemWithTitle:@"No languages available"];
+    [self.appleSpeechLocalePopup addItemWithTitle:KoeLocalizedString(@"asr.noLanguagesAvailable")];
     self.appleSpeechLocalePopup.enabled = NO;
   }
 }
@@ -4955,7 +4943,7 @@ static const CGFloat kAsrStatusStripHeight = 34.0;
 
   switch (status) {
   case 3: { // installed
-    self.modelStatusLabel.stringValue = @"● Installed";
+    self.modelStatusLabel.stringValue = KoeLocalizedString(@"status.installed");
     self.modelStatusLabel.textColor = [NSColor systemGreenColor];
     self.modelDownloadButton.image =
         [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
@@ -4965,13 +4953,13 @@ static const CGFloat kAsrStatusStripHeight = 34.0;
     break;
   }
   case 2: // downloading
-    self.modelStatusLabel.stringValue = @"◐ Downloading…";
+    self.modelStatusLabel.stringValue = KoeLocalizedString(@"status.downloadingDot");
     self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
     self.modelDownloadButton.enabled = NO;
     self.modelDeleteButton.enabled = NO;
     break;
   case 1: // supported (downloadable)
-    self.modelStatusLabel.stringValue = @"○ Not installed";
+    self.modelStatusLabel.stringValue = KoeLocalizedString(@"status.notInstalled");
     self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
     self.modelDownloadButton.image =
         [NSImage imageWithSystemSymbolName:@"arrow.down.circle"
@@ -4980,7 +4968,7 @@ static const CGFloat kAsrStatusStripHeight = 34.0;
     self.modelDeleteButton.enabled = NO;
     break;
   default: // unsupported
-    self.modelStatusLabel.stringValue = @"✕ Not supported for this language";
+    self.modelStatusLabel.stringValue = KoeLocalizedString(@"status.notSupportedForLanguage");
     self.modelStatusLabel.textColor = [NSColor systemRedColor];
     self.modelDownloadButton.enabled = NO;
     self.modelDeleteButton.enabled = NO;
@@ -4996,14 +4984,14 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   dispatch_async(dispatch_get_main_queue(), ^{
     switch (eventType) {
     case 0: // progress
-      controller.modelStatusLabel.stringValue = textStr ?: @"Downloading…";
+      controller.modelStatusLabel.stringValue = textStr ?: KoeLocalizedString(@"status.downloading");
       controller.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
       break;
     case 1: // completed
       [controller updateAppleSpeechAssetStatus];
       break;
     case 2: // error
-      controller.modelStatusLabel.stringValue = textStr ?: @"Download failed";
+      controller.modelStatusLabel.stringValue = textStr ?: KoeLocalizedString(@"status.downloadFailed");
       controller.modelStatusLabel.textColor = [NSColor systemRedColor];
       controller.modelDownloadButton.enabled = YES;
       break;
@@ -5019,11 +5007,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   NSString *locale = self.appleSpeechLocalePopup.selectedItem.representedObject;
 
   NSAlert *alert = [[NSAlert alloc] init];
-  alert.messageText = @"Release Speech Assets?";
-  alert.informativeText = @"The system may reclaim storage for this language's "
-                          @"speech model. You can re-download it later.";
-  [alert addButtonWithTitle:@"Release"];
-  [alert addButtonWithTitle:@"Cancel"];
+  alert.messageText = KoeLocalizedString(@"alert.releaseAssets.title");
+  alert.informativeText = KoeLocalizedString(@"alert.releaseAssets.message");
+  [alert addButtonWithTitle:KoeLocalizedString(@"common.release")];
+  [alert addButtonWithTitle:KoeLocalizedString(@"common.cancel")];
   alert.alertStyle = NSAlertStyleWarning;
 
   if ([alert runModal] == NSAlertFirstButtonReturn) {
@@ -5034,7 +5021,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
 - (void)downloadAppleSpeechAsset {
   NSString *locale = self.appleSpeechLocalePopup.selectedItem.representedObject;
-  self.modelStatusLabel.stringValue = @"Downloading…";
+  self.modelStatusLabel.stringValue = KoeLocalizedString(@"status.downloading");
   self.modelStatusLabel.textColor = [NSColor secondaryLabelColor];
   self.modelDownloadButton.enabled = NO;
   koe_apple_speech_install_asset(locale.UTF8String, appleSpeechInstallCallback,
@@ -5069,7 +5056,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   }
 
   if (self.localModelPopup.numberOfItems == 0) {
-    [self.localModelPopup addItemWithTitle:@"No models found"];
+    [self.localModelPopup addItemWithTitle:KoeLocalizedString(@"llm.noModelsFound")];
     self.localModelPopup.enabled = NO;
   } else {
     self.localModelPopup.enabled = YES;
@@ -5121,8 +5108,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                                                  protocol:(NSString *)protocol {
   BOOL usesResponses = [protocol isEqualToString:kLlmProtocolOpenAIResponses];
   return [@{
-    @"name" : name ?: (usesResponses ? @"OpenAI Responses"
-                                     : @"OpenAI Chat Completions"),
+    @"name" : name ?: (usesResponses ? KoeLocalizedString(@"llm.protocol.openaiResponses")
+                                     : KoeLocalizedString(@"llm.protocol.openaiChat")),
     @"provider" : @"openai",
     @"api_protocol" : protocol ?: kLlmProtocolOpenAIChat,
     @"base_url" : @"https://api.openai.com/v1",
@@ -5138,7 +5125,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
 - (NSMutableDictionary *)defaultAnthropicLlmProfile {
   return [@{
-    @"name" : @"Anthropic Messages",
+    @"name" : KoeLocalizedString(@"llm.protocol.anthropicMessages"),
     @"provider" : @"anthropic",
     @"api_protocol" : kLlmProtocolAnthropicMessages,
     @"base_url" : @"https://api.anthropic.com/v1",
@@ -5153,7 +5140,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
 - (NSMutableDictionary *)defaultApfelLlmProfile {
   return [@{
-    @"name" : @"APFEL",
+    @"name" : KoeLocalizedString(@"llm.protocol.apfel"),
     @"provider" : @"apfel",
     @"api_protocol" : kLlmProtocolOpenAIChat,
     @"base_url" : @"http://127.0.0.1:11434/v1",
@@ -5168,7 +5155,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
 - (NSMutableDictionary *)defaultMlxLlmProfileWithName:(NSString *)name {
   return [@{
-    @"name" : name ?: @"MLX (Apple Silicon)",
+    @"name" : name ?: KoeLocalizedString(@"asr.provider.mlx"),
     @"provider" : @"mlx",
     @"api_protocol" : kLlmProtocolOpenAIChat,
     @"base_url" : @"",
@@ -5210,15 +5197,15 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                            ? profile[@"provider"]
                            : @"openai";
   if ([provider isEqualToString:@"apfel"])
-    return @"APFEL";
+    return KoeLocalizedString(@"llm.protocol.apfel");
   if ([provider isEqualToString:@"mlx"])
-    return @"MLX (Apple Silicon)";
+    return KoeLocalizedString(@"asr.provider.mlx");
   if ([provider isEqualToString:@"anthropic"])
-    return @"Anthropic Messages";
+    return KoeLocalizedString(@"llm.protocol.anthropicMessages");
   if ([[self apiProtocolForLlmProfile:profile]
           isEqualToString:kLlmProtocolOpenAIResponses])
-    return @"OpenAI Responses";
-  return @"OpenAI Chat Completions";
+    return KoeLocalizedString(@"llm.protocol.openaiResponses");
+  return KoeLocalizedString(@"llm.protocol.openaiChat");
 }
 
 - (void)loadLlmProfilesFromCore {
@@ -5250,15 +5237,15 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
   if (self.llmProfiles.count == 0) {
     self.llmProfiles[@"openai"] =
-        [self defaultOpenAILlmProfileWithName:@"OpenAI Chat Completions"
+        [self defaultOpenAILlmProfileWithName:KoeLocalizedString(@"llm.protocol.openaiChat")
                                       protocol:kLlmProtocolOpenAIChat];
     self.llmProfiles[@"openai-responses"] =
-        [self defaultOpenAILlmProfileWithName:@"OpenAI Responses"
+        [self defaultOpenAILlmProfileWithName:KoeLocalizedString(@"llm.protocol.openaiResponses")
                                       protocol:kLlmProtocolOpenAIResponses];
     self.llmProfiles[@"anthropic"] = [self defaultAnthropicLlmProfile];
     self.llmProfiles[@"apfel"] = [self defaultApfelLlmProfile];
     self.llmProfiles[@"mlx"] =
-        [self defaultMlxLlmProfileWithName:@"MLX (Apple Silicon)"];
+        [self defaultMlxLlmProfileWithName:KoeLocalizedString(@"asr.provider.mlx")];
   }
 
   NSString *activeProfile =
@@ -5456,7 +5443,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 - (void)showAddLlmProfileMenu:(id)sender {
   NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
   NSMenuItem *openaiChatItem =
-      [[NSMenuItem alloc] initWithTitle:@"OpenAI Chat Completions"
+      [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"llm.protocol.openaiChat")
                                  action:@selector(addLlmProfileFromMenu:)
                           keyEquivalent:@""];
   openaiChatItem.target = self;
@@ -5470,14 +5457,14 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   openaiResponsesItem.representedObject = @"openai_responses";
   [menu addItem:openaiResponsesItem];
   NSMenuItem *anthropicItem =
-      [[NSMenuItem alloc] initWithTitle:@"Anthropic Messages"
+      [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"llm.protocol.anthropicMessages")
                                  action:@selector(addLlmProfileFromMenu:)
                           keyEquivalent:@""];
   anthropicItem.target = self;
   anthropicItem.representedObject = @"anthropic";
   [menu addItem:anthropicItem];
   NSMenuItem *apfelItem =
-      [[NSMenuItem alloc] initWithTitle:@"APFEL"
+      [[NSMenuItem alloc] initWithTitle:KoeLocalizedString(@"llm.protocol.apfel")
                                  action:@selector(addLlmProfileFromMenu:)
                           keyEquivalent:@""];
   apfelItem.target = self;
@@ -5516,16 +5503,16 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   NSMutableDictionary *profile = nil;
   if ([type isEqualToString:@"apfel"]) {
     profile = [self defaultApfelLlmProfile];
-    profile[@"name"] = @"APFEL";
+    profile[@"name"] = KoeLocalizedString(@"llm.protocol.apfel");
   } else if ([type isEqualToString:@"mlx"]) {
-    profile = [self defaultMlxLlmProfileWithName:@"MLX (Apple Silicon)"];
+    profile = [self defaultMlxLlmProfileWithName:KoeLocalizedString(@"asr.provider.mlx")];
   } else if ([type isEqualToString:@"anthropic"]) {
     profile = [self defaultAnthropicLlmProfile];
   } else if ([type isEqualToString:@"openai_responses"]) {
-    profile = [self defaultOpenAILlmProfileWithName:@"OpenAI Responses"
+    profile = [self defaultOpenAILlmProfileWithName:KoeLocalizedString(@"llm.protocol.openaiResponses")
                                             protocol:kLlmProtocolOpenAIResponses];
   } else {
-    profile = [self defaultOpenAILlmProfileWithName:@"OpenAI Chat Completions"
+    profile = [self defaultOpenAILlmProfileWithName:KoeLocalizedString(@"llm.protocol.openaiChat")
                                             protocol:kLlmProtocolOpenAIChat];
   }
   self.llmProfiles[profileId] = profile;
@@ -5880,13 +5867,11 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
       int32_t assetStatus = koe_apple_speech_asset_status(locale.UTF8String);
       if (assetStatus != 3) { // not installed
         NSAlert *alert = [[NSAlert alloc] init];
-        alert.messageText = @"Speech Assets Not Installed";
+        alert.messageText = KoeLocalizedString(@"alert.speechAssetsMissing.title");
         alert.informativeText =
-            @"The speech recognition model for the selected language has not "
-            @"been downloaded yet. Saving will start downloading "
-            @"automatically.";
-        [alert addButtonWithTitle:@"Save & Download"];
-        [alert addButtonWithTitle:@"Cancel"];
+            KoeLocalizedString(@"alert.speechAssetsMissing.message");
+        [alert addButtonWithTitle:KoeLocalizedString(@"common.saveAndDownload")];
+        [alert addButtonWithTitle:KoeLocalizedString(@"common.cancel")];
         alert.alertStyle = NSAlertStyleWarning;
         if ([alert runModal] != NSAlertFirstButtonReturn) {
           return;
@@ -5908,12 +5893,11 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                                                    mode:SPModelVerifyCacheOnly];
         if (status != 2) { // not installed
           NSAlert *alert = [[NSAlert alloc] init];
-          alert.messageText = @"Model Not Installed";
+          alert.messageText = KoeLocalizedString(@"alert.modelMissing.title");
           alert.informativeText =
-              @"The selected model has not been downloaded yet. ASR will not "
-              @"work until the model is installed.";
-          [alert addButtonWithTitle:@"Save Anyway"];
-          [alert addButtonWithTitle:@"Cancel"];
+              KoeLocalizedString(@"alert.modelMissing.message");
+          [alert addButtonWithTitle:KoeLocalizedString(@"common.saveAnyway")];
+          [alert addButtonWithTitle:KoeLocalizedString(@"common.cancel")];
           alert.alertStyle = NSAlertStyleWarning;
           if ([alert runModal] != NSAlertFirstButtonReturn) {
             return;
@@ -5939,8 +5923,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
         ![currentTemplates isEqualToArray:self.loadedTemplatesSnapshot]) {
       NSString *templateError = nil;
       if (![self validateTemplatesDataWithMessage:&templateError]) {
-        [self showAlert:@"Invalid prompt templates"
-                   info:templateError ?: @"Check your templates and try again."];
+        [self showAlert:KoeLocalizedString(@"alert.invalidTemplates.title")
+                   info:templateError ?: KoeLocalizedString(@"alert.invalidTemplates.message")];
         return;
       }
       serializedTemplates = currentTemplates;
@@ -6191,8 +6175,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   if (!saveOk) {
     rollbackConfigIfNeeded();
     [self
-        showAlert:@"Some settings failed to save"
-             info:@"Check that ~/.koe/config.yaml is writable and try again."];
+        showAlert:KoeLocalizedString(@"alert.saveFailed.title")
+             info:KoeLocalizedString(@"alert.saveFailed.message")];
     return;
   }
 
@@ -6200,9 +6184,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   if (serializedTemplates) {
     if (![self.rustBridge setPromptTemplates:serializedTemplates]) {
       rollbackConfigIfNeeded();
-      [self showAlert:@"Failed to save prompt templates"
-                 info:@"Check your prompt templates and ~/.koe/config.yaml, "
-                      @"then try again."];
+      [self showAlert:KoeLocalizedString(@"alert.saveTemplatesFailed.title")
+                 info:KoeLocalizedString(@"alert.saveTemplatesFailed.message")];
       return;
     }
   }
@@ -6221,7 +6204,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
       NSLog(@"[Koe] Failed to write dictionary.txt: %@",
             error.localizedDescription);
       rollbackConfigIfNeeded();
-      [self showAlert:@"Failed to save dictionary.txt"
+      [self showAlert:KoeLocalizedString(@"alert.saveDictionaryFailed.title")
                  info:error.localizedDescription];
       return;
     }
@@ -6241,7 +6224,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
       NSLog(@"[Koe] Failed to write system_prompt.txt: %@",
             error.localizedDescription);
       rollbackConfigIfNeeded();
-      [self showAlert:@"Failed to save system_prompt.txt"
+      [self showAlert:KoeLocalizedString(@"alert.savePromptFailed.title")
                  info:error.localizedDescription];
       return;
     }
@@ -6307,7 +6290,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   [self.llmRemoteModelPopup removeAllItems];
 
   if (models.count == 0) {
-    [self.llmRemoteModelPopup addItemWithTitle:@"No models available"];
+    [self.llmRemoteModelPopup addItemWithTitle:KoeLocalizedString(@"llm.noModelsAvailable")];
     self.llmRemoteModelPopup.lastItem.representedObject = nil;
     self.llmRemoteModelPopup.enabled = NO;
     return;
@@ -6357,13 +6340,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   NSString *currentModel = [self.llmModelField.stringValue copy] ?: @"";
   if (baseURL.length == 0) {
     [self.llmRemoteModelPopup removeAllItems];
-    [self.llmRemoteModelPopup addItemWithTitle:@"Enter Base URL first"];
+    [self.llmRemoteModelPopup addItemWithTitle:KoeLocalizedString(@"llm.enterBaseUrlFirst")];
     self.llmRemoteModelPopup.enabled = NO;
     return;
   }
 
   [self.llmRemoteModelPopup removeAllItems];
-  [self.llmRemoteModelPopup addItemWithTitle:@"Loading models..."];
+  [self.llmRemoteModelPopup addItemWithTitle:KoeLocalizedString(@"llm.loadingModels")];
   self.llmRemoteModelPopup.enabled = NO;
   self.llmRefreshModelsButton.enabled = NO;
 
@@ -6411,11 +6394,11 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                                                selectedModel:currentModel];
           } else {
             [innerSelf.llmRemoteModelPopup removeAllItems];
-            [innerSelf.llmRemoteModelPopup addItemWithTitle:@"Load failed"];
+            [innerSelf.llmRemoteModelPopup addItemWithTitle:KoeLocalizedString(@"llm.loadFailed")];
             innerSelf.llmRemoteModelPopup.enabled = NO;
             if (message.length > 0) {
               innerSelf.llmTestResultLabel.stringValue =
-                  [NSString stringWithFormat:@"Model list: %@", message];
+                  [NSString stringWithFormat:KoeLocalizedString(@"status.modelList"), message];
               innerSelf.llmTestResultLabel.textColor =
                   [NSColor systemOrangeColor];
             }
@@ -6478,7 +6461,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   self.llmToggleModelPickerButton.hidden = !isRemote;
   self.llmToggleModelPickerButton.enabled = enabled && isRemote;
   [self.llmToggleModelPickerButton
-      setTitle:(self.llmRemoteModelPickerExpanded ? @"Hide" : @"Choose")];
+      setTitle:(self.llmRemoteModelPickerExpanded ? KoeLocalizedString(@"common.hide") : KoeLocalizedString(@"common.choose"))];
   BOOL showRemoteModelPicker =
       isRemote && self.llmRemoteModelPickerExpanded;
   [self setLlmRemoteModelPickerRowVisible:showRemoteModelPicker];
@@ -6529,7 +6512,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   }
 
   if (self.llmLocalModelPopup.numberOfItems == 0) {
-    [self.llmLocalModelPopup addItemWithTitle:@"No models found"];
+    [self.llmLocalModelPopup addItemWithTitle:KoeLocalizedString(@"llm.noModelsFound")];
     self.llmLocalModelPopup.enabled = NO;
   } else {
     self.llmLocalModelPopup.enabled = YES;
@@ -6552,7 +6535,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   }
 
   if ([self.downloadingModels containsObject:modelPath]) {
-    self.llmModelStatusLabel.stringValue = @"Downloading";
+    self.llmModelStatusLabel.stringValue = KoeLocalizedString(@"status.downloading");
     self.llmModelStatusLabel.textColor = [NSColor secondaryLabelColor];
     self.llmModelDownloadButton.image =
         [NSImage imageWithSystemSymbolName:@"stop.circle"
@@ -6600,7 +6583,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   switch (status) {
   case 2:
     self.llmModelStatusLabel.stringValue =
-        verifying ? @"● Verifying…" : @"● Installed";
+        verifying ? KoeLocalizedString(@"status.verifying") : KoeLocalizedString(@"status.installed");
     self.llmModelStatusLabel.textColor =
         verifying ? [NSColor secondaryLabelColor] : [NSColor systemGreenColor];
     self.llmModelDownloadButton.enabled = NO;
@@ -6608,14 +6591,14 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     break;
   case 1:
     self.llmModelStatusLabel.stringValue =
-        verifying ? @"◐ Verifying…" : @"◐ Incomplete";
+        verifying ? @"◐ Verifying…" : KoeLocalizedString(@"status.incomplete");
     self.llmModelStatusLabel.textColor =
         verifying ? [NSColor secondaryLabelColor] : [NSColor systemOrangeColor];
     self.llmModelDownloadButton.enabled = YES;
     self.llmModelDeleteButton.enabled = YES;
     break;
   default:
-    self.llmModelStatusLabel.stringValue = @"○ Not installed";
+    self.llmModelStatusLabel.stringValue = KoeLocalizedString(@"status.notInstalled");
     self.llmModelStatusLabel.textColor = [NSColor secondaryLabelColor];
     self.llmModelDownloadButton.enabled = YES;
     self.llmModelDeleteButton.enabled = NO;
@@ -6642,7 +6625,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
       [NSImage imageWithSystemSymbolName:@"stop.circle"
                 accessibilityDescription:@"Stop"];
   self.llmModelDownloadButton.hidden = NO;
-  self.llmModelStatusLabel.stringValue = @"Downloading...";
+  self.llmModelStatusLabel.stringValue = KoeLocalizedString(@"status.downloading");
   self.llmModelStatusLabel.textColor = [NSColor secondaryLabelColor];
   self.llmModelProgressBar.hidden = NO;
   self.llmModelProgressBar.doubleValue = 0;
@@ -6683,7 +6666,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                 ? (double)totalDownloaded / (double)totalBytesAllFiles * 100.0
                 : 0;
         strongSelf.llmModelProgressBar.doubleValue = pct;
-        strongSelf.llmModelStatusLabel.stringValue = @"Downloading";
+        strongSelf.llmModelStatusLabel.stringValue = KoeLocalizedString(@"status.downloading");
         strongSelf.llmModelProgressSizeLabel.stringValue =
             [NSString stringWithFormat:@"%.1f / %.1f MB",
                                        (double)totalDownloaded / 1048576.0,
@@ -6704,11 +6687,10 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
     return;
 
   NSAlert *alert = [[NSAlert alloc] init];
-  alert.messageText = @"Remove Model Files?";
-  alert.informativeText = @"Downloaded model files will be deleted. The model "
-                          @"can be re-downloaded later.";
-  [alert addButtonWithTitle:@"Remove"];
-  [alert addButtonWithTitle:@"Cancel"];
+  alert.messageText = KoeLocalizedString(@"alert.removeModel.title");
+  alert.informativeText = KoeLocalizedString(@"alert.removeModel.message");
+  [alert addButtonWithTitle:KoeLocalizedString(@"common.remove")];
+  [alert addButtonWithTitle:KoeLocalizedString(@"common.cancel")];
   alert.alertStyle = NSAlertStyleWarning;
 
   if ([alert runModal] == NSAlertFirstButtonReturn) {
@@ -6721,7 +6703,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   NSDictionary *profile = [self runtimeLlmProfileForActiveProfile];
   if (!profile) {
     self.llmTestResultLabel.stringValue =
-        @"Please select an LLM profile first.";
+        KoeLocalizedString(@"status.needLlmProfile");
     self.llmTestResultLabel.textColor = [NSColor systemOrangeColor];
     return;
   }
@@ -6738,7 +6720,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   if (![provider isEqualToString:@"mlx"] &&
       (baseUrl.length == 0 || model.length == 0)) {
     self.llmTestResultLabel.stringValue =
-        @"Please fill in Base URL and Model first.";
+        KoeLocalizedString(@"status.needBaseUrlAndModel");
     self.llmTestResultLabel.textColor = [NSColor systemOrangeColor];
     return;
   }
@@ -6751,13 +6733,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                                        encoding:NSUTF8StringEncoding]
                : nil;
   if (profileJson.length == 0) {
-    [self showLlmTestResult:@"Test failed: invalid profile data"
+    [self showLlmTestResult:KoeLocalizedString(@"status.testFailedInvalidProfile")
                       color:[NSColor systemRedColor]];
     return;
   }
 
   self.llmTestButton.enabled = NO;
-  self.llmTestResultLabel.stringValue = @"Testing...";
+  self.llmTestResultLabel.stringValue = KoeLocalizedString(@"status.testing");
   self.llmTestResultLabel.textColor = [NSColor secondaryLabelColor];
 
   // Run the Rust-side test on a background thread; the profile path matches
@@ -6783,13 +6765,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
               (self.llmEnabledCheckbox.state == NSControlStateValueOn);
 
           if (!result) {
-            [self showLlmTestResult:@"Test failed: invalid response from core"
+            [self showLlmTestResult:KoeLocalizedString(@"status.testFailedInvalidResponse")
                               color:[NSColor systemRedColor]];
             return;
           }
 
           BOOL success = [result[@"success"] boolValue];
-          NSString *message = result[@"message"] ?: @"Unknown result";
+          NSString *message = result[@"message"] ?: KoeLocalizedString(@"status.unknownResult");
           NSNumber *elapsedMs = result[@"elapsed_ms"];
           NSString *timeStr =
               elapsedMs
@@ -6832,7 +6814,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
 - (void)testDoubaoImeConnection {
   self.asrTestButton.enabled = NO;
-  self.asrTestResultLabel.stringValue = @"Testing...";
+  self.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.testing");
   self.asrTestResultLabel.textColor = [NSColor secondaryLabelColor];
 
   // Test by connecting to the DoubaoIME WebSocket endpoint
@@ -6874,18 +6856,18 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                            reason:nil];
           strongSelf.asrTestButton.enabled = YES;
           strongSelf.asrTestResultLabel.stringValue =
-              @"Connected (device registration will complete on first use)";
+              KoeLocalizedString(@"status.connectedDeviceRegistration");
           strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
         } else if (wsTask.state == NSURLSessionTaskStateCompleted) {
           strongSelf.asrTestButton.enabled = YES;
           if (wsTask.error) {
             strongSelf.asrTestResultLabel.stringValue =
-                [NSString stringWithFormat:@"Connection failed: %@",
+                [NSString stringWithFormat:KoeLocalizedString(@"status.connectionFailedWithFormat"),
                                            wsTask.error.localizedDescription];
             strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
           } else {
             strongSelf.asrTestResultLabel.stringValue =
-                @"Connected (device registration will complete on first use)";
+                KoeLocalizedString(@"status.connectedDeviceRegistration");
             strongSelf.asrTestResultLabel.textColor =
                 [NSColor systemGreenColor];
           }
@@ -6909,20 +6891,20 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
   if (customHeaders == nil) {
     if (isNewConsoleMode && apiKey.length == 0) {
-      self.asrTestResultLabel.stringValue = @"Please fill in API Key first";
+      self.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.needApiKey");
       self.asrTestResultLabel.textColor = [NSColor systemOrangeColor];
       return;
     } else if (!isNewConsoleMode &&
                (appKey.length == 0 || accessKey.length == 0)) {
       self.asrTestResultLabel.stringValue =
-          @"Please fill in App Key and Access Key first";
+          KoeLocalizedString(@"status.needAppKeys");
       self.asrTestResultLabel.textColor = [NSColor systemOrangeColor];
       return;
     }
   }
 
   self.asrTestButton.enabled = NO;
-  self.asrTestResultLabel.stringValue = @"Testing...";
+  self.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.testing");
   self.asrTestResultLabel.textColor = [NSColor secondaryLabelColor];
 
   // Create WebSocket connection test
@@ -6997,8 +6979,8 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
         NSString *authHint =
             isNewConsoleMode
-                ? @"Auth failed: please check API Key"
-                : @"Auth failed: please check App Key and Access Key";
+                ? KoeLocalizedString(@"status.authFailedApiKey")
+                : KoeLocalizedString(@"status.authFailedAppKeys");
         if ([errorMsg containsString:@"401"] ||
             [errorMsg containsString:@"403"] ||
             [error.localizedFailureReason containsString:@"401"] ||
@@ -7007,7 +6989,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
         } else if ([errorMsg containsString:@"time"] ||
                    error.code == NSURLErrorTimedOut) {
           strongSelf.asrTestResultLabel.stringValue =
-              @"Connection timed out: please check your network";
+              KoeLocalizedString(@"status.connectionTimedOut");
         } else if ([errorMsg containsString:@"bad response"] ||
                    [errorMsg containsString:@"Bad response"] ||
                    statusCode == 400 || statusCode == 403) {
@@ -7017,16 +6999,16 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                    [errorMsg containsString:@"Cannot connect"] ||
                    [errorMsg containsString:@"Network"]) {
           strongSelf.asrTestResultLabel.stringValue =
-              @"Network error: please check your network settings";
+              KoeLocalizedString(@"status.networkError");
         } else {
           strongSelf.asrTestResultLabel.stringValue =
-              @"Connection failed: please check your configuration";
+              KoeLocalizedString(@"status.connectionFailedConfig");
         }
         strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
         return;
       }
 
-      strongSelf.asrTestResultLabel.stringValue = @"Connected";
+      strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.connected");
       strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
     });
   }];
@@ -7051,7 +7033,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
 
         if (!strongSelf.asrTestButton.enabled) {
           strongSelf.asrTestButton.enabled = YES;
-          strongSelf.asrTestResultLabel.stringValue = @"Connected";
+          strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.connected");
           strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
         }
       });
@@ -7072,7 +7054,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                              reason:nil];
         strongSelf.asrTestButton.enabled = YES;
         strongSelf.asrTestResultLabel.stringValue =
-            @"Connection timed out: please check your network";
+            KoeLocalizedString(@"status.connectionTimedOut");
         strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
       });
 }
@@ -7087,13 +7069,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
       asrCustomHeaders(@"qwen");
 
   if (customHeaders == nil && apiKey.length == 0) {
-    self.asrTestResultLabel.stringValue = @"Please fill in API Key first";
+    self.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.needApiKey");
     self.asrTestResultLabel.textColor = [NSColor systemOrangeColor];
     return;
   }
 
   self.asrTestButton.enabled = NO;
-  self.asrTestResultLabel.stringValue = @"Testing...";
+  self.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.testing");
   self.asrTestResultLabel.textColor = [NSColor secondaryLabelColor];
 
   // Create WebSocket connection test
@@ -7161,35 +7143,35 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
         if ([errorMsg containsString:@"401"] ||
             [errorMsg containsString:@"403"] || statusCode == 401) {
           strongSelf.asrTestResultLabel.stringValue =
-              @"Auth failed: please check your API Key";
+              KoeLocalizedString(@"status.authFailedApiKey");
         } else if ([errorMsg containsString:@"time"] ||
                    error.code == NSURLErrorTimedOut) {
           strongSelf.asrTestResultLabel.stringValue =
-              @"Connection timed out: please check your network";
+              KoeLocalizedString(@"status.connectionTimedOut");
         } else if ([errorMsg containsString:@"bad response"] ||
                    [errorMsg containsString:@"Bad response"]) {
           // HTTP error during WebSocket handshake
           strongSelf.asrTestResultLabel.stringValue =
-              @"Auth failed: please check your API Key";
+              KoeLocalizedString(@"status.authFailedApiKey");
         } else if ([errorMsg containsString:@"unable"] ||
                    [errorMsg containsString:@"Unable"] ||
                    [errorMsg containsString:@"Cannot connect"]) {
           strongSelf.asrTestResultLabel.stringValue =
-              @"Network error: please check your network settings";
+              KoeLocalizedString(@"status.networkError");
         } else {
           strongSelf.asrTestResultLabel.stringValue =
-              @"Connection failed: please check your configuration";
+              KoeLocalizedString(@"status.connectionFailedConfig");
         }
         strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
         return;
       }
 
       if (message) {
-        strongSelf.asrTestResultLabel.stringValue = @"Connected";
+        strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.connected");
         strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
       } else {
         strongSelf.asrTestResultLabel.stringValue =
-            @"Connection failed: no response from server";
+            KoeLocalizedString(@"status.connectionFailedNoResponse");
         strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
       }
     });
@@ -7209,7 +7191,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                              reason:nil];
         strongSelf.asrTestButton.enabled = YES;
         strongSelf.asrTestResultLabel.stringValue =
-            @"Connection timed out: please check your network";
+            KoeLocalizedString(@"status.connectionTimedOut");
         strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
       });
 }
@@ -7221,13 +7203,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                          : self.asrGlmApiKeySecureField.stringValue;
 
   if (apiKey.length == 0) {
-    self.asrTestResultLabel.stringValue = @"Please fill in API Key first";
+    self.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.needApiKey");
     self.asrTestResultLabel.textColor = [NSColor systemOrangeColor];
     return;
   }
 
   self.asrTestButton.enabled = NO;
-  self.asrTestResultLabel.stringValue = @"Testing...";
+  self.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.testing");
   self.asrTestResultLabel.textColor = [NSColor secondaryLabelColor];
 
   // GLM Realtime uses WebSocket, test by connecting to the WS endpoint
@@ -7282,34 +7264,34 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
         if ([errorMsg containsString:@"401"] ||
             [errorMsg containsString:@"403"] || statusCode == 401) {
           strongSelf.asrTestResultLabel.stringValue =
-              @"Auth failed: please check your API Key";
+              KoeLocalizedString(@"status.authFailedApiKey");
         } else if ([errorMsg containsString:@"time"] ||
                    error.code == NSURLErrorTimedOut) {
           strongSelf.asrTestResultLabel.stringValue =
-              @"Connection timed out: please check your network";
+              KoeLocalizedString(@"status.connectionTimedOut");
         } else if ([errorMsg containsString:@"bad response"] ||
                    [errorMsg containsString:@"Bad response"]) {
           strongSelf.asrTestResultLabel.stringValue =
-              @"Auth failed: please check your API Key";
+              KoeLocalizedString(@"status.authFailedApiKey");
         } else if ([errorMsg containsString:@"unable"] ||
                    [errorMsg containsString:@"Unable"] ||
                    [errorMsg containsString:@"Cannot connect"]) {
           strongSelf.asrTestResultLabel.stringValue =
-              @"Network error: please check your network settings";
+              KoeLocalizedString(@"status.networkError");
         } else {
           strongSelf.asrTestResultLabel.stringValue =
-              @"Connection failed: please check your configuration";
+              KoeLocalizedString(@"status.connectionFailedConfig");
         }
         strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
         return;
       }
 
       if (message) {
-        strongSelf.asrTestResultLabel.stringValue = @"Connected";
+        strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.connected");
         strongSelf.asrTestResultLabel.textColor = [NSColor systemGreenColor];
       } else {
         strongSelf.asrTestResultLabel.stringValue =
-            @"Connection failed: no response from server";
+            KoeLocalizedString(@"status.connectionFailedNoResponse");
         strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
       }
     });
@@ -7329,7 +7311,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                              reason:nil];
         strongSelf.asrTestButton.enabled = YES;
         strongSelf.asrTestResultLabel.stringValue =
-            @"Connection timed out: please check your network";
+            KoeLocalizedString(@"status.connectionTimedOut");
         strongSelf.asrTestResultLabel.textColor = [NSColor systemRedColor];
       });
 }
@@ -7340,13 +7322,13 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                          : self.asrMimoApiKeySecureField.stringValue;
 
   if (apiKey.length == 0) {
-    self.asrTestResultLabel.stringValue = @"Please fill in API Key first";
+    self.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.needApiKey");
     self.asrTestResultLabel.textColor = [NSColor systemOrangeColor];
     return;
   }
 
   self.asrTestButton.enabled = NO;
-  self.asrTestResultLabel.stringValue = @"Testing...";
+  self.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.testing");
   self.asrTestResultLabel.textColor = [NSColor secondaryLabelColor];
 
   // MiMo uses HTTP POST — send a minimal request to verify API key
@@ -7387,14 +7369,14 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                   NSString *errorMsg = error.localizedDescription;
                   if (error.code == NSURLErrorTimedOut) {
                     strongSelf.asrTestResultLabel.stringValue =
-                        @"Connection timed out: please check your network";
+                        KoeLocalizedString(@"status.connectionTimedOut");
                   } else if ([errorMsg containsString:@"Cannot connect"] ||
                              [errorMsg containsString:@"unable"]) {
                     strongSelf.asrTestResultLabel.stringValue =
-                        @"Network error: please check your network settings";
+                        KoeLocalizedString(@"status.networkError");
                   } else {
                     strongSelf.asrTestResultLabel.stringValue =
-                        [NSString stringWithFormat:@"Error: %@", errorMsg];
+                        [NSString stringWithFormat:KoeLocalizedString(@"status.errorWithFormat"), errorMsg];
                   }
                   strongSelf.asrTestResultLabel.textColor =
                       [NSColor systemRedColor];
@@ -7407,18 +7389,18 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
                     httpResponse.statusCode == 400) {
                   // 400 = bad request (expected with minimal body), but auth
                   // worked
-                  strongSelf.asrTestResultLabel.stringValue = @"Connected";
+                  strongSelf.asrTestResultLabel.stringValue = KoeLocalizedString(@"status.connected");
                   strongSelf.asrTestResultLabel.textColor =
                       [NSColor systemGreenColor];
                 } else if (httpResponse.statusCode == 401 ||
                            httpResponse.statusCode == 403) {
                   strongSelf.asrTestResultLabel.stringValue =
-                      @"Auth failed: please check your API Key";
+                      KoeLocalizedString(@"status.authFailedApiKey");
                   strongSelf.asrTestResultLabel.textColor =
                       [NSColor systemRedColor];
                 } else {
                   strongSelf.asrTestResultLabel.stringValue =
-                      [NSString stringWithFormat:@"HTTP %ld: unexpected response",
+                      [NSString stringWithFormat:KoeLocalizedString(@"status.httpUnexpected"),
                                                  (long)httpResponse.statusCode];
                   strongSelf.asrTestResultLabel.textColor =
                       [NSColor systemOrangeColor];
@@ -7433,7 +7415,7 @@ static void appleSpeechInstallCallback(void *ctx, int32_t eventType,
   alert.messageText = message;
   alert.informativeText = info ?: @"";
   alert.alertStyle = NSAlertStyleWarning;
-  [alert addButtonWithTitle:@"OK"];
+  [alert addButtonWithTitle:KoeLocalizedString(@"common.ok")];
   [alert runModal];
 }
 
