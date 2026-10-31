@@ -16,6 +16,9 @@
 typedef NS_ENUM(uint8_t, SPHotkeyMatchKind) {
     SPHotkeyMatchKindModifierOnly = 0,
     SPHotkeyMatchKindKeyDown = 1,
+    /// otherMouseDown/otherMouseUp; targetKeyCode holds the zero-based
+    /// CGEvent button number (3 = back, 4 = forward).
+    SPHotkeyMatchKindMouseButton = 2,
 };
 
 typedef NS_ENUM(uint8_t, SPHotkeyTriggerMode) {
@@ -31,7 +34,8 @@ typedef NS_ENUM(uint8_t, SPHotkeyTriggerMode) {
 
 @property (nonatomic, assign) SPHotkeyTriggerMode triggerMode;
 
-/// Primary key code to monitor (default: 63 = Fn/Globe)
+/// Primary key code to monitor (default: 63 = Fn/Globe). For
+/// SPHotkeyMatchKindMouseButton this is the CGEvent button number instead.
 @property (nonatomic, assign) NSInteger targetKeyCode;
 
 /// Alternative key code to monitor (default: 179 = Globe on newer keyboards), 0 to disable

@@ -2,6 +2,12 @@
 
 All notable user-facing changes to Koe are documented here.
 
+## Unreleased
+
+### Added
+
+- **You can now use a mouse side button as the trigger.** In Settings, click **Record** and press the mouse button you want (Back, Forward, middle, or any extra button). You can also set it in `~/.koe/config.yaml`, for example `trigger_key: "mouse_button_4"`. The button works with hold, toggle, and double-tap modes. While it is the trigger, its normal action (for example Back in a browser) is turned off. Left and right click can't be used.
+
 ## 1.0.33 - 2026-10-17
 
 ### Added

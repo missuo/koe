@@ -205,6 +205,15 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     if ([value isEqualToString:@"fn"]) {
         return @"Fn (Globe)";
     }
+    if ([value hasPrefix:@"mouse_button_"]) {
+        NSInteger number = [value substringFromIndex:@"mouse_button_".length].integerValue;
+        switch (number) {
+            case 3: return @"Middle Mouse Button";
+            case 4: return @"Mouse Button 4 (Back)";
+            case 5: return @"Mouse Button 5 (Forward)";
+            default: return [NSString stringWithFormat:@"Mouse Button %ld", (long)number];
+        }
+    }
     NSString *normalizedCombo = normalizedHotkeyComboValue(value);
     if (normalizedCombo.length > 0) {
         NSMutableArray<NSString *> *parts = [NSMutableArray array];
