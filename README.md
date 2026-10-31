@@ -392,7 +392,8 @@ hotkey:
   # Trigger shortcut for voice input.
   # Options: fn | left_option | right_option | left_command | right_command | left_control | right_control
   # You can also use a raw macOS keycode number such as 96 (F5) or 122 (F1),
-  # or a normalized key combo such as "command+shift+49".
+  # or a normalized key combo such as "command+shift+49",
+  # or a mouse button such as "mouse_button_4" (Back) or "mouse_button_5" (Forward).
   trigger_key: "fn"
   trigger_mode: "hold"  # "hold" | "toggle" | "double_tap"
 ```
@@ -406,6 +407,7 @@ hotkey:
 | `right_command` | Right Command | Less conflict-prone than left Command |
 | `left_control` | Left Control | Available on all Mac keyboards |
 | `right_control` | Right Control | Only on full-size/external keyboards |
+| `mouse_button_4` | Mouse side button (Back) | Also `mouse_button_3` (middle), `mouse_button_5` (Forward), and higher. Left/right click can't be used |
 
 Hotkey changes take effect automatically within a few seconds. Koe now uses a
 single trigger shortcut model:
