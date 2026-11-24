@@ -4,13 +4,13 @@ Contributions are welcome! Before you open a PR, please note:
 
 ## Commit Convention
 
-All commits **must** follow the [Conventional Commits](https://www.conventionalcommits.org/) specification. We recommend using the [Ship](https://github.com/missuo/ship) skill to generate commit messages automatically:
+All commits **must** follow the [Conventional Commits](https://www.conventionalcommits.org/) specification. We recommend using the [Yeet](https://github.com/missuo/yeet) skill to generate commit messages automatically:
 
 ```bash
-npx skills add missuo/ship
+npx skills add missuo/yeet
 ```
 
-Then simply run `/ship` in Claude Code (or any compatible AI coding agent) to stage, commit, and push with a properly formatted message.
+Then simply run `/yeet` in Claude Code (or any compatible AI coding agent) to stage, commit, and push with a properly formatted message.
 
 ### Commit Types
 
