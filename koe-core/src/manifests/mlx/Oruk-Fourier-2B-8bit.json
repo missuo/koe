@@ -1,0 +1,62 @@
+{
+    "provider": "mlx",
+    "mode": "asr",
+    "description": "Oruk Fourier 2B 8-bit (English only, CC BY-NC 4.0)",
+    "repo": "oruk/oruk-fourier-2b",
+    "files": [
+        {
+            "name": "config.json",
+            "size": 3164,
+            "sha256": "93aaa3c41ef7c289e8ca123827188049508ef7246425eb3ef0f56f1195877c6d",
+            "url": "https://huggingface.co/oruk/oruk-fourier-2b/resolve/5291af68b00f0ed291d87f9d2730cf115b56b9cc/mlx/8bit/config.json"
+        },
+        {
+            "name": "merges.txt",
+            "size": 1671853,
+            "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+            "url": "https://huggingface.co/oruk/oruk-fourier-2b/resolve/5291af68b00f0ed291d87f9d2730cf115b56b9cc/mlx/8bit/merges.txt"
+        },
+        {
+            "name": "model.safetensors",
+            "size": 2463307581,
+            "sha256": "ab25802465c25acb787979c56e1907dd6bec1c9f592c1e9cb03e11d060b2d0f7",
+            "url": "https://huggingface.co/oruk/oruk-fourier-2b/resolve/5291af68b00f0ed291d87f9d2730cf115b56b9cc/mlx/8bit/model.safetensors"
+        },
+        {
+            "name": "model.safetensors.index.json",
+            "size": 78928,
+            "sha256": "b62daee0e37a7bedb8675f69c733eef18a398235ea513f0999f3805d5ac4dedf",
+            "url": "https://huggingface.co/oruk/oruk-fourier-2b/resolve/5291af68b00f0ed291d87f9d2730cf115b56b9cc/mlx/8bit/model.safetensors.index.json"
+        },
+        {
+            "name": "tokenizer.json",
+            "size": 11429377,
+            "sha256": "bd2a97b55c8f7f9c328c73ee9b9178771037e9f566dfca8e238a063d41cbac92",
+            "url": "https://huggingface.co/oruk/oruk-fourier-2b/resolve/5291af68b00f0ed291d87f9d2730cf115b56b9cc/mlx/8bit/tokenizer.json"
+        },
+        {
+            "name": "tokenizer_config.json",
+            "size": 1446,
+            "sha256": "940657ec4b19a2486cd8f95d2967a7a2acbeb6064663ece8ab3833ec455530b3",
+            "url": "https://huggingface.co/oruk/oruk-fourier-2b/resolve/5291af68b00f0ed291d87f9d2730cf115b56b9cc/mlx/8bit/tokenizer_config.json"
+        },
+        {
+            "name": "vocab.json",
+            "size": 3080118,
+            "sha256": "97dfe4fe392c23cda68fe01c60babe50a57c894fc0cf44d02c4048ad283499c3",
+            "url": "https://huggingface.co/oruk/oruk-fourier-2b/resolve/5291af68b00f0ed291d87f9d2730cf115b56b9cc/mlx/8bit/vocab.json"
+        },
+        {
+            "name": "chat_template.jinja",
+            "size": 1434,
+            "sha256": "f50e6b694fbf4a683206e37869990d68333fe95d285730f084c838a34b0d98c2",
+            "url": "https://huggingface.co/oruk/oruk-fourier-2b/resolve/5291af68b00f0ed291d87f9d2730cf115b56b9cc/mlx/8bit/chat_template.jinja"
+        },
+        {
+            "name": "hub_config.json",
+            "size": 2479,
+            "sha256": "5bc1d99c141fc866b61efca97dcbc6412a38db25ff0934c38bf7b46fa09485a2",
+            "url": "https://huggingface.co/oruk/oruk-fourier-2b/resolve/5291af68b00f0ed291d87f9d2730cf115b56b9cc/config.json"
+        }
+    ]
+}

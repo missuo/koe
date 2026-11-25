@@ -2263,6 +2263,7 @@ macro_rules! manifest {
 const DEFAULT_MANIFESTS: &[(&str, &str)] = &[
     manifest!("mlx/Qwen3-ASR-0.6B-4bit"),
     manifest!("mlx/Qwen3-ASR-1.7B-4bit"),
+    manifest!("mlx/Oruk-Fourier-2B-8bit"),
     manifest!("mlx/Qwen3-0.6B-4bit"),
     manifest!("mlx/Qwen3-1.7B-4bit"),
     manifest!("sherpa-onnx/bilingual-zh-en"),
@@ -2819,5 +2820,134 @@ clipboard:
         assert_eq!(config.clipboard.restore_delay_ms, 1500);
         assert_eq!(config.asr.provider, "qwen");
         assert_eq!(config.llm.timeout_ms, 1234);
+    }
+
+    #[test]
+    fn default_manifests_are_valid_and_include_opt_in_oruk_fourier_2b() {
+        use crate::model_manager::ModelManifest;
+        use std::collections::HashSet;
+
+        for (rel_path, content) in DEFAULT_MANIFESTS {
+            let manifest: ModelManifest = serde_json::from_str(content)
+                .unwrap_or_else(|e| panic!("manifest {rel_path} failed to parse: {e}"));
+            assert!(
+                !manifest.files.is_empty(),
+                "manifest {rel_path} must declare files"
+            );
+            let mut names = HashSet::new();
+            for file in &manifest.files {
+                assert!(
+                    names.insert(file.name.as_str()),
+                    "duplicate file {} in {rel_path}",
+                    file.name
+                );
+                assert!(
+                    file.url.starts_with("https://"),
+                    "non-HTTPS URL in {rel_path}: {}",
+                    file.url
+                );
+                assert!(
+                    !file.name.contains("..") && !Path::new(&file.name).is_absolute(),
+                    "unsafe path {} in {rel_path}",
+                    file.name
+                );
+            }
+        }
+
+        // Default MLX ASR model remains unchanged (Fourier 2B is strictly opt-in).
+        assert_eq!(default_mlx_model(), "mlx/Qwen3-ASR-0.6B-4bit");
+
+        let (_, raw) = DEFAULT_MANIFESTS
+            .iter()
+            .find(|(path, _)| *path == "mlx/Oruk-Fourier-2B-8bit")
+            .expect("mlx/Oruk-Fourier-2B-8bit must be registered in DEFAULT_MANIFESTS");
+        let fourier: ModelManifest = serde_json::from_str(raw).unwrap();
+        assert_eq!(fourier.provider, "mlx");
+        assert_eq!(fourier.mode.as_deref(), Some("asr"));
+        assert_eq!(fourier.repo, "oruk/oruk-fourier-2b");
+        assert!(fourier.description.contains("English only"));
+        assert!(fourier.description.contains("CC BY-NC 4.0"));
+        assert!(fourier
+            .files
+            .iter()
+            .all(|f| f.size > 0 && f.sha256.len() == 64));
+
+        // Ships tokenizer.json (so MLXAsrManager preserves all added tokens) and
+        // places repo-root config.json last as hub_config.json without colliding
+        // with mlx/8bit/config.json.
+        assert!(fourier.files.iter().any(|f| f.name == "tokenizer.json"));
+        let mlx_cfg = fourier
+            .files
+            .iter()
+            .find(|f| f.name == "config.json")
+            .expect("mlx/8bit/config.json entry");
+        assert!(mlx_cfg.url.ends_with("/mlx/8bit/config.json"));
+        let last = fourier.files.last().expect("hub_config.json entry");
+        assert_eq!(last.name, "hub_config.json");
+        assert_eq!(last.size, 2479);
+        assert!(last.url.ends_with("/config.json") && !last.url.contains("/mlx/8bit/"));
+    }
+
+    #[test]
+    fn oruk_fourier_2b_manifest_uninstall_removes_all_files_cleanly() {
+        use crate::model_manager::{
+            model_status, remove_model_files, ModelFile, ModelManifest, ModelStatus, VerifyMode,
+        };
+        use sha2::{Digest, Sha256};
+
+        let (_, raw) = DEFAULT_MANIFESTS
+            .iter()
+            .find(|(path, _)| *path == "mlx/Oruk-Fourier-2B-8bit")
+            .unwrap();
+        let prod: ModelManifest = serde_json::from_str(raw).unwrap();
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("koe-fourier-uninstall-{nonce}"));
+        fs::create_dir_all(&dir).unwrap();
+
+        // Populate every declared filename with small deterministic bytes + matching hashes.
+        let mut test_files = Vec::new();
+        for f in &prod.files {
+            let body = format!("payload-for-{}", f.name);
+            let sha = format!("{:x}", Sha256::digest(body.as_bytes()));
+            fs::write(dir.join(&f.name), body.as_bytes()).unwrap();
+            test_files.push(ModelFile {
+                name: f.name.clone(),
+                size: body.len() as u64,
+                sha256: sha,
+                url: f.url.clone(),
+            });
+        }
+        let manifest = ModelManifest {
+            files: test_files,
+            ..prod
+        };
+        fs::write(
+            dir.join(".koe-manifest.json"),
+            serde_json::to_string_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            model_status(&dir, VerifyMode::Normal),
+            ModelStatus::Installed
+        );
+        let removed = remove_model_files(&dir).unwrap();
+        // Every declared file + .koe-checksum.json removed; .koe-manifest.json kept.
+        assert_eq!(removed, manifest.files.len() + 1);
+        assert!(dir.join(".koe-manifest.json").is_file());
+        for f in &manifest.files {
+            assert!(!dir.join(&f.name).exists(), "{} was not removed", f.name);
+        }
+        assert!(!dir.join(".koe-checksum.json").exists());
+        assert_eq!(
+            model_status(&dir, VerifyMode::Normal),
+            ModelStatus::NotInstalled
+        );
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }
