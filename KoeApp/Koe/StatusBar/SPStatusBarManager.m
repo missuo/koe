@@ -57,21 +57,21 @@ static NSString *displayNameForKeycode(int keycode) {
         case 79:  return @"F18";
         case 80:  return @"F19";
         case 90:  return @"F20";
-        case 49:  return @"Space";
-        case 53:  return @"Escape";
-        case 48:  return @"Tab";
-        case 57:  return @"CapsLock";
-        case 36:  return @"Return";
-        case 51:  return @"Delete";
-        case 117: return @"Forward Delete";
-        case 115: return @"Home";
-        case 119: return @"End";
-        case 116: return @"Page Up";
-        case 121: return @"Page Down";
-        case 123: return @"Left Arrow";
-        case 124: return @"Right Arrow";
-        case 125: return @"Down Arrow";
-        case 126: return @"Up Arrow";
+        case 49:  return KoeLocalizedString(@"keycap.space");
+        case 53:  return KoeLocalizedString(@"keycap.escape");
+        case 48:  return KoeLocalizedString(@"keycap.tab");
+        case 57:  return KoeLocalizedString(@"keycap.capslock");
+        case 36:  return KoeLocalizedString(@"keycap.return");
+        case 51:  return KoeLocalizedString(@"keycap.delete");
+        case 117: return KoeLocalizedString(@"keycap.forwardDelete");
+        case 115: return KoeLocalizedString(@"keycap.home");
+        case 119: return KoeLocalizedString(@"keycap.end");
+        case 116: return KoeLocalizedString(@"keycap.pageUp");
+        case 121: return KoeLocalizedString(@"keycap.pageDown");
+        case 123: return KoeLocalizedString(@"keycap.leftArrow");
+        case 124: return KoeLocalizedString(@"keycap.rightArrow");
+        case 125: return KoeLocalizedString(@"keycap.downArrow");
+        case 126: return KoeLocalizedString(@"keycap.upArrow");
         default: break;
     }
 
@@ -101,14 +101,14 @@ static NSString *displayNameForKeycode(int keycode) {
                     if (result.length > 0) {
                         return result.uppercaseString;
                     }
-                    return [NSString stringWithFormat:@"Key %d", keycode];
+                    return [NSString stringWithFormat:KoeLocalizedString(@"keycap.keyWithCode"), keycode];
                 }
             }
         }
         CFRelease(inputSource);
     }
 
-    return [NSString stringWithFormat:@"Key %d", keycode];
+    return [NSString stringWithFormat:KoeLocalizedString(@"keycap.keyWithCode"), keycode];
 }
 
 static BOOL isNumericHotkeyValue(NSString *value) {
@@ -123,11 +123,11 @@ static NSDictionary<NSString *, NSString *> *comboModifierDisplayNames(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         displayNames = @{
-            @"command": @"Command",
-            @"option": @"Option",
-            @"control": @"Control",
-            @"shift": @"Shift",
-            @"fn": @"Fn",
+            @"command": KoeLocalizedString(@"keycap.command"),
+            @"option": KoeLocalizedString(@"keycap.option"),
+            @"control": KoeLocalizedString(@"keycap.control"),
+            @"shift": KoeLocalizedString(@"keycap.shift"),
+            @"fn": KoeLocalizedString(@"keycap.fn"),
         };
     });
     return displayNames;
@@ -185,25 +185,25 @@ static NSString *normalizedHotkeyComboValue(NSString *value) {
 
 static NSString *displayNameForHotkeyValue(NSString *value) {
     if ([value isEqualToString:@"left_option"]) {
-        return @"Left Option (⌥)";
+        return KoeLocalizedString(@"hotkey.leftOption");
     }
     if ([value isEqualToString:@"right_option"]) {
-        return @"Right Option (⌥)";
+        return KoeLocalizedString(@"hotkey.rightOption");
     }
     if ([value isEqualToString:@"left_command"]) {
-        return @"Left Command (⌘)";
+        return KoeLocalizedString(@"hotkey.leftCommand");
     }
     if ([value isEqualToString:@"right_command"]) {
-        return @"Right Command (⌘)";
+        return KoeLocalizedString(@"hotkey.rightCommand");
     }
     if ([value isEqualToString:@"left_control"]) {
-        return @"Left Control (⌃)";
+        return KoeLocalizedString(@"hotkey.leftControl");
     }
     if ([value isEqualToString:@"right_control"]) {
-        return @"Right Control (⌃)";
+        return KoeLocalizedString(@"hotkey.rightControl");
     }
     if ([value isEqualToString:@"fn"]) {
-        return @"Fn (Globe)";
+        return KoeLocalizedString(@"hotkey.fnGlobe");
     }
     NSString *normalizedCombo = normalizedHotkeyComboValue(value);
     if (normalizedCombo.length > 0) {

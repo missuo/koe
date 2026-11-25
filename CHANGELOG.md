@@ -2,6 +2,12 @@
 
 All notable user-facing changes to Koe are documented here.
 
+## Unreleased
+
+### Changed
+
+- **The Settings window is now fully localized in Simplified Chinese.** Menu-bar items, permission prompts, and the overlay's status text were already translated, but the Settings window and Setup Wizard were built from hard-coded English strings, so a Chinese system still showed English for every pane (ASR, LLM, Controls, Overlay, Dictionary, Prompt, Templates, About) and for the runtime status lines that appear after pressing Test. All of those strings now go through `KoeLocalizedString`, and the keycap names, modifier labels, and default LLM profile names are localized too. Existing zh-Hans users get the whole interface in Chinese; English is unchanged.
+
 ## 1.0.33 - 2026-10-17
 
 ### Added

@@ -86,3 +86,279 @@
 "error.asr.auth" = "语音识别认证失败";
 "error.audio" = "麦克风无法使用";
 "error.asr.unknown" = "语音识别出错";
+
+/* ─── 简体中文本地化补全（UI 全量覆盖） ─── */
+
+
+/* common */
+"common.save" = "保存";
+"common.cancel" = "取消";
+"common.ok" = "好";
+"common.test" = "测试";
+"common.choose" = "选择";
+"common.hide" = "收起";
+"common.refresh" = "刷新";
+"common.record" = "录制";
+"common.reset" = "重置";
+"common.resetToDefault" = "恢复默认";
+"common.remove" = "移除";
+"common.release" = "释放";
+"common.saveAndDownload" = "保存并下载";
+"common.saveAnyway" = "仍然保存";
+"common.name" = "名称";
+"common.model" = "模型";
+"common.apiKey" = "API 密钥";
+
+/* settings */
+"settings.sidebar.group.recognition" = "识别";
+"settings.sidebar.group.input" = "输入";
+"settings.sidebar.group.text" = "文本";
+"settings.sidebar.asr" = "语音识别";
+"settings.sidebar.llm" = "大模型";
+"settings.sidebar.controls" = "控制";
+"settings.sidebar.overlay" = "悬浮字幕";
+"settings.sidebar.dictionary" = "词典";
+"settings.sidebar.prompt" = "提示词";
+"settings.sidebar.templates" = "模板";
+"settings.sidebar.about" = "关于";
+
+/* pane */
+"pane.asr" = "语音识别";
+"pane.llm" = "大模型";
+"pane.overlay" = "悬浮字幕";
+"pane.controls" = "控制";
+"pane.dictionary" = "词典";
+"pane.prompt" = "提示词";
+"pane.systemPrompt" = "系统提示词";
+"pane.templates" = "模板";
+"pane.about" = "关于";
+
+/* wizard */
+"wizard.windowTitle" = "Koe 设置";
+
+/* asr */
+"asr.section.connection" = "连接";
+"asr.description" = "选择用于语音转文字的识别服务。";
+"asr.provider" = "服务商";
+"asr.provider.doubaoime" = "豆包输入法（内置，免费）";
+"asr.provider.doubao" = "豆包（字节跳动）";
+"asr.provider.qwen" = "通义千问（阿里云）";
+"asr.provider.glm" = "智谱 GLM";
+"asr.provider.mimo" = "小米 MiMo";
+"asr.provider.appleSpeech" = "Apple 语音识别（本机）";
+"asr.provider.mlx" = "MLX（Apple 芯片）";
+"asr.provider.sherpaOnnx" = "Sherpa-ONNX";
+"asr.provider.wetype" = "微信输入法（本机）";
+"asr.authMode" = "鉴权方式";
+"asr.authMode.newConsole" = "新版控制台";
+"asr.authMode.legacyConsole" = "旧版控制台";
+"asr.appKey" = "应用 ID";
+"asr.accessKey" = "访问密钥";
+"asr.language" = "语言";
+"asr.endpointSilence" = "断句静音";
+"asr.msMin200" = "毫秒（最小 200）";
+"asr.outputVariant" = "输出字形";
+"asr.variant.simplified" = "简体";
+"asr.variant.traditional" = "繁体";
+"asr.variant.taiwan" = "台湾";
+"asr.variant.hongKong" = "香港";
+"asr.lang.auto" = "自动（中英 + 方言）";
+"asr.lang.zhMandarin" = "中文普通话";
+"asr.lang.en" = "英语";
+"asr.lang.ja" = "日语";
+"asr.lang.ko" = "韩语";
+"asr.lang.de" = "德语";
+"asr.lang.fr" = "法语";
+"asr.lang.es" = "西班牙语";
+"asr.lang.pt" = "葡萄牙语";
+"asr.lang.yue" = "粤语";
+"asr.noLanguagesAvailable" = "没有可用语言";
+"asr.placeholder.volcengineApiKey" = "火山引擎控制台的 API Key";
+"asr.placeholder.volcengineAppId" = "火山引擎应用 ID";
+"asr.placeholder.volcengineAccessToken" = "火山引擎访问令牌";
+"asr.placeholder.dashscopeApiKey" = "DashScope API Key（sk-xxx）";
+"asr.placeholder.bigmodelApiKey" = "bigmodel.cn 的 API Key";
+"asr.placeholder.mimoApiKey" = "xiaomimimo.com 的 API Key";
+"asr.hint.doubaoime" = "无需任何配置，也不需要 API Key 或账号。识别走内置的免费云服务，因此听写时需要联网。";
+"asr.hint.wetype" = "注意：实测这个本机模型只支持中文，其它语言无法识别。";
+
+/* llm */
+"llm.section.profiles" = "配置档";
+"llm.description" = "配置大模型，在语音识别完成后对文本进行润色。";
+"llm.type" = "类型";
+"llm.baseUrl" = "接口地址";
+"llm.apiPath" = "接口路径";
+"llm.tokenParameter" = "Token 参数";
+"llm.modelList" = "模型列表";
+"llm.noModelsLoaded" = "未加载任何模型";
+"llm.noModelsFound" = "未找到模型";
+"llm.noModelsAvailable" = "没有可用模型";
+"llm.enterBaseUrlFirst" = "请先填写接口地址";
+"llm.loadingModels" = "正在加载模型…";
+"llm.loadFailed" = "加载失败";
+"llm.testConnection" = "测试连接";
+"llm.correction" = "大模型纠错";
+"llm.autoPaste" = "自动粘贴处理后的文本";
+"llm.profilePlaceholder" = "我的配置";
+"llm.apiKeyPlaceholder" = "sk-…（不需要可留空）";
+"llm.tokenHint" = "GPT-4o 及更早的模型使用 max_tokens；GPT-5 和推理模型（o1/o3）使用 max_completion_tokens。";
+"llm.hint.off" = "大模型纠错默认关闭。关闭时会直接使用语音识别的原始输出作为最终结果。";
+"llm.protocol.openaiChat" = "OpenAI Chat Completions";
+"llm.protocol.openaiResponses" = "OpenAI Responses";
+"llm.protocol.anthropicMessages" = "Anthropic Messages";
+"llm.protocol.apfel" = "APFEL";
+
+/* overlay */
+"overlay.section.style" = "样式控制";
+"overlay.font" = "字体";
+"overlay.fontSystemDefault" = "系统默认";
+"overlay.textSize" = "文字大小";
+"overlay.bottomMargin" = "距底部距离";
+"overlay.limitLines" = "限制可见行数";
+"overlay.maxLines" = "最大可见行数";
+"overlay.defaults" = "默认值";
+"overlay.lineCount" = "%ld 行";
+"overlay.description" = "调整底部的实时字幕浮层。可选择系统字体、调整文字大小、设置距底部距离，并决定长文本是限制在几行内还是完全展开。每次修改都会直接在真实的桌面位置预览。";
+"overlay.status.listening" = "正在听…";
+"overlay.status.connecting" = "正在连接…";
+"overlay.status.recognizing" = "正在识别…";
+"overlay.status.thinking" = "正在校正…";
+"overlay.status.pasting" = "正在粘贴…";
+"overlay.status.working" = "处理中…";
+"overlay.status.error" = "出错";
+
+/* controls */
+"controls.advancedSettings" = "高级设置";
+"controls.accelerateFirstChar" = "加速首字（可能降低准确率）";
+"controls.section.trigger" = "触发";
+"controls.triggerShortcut" = "触发快捷键";
+"controls.triggerMode" = "触发方式";
+"controls.pressHotkey" = "请按键…";
+"controls.mode.hold" = "按住说话";
+"controls.mode.toggle" = "切换（点一下开始/结束）";
+"controls.mode.doubleTap" = "双击";
+"controls.section.pasteBehavior" = "粘贴行为";
+"controls.pressReturnAfterPaste" = "粘贴后按回车";
+"controls.section.feedbackSounds" = "提示音";
+"controls.recordingStarts" = "开始录音";
+"controls.recordingStops" = "结束录音";
+"controls.errorOccurs" = "发生错误";
+"controls.section.recording" = "录音";
+"controls.muteSystemAudio" = "录音时静音系统声音";
+
+/* keycap */
+"keycap.space" = "空格";
+"keycap.escape" = "Esc";
+"keycap.tab" = "Tab";
+"keycap.capslock" = "大写锁定";
+"keycap.return" = "回车";
+"keycap.delete" = "删除";
+"keycap.forwardDelete" = "向前删除";
+"keycap.home" = "Home";
+"keycap.end" = "End";
+"keycap.pageUp" = "Page Up";
+"keycap.pageDown" = "Page Down";
+"keycap.leftArrow" = "左方向键";
+"keycap.rightArrow" = "右方向键";
+"keycap.downArrow" = "下方向键";
+"keycap.upArrow" = "上方向键";
+"keycap.command" = "Command";
+"keycap.option" = "Option";
+"keycap.control" = "Control";
+"keycap.shift" = "Shift";
+"keycap.fn" = "Fn";
+"keycap.keyWithCode" = "按键 %d";
+
+/* hotkey */
+"hotkey.leftOption" = "左 Option (⌥)";
+"hotkey.rightOption" = "右 Option (⌥)";
+"hotkey.leftCommand" = "左 Command (⌘)";
+"hotkey.rightCommand" = "右 Command (⌘)";
+"hotkey.leftControl" = "左 Control (⌃)";
+"hotkey.rightControl" = "右 Control (⌃)";
+"hotkey.fnGlobe" = "Fn（地球键）";
+
+/* dictionary */
+"dictionary.description" = "用户词典 —— 每行一个词条，这些词会在大模型纠错时被优先考虑。以 # 开头的行是注释。";
+
+/* prompt */
+"prompt.description" = "发送给大模型用于文本纠错的系统提示词。可编辑以自定义行为。";
+
+/* templates */
+"templates.library" = "模板库";
+"templates.editor" = "模板编辑器";
+"templates.description" = "管理悬浮字幕模板。可在此调整顺序、控制可见性并编辑每个提示词。";
+"templates.column.template" = "模板";
+"templates.namePlaceholder" = "模板名称";
+"templates.visibleInOverlay" = "在浮层中显示";
+"templates.showButtons" = "在浮层中显示模板按钮";
+"templates.add" = "添加模板";
+"templates.remove" = "删除选中模板";
+"templates.moveUp" = "上移选中模板";
+"templates.moveDown" = "下移选中模板";
+"templates.new" = "新模板";
+"templates.untitled" = "未命名";
+
+/* status */
+"status.installed" = "● 已安装";
+"status.verifying" = "● 校验中…";
+"status.incomplete" = "◐ 不完整";
+"status.downloading" = "正在下载…";
+"status.downloadingDot" = "◐ 正在下载…";
+"status.notInstalled" = "○ 未安装";
+"status.notSupportedForLanguage" = "✕ 该语言不支持";
+"status.downloadFailed" = "下载失败";
+"status.connected" = "已连接";
+"status.testing" = "正在测试…";
+"status.needApiKey" = "请先填写 API Key";
+"status.needAppKeys" = "请先填写应用 ID 和访问密钥";
+"status.needLlmProfile" = "请先选择一个 LLM 配置。";
+"status.needBaseUrlAndModel" = "请先填写接口地址和模型。";
+"status.unknownResult" = "未知结果";
+"status.modelList" = "模型列表：%@";
+
+/* alert */
+"alert.removeModel.title" = "删除模型文件？";
+"alert.removeModel.message" = "已下载的模型文件将被删除。之后可以重新下载。";
+"alert.releaseAssets.title" = "释放语音资源？";
+"alert.releaseAssets.message" = "系统可能会回收该语言语音模型占用的存储。之后可以重新下载。";
+"alert.speechAssetsMissing.title" = "语音资源未安装";
+"alert.speechAssetsMissing.message" = "所选语言的语音识别模型尚未下载。保存后将自动开始下载。";
+"alert.modelMissing.title" = "模型未安装";
+"alert.modelMissing.message" = "所选模型尚未下载。安装完成前语音识别无法工作。";
+"alert.invalidTemplates.title" = "提示词模板无效";
+"alert.invalidTemplates.message" = "请检查模板后重试。";
+"alert.saveFailed.title" = "部分设置保存失败";
+"alert.saveFailed.message" = "请确认 ~/.koe/config.yaml 可写后重试。";
+"alert.saveTemplatesFailed.title" = "提示词模板保存失败";
+"alert.saveTemplatesFailed.message" = "请检查提示词模板和 ~/.koe/config.yaml 后重试。";
+"alert.saveDictionaryFailed.title" = "dictionary.txt 保存失败";
+"alert.savePromptFailed.title" = "system_prompt.txt 保存失败";
+"alert.templateLimit.title" = "已达模板数量上限";
+"alert.templateLimit.message" = "最多只能添加 9 个提示词模板，因为浮层只支持数字键 1-9。";
+"alert.templateShortcut.title" = "每个提示词模板都需要 1 到 9 之间的快捷键。";
+"alert.templateUnique.title" = "每个提示词模板的快捷键必须唯一。";
+"alert.templateEmpty.title" = "每个提示词模板的提示词不能为空。";
+
+/* about */
+"about.githubRepository" = "GitHub 仓库";
+"about.documentation" = "文档";
+"about.tagline" = "一个后台优先的 macOS 语音输入工具。\n按下快捷键说话，校正后的文字会自动粘贴到你正在使用的应用里。";
+"about.license" = "MIT 许可 · 使用 Rust + Objective-C 构建";
+"about.thanks" = "感谢所有为 Koe 做出贡献的人 ❤️";
+"about.version" = "版本 %@ (%@)";
+
+/* ─── 运行时状态与提示（补全） ─── */
+"asr.hint.mimoPrivacy" = "选择小米（MiMo）模型即表示你同意小米收集你的个人信息和语音数据。Koe 不收集任何数据，也不运行服务器。如有疑问，请联系小米团队。";
+"status.connectedDeviceRegistration" = "已连接（首次使用时完成设备注册）";
+"status.connectionFailedWithFormat" = "连接失败：%@";
+"status.connectionTimedOut" = "连接超时：请检查网络";
+"status.networkError" = "网络错误：请检查网络设置";
+"status.connectionFailedConfig" = "连接失败：请检查你的配置";
+"status.connectionFailedNoResponse" = "连接失败：服务器无响应";
+"status.authFailedApiKey" = "认证失败：请检查 API 密钥";
+"status.authFailedAppKeys" = "认证失败：请检查应用 ID 和访问密钥";
+"status.errorWithFormat" = "错误：%@";
+"status.httpUnexpected" = "HTTP %ld：响应异常";
+"status.testFailedInvalidProfile" = "测试失败：配置数据无效";
+"status.testFailedInvalidResponse" = "测试失败：核心返回无效响应";

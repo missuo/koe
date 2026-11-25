@@ -1,6 +1,7 @@
 #import "SPSettingsSidebar.h"
 #import "SPSettingsViews.h"
 #import "SPTheme.h"
+#import "SPLocalization.h"
 
 #pragma mark - Row
 
@@ -172,34 +173,43 @@
   // Grouped by what the user is configuring, in pipeline order: what turns
   // speech into text, how dictation is triggered and shown, then how the text
   // itself is shaped.
-  [self addHeaderTo:top text:@"Recognition"];
-  [self addItemTo:top identifier:@"asr" title:@"ASR" symbol:@"mic.fill"];
-  [self addItemTo:top identifier:@"llm" title:@"LLM" symbol:@"cpu"];
+  [self addHeaderTo:top text:KoeLocalizedString(@"settings.sidebar.group.recognition")];
+  [self addItemTo:top
+       identifier:@"asr"
+            title:KoeLocalizedString(@"settings.sidebar.asr")
+           symbol:@"mic.fill"];
+  [self addItemTo:top
+       identifier:@"llm"
+            title:KoeLocalizedString(@"settings.sidebar.llm")
+           symbol:@"cpu"];
 
-  [self addHeaderTo:top text:@"Input"];
+  [self addHeaderTo:top text:KoeLocalizedString(@"settings.sidebar.group.input")];
   [self addItemTo:top
        identifier:@"hotkey"
-            title:@"Controls"
+            title:KoeLocalizedString(@"settings.sidebar.controls")
            symbol:@"slider.horizontal.3"];
   [self addItemTo:top
        identifier:@"overlay"
-            title:@"Overlay"
+            title:KoeLocalizedString(@"settings.sidebar.overlay")
            symbol:@"captions.bubble"];
 
-  [self addHeaderTo:top text:@"Text"];
-  [self addItemTo:top identifier:@"dictionary" title:@"Dictionary" symbol:@"book"];
+  [self addHeaderTo:top text:KoeLocalizedString(@"settings.sidebar.group.text")];
+  [self addItemTo:top
+       identifier:@"dictionary"
+            title:KoeLocalizedString(@"settings.sidebar.dictionary")
+           symbol:@"book"];
   [self addItemTo:top
        identifier:@"system_prompt"
-            title:@"Prompt"
+            title:KoeLocalizedString(@"settings.sidebar.prompt")
            symbol:@"text.bubble"];
   [self addItemTo:top
        identifier:@"templates"
-            title:@"Templates"
+            title:KoeLocalizedString(@"settings.sidebar.templates")
            symbol:@"sparkles"];
 
   [self addItemTo:bottom
        identifier:@"about"
-            title:@"About"
+            title:KoeLocalizedString(@"settings.sidebar.about")
            symbol:@"info.circle"];
 }
 
