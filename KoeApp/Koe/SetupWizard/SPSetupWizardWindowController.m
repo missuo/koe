@@ -435,12 +435,44 @@ static NSString *normalizedHotkeyComboValue(NSString *value) {
   return [parts componentsJoinedByString:@"+"];
 }
 
+/// One-based mouse button number from a "mouse_button_N" value, or 0 when the
+/// value is not a bindable mouse button (left and right click never are).
+/// Mirrors HotkeySection::parse_mouse_button in koe-core.
+static NSInteger mouseButtonNumberFromHotkeyValue(NSString *value) {
+  NSString *prefix = @"mouse_button_";
+  NSString *lowercaseValue = value.lowercaseString;
+  if (![lowercaseValue hasPrefix:prefix])
+    return 0;
+  NSString *numberPart = [lowercaseValue substringFromIndex:prefix.length];
+  if (!isNumericKeycode(numberPart))
+    return 0;
+  NSInteger number = numberPart.integerValue;
+  return (number >= 3 && number <= 32) ? number : 0;
+}
+
+static NSString *displayNameForMouseButtonNumber(NSInteger number) {
+  switch (number) {
+  case 3:
+    return @"Middle Mouse Button";
+  case 4:
+    return @"Mouse Button 4 (Back)";
+  case 5:
+    return @"Mouse Button 5 (Forward)";
+  default:
+    return [NSString stringWithFormat:@"Mouse Button %ld", (long)number];
+  }
+}
+
 static NSString *normalizedHotkeyValue(NSString *value) {
   NSString *trimmedValue = [value
       stringByTrimmingCharactersInSet:[NSCharacterSet
                                           whitespaceAndNewlineCharacterSet]];
   if ([presetHotkeyValues() containsObject:trimmedValue])
     return trimmedValue;
+  NSInteger mouseButton = mouseButtonNumberFromHotkeyValue(trimmedValue);
+  if (mouseButton > 0) {
+    return [NSString stringWithFormat:@"mouse_button_%ld", (long)mouseButton];
+  }
   if (isNumericKeycode(trimmedValue)) {
     return [NSString stringWithFormat:@"%ld", (long)trimmedValue.integerValue];
   }
@@ -466,6 +498,9 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
     return @"Right Control (⌃)";
   if ([normalizedValue isEqualToString:@"fn"])
     return @"Fn (Globe)";
+  NSInteger mouseButton = mouseButtonNumberFromHotkeyValue(normalizedValue);
+  if (mouseButton > 0)
+    return displayNameForMouseButtonNumber(mouseButton);
   NSString *normalizedCombo = normalizedHotkeyComboValue(normalizedValue);
   if (normalizedCombo.length > 0) {
     NSMutableArray<NSString *> *parts = [NSMutableArray array];
@@ -491,6 +526,7 @@ static NSString *displayNameForHotkeyValue(NSString *value) {
 static BOOL hotkeyValueUsesCustomPopupItem(NSString *value) {
   NSString *normalizedValue = normalizedHotkeyValue(value);
   return isNumericKeycode(normalizedValue) ||
+         mouseButtonNumberFromHotkeyValue(normalizedValue) > 0 ||
          normalizedHotkeyComboValue(normalizedValue).length > 0;
 }
 
@@ -2765,9 +2801,12 @@ static NSString *SPCondensedProviderError(NSString *raw) {
   [self updateHotkeyRecordingButtons];
 
   __weak typeof(self) weakSelf = self;
+  // Mouse buttons other than left/right click (middle, back, forward, …)
+  // are recorded too, as long as the click lands on this window.
   self.hotkeyRecordingMonitor = [NSEvent
       addLocalMonitorForEventsMatchingMask:(NSEventMaskKeyDown |
-                                            NSEventMaskFlagsChanged)
+                                            NSEventMaskFlagsChanged |
+                                            NSEventMaskOtherMouseDown)
                                    handler:^NSEvent *(NSEvent *event) {
                                      if (![weakSelf.recordingHotkeyTarget
                                              isEqualToString:target]) {
@@ -2776,6 +2815,20 @@ static NSString *SPCondensedProviderError(NSString *raw) {
 
                                      if (event.type == NSEventTypeKeyDown &&
                                          event.keyCode == 53) {
+                                       [weakSelf endHotkeyRecording];
+                                       return nil;
+                                     }
+
+                                     if (event.type ==
+                                         NSEventTypeOtherMouseDown) {
+                                       NSString *mouseValue = [NSString
+                                           stringWithFormat:
+                                               @"mouse_button_%ld",
+                                               (long)event.buttonNumber + 1];
+                                       [weakSelf
+                                           selectHotkeyValue:
+                                               normalizedHotkeyValue(mouseValue)
+                                                     inPopup:popup];
                                        [weakSelf endHotkeyRecording];
                                        return nil;
                                      }

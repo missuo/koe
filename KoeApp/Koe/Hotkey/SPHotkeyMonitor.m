@@ -96,6 +96,7 @@ typedef NS_ENUM(NSInteger, SPHotkeyState) {
 - (void)handleFlagsChangedEvent:(CGEventRef)event;
 - (BOOL)handleNSEvent:(NSEvent *)event;
 - (BOOL)isTargetKeyCode:(NSInteger)keyCode;
+- (BOOL)isTargetMouseButton:(NSInteger)buttonNumber;
 - (BOOL)isModifierOnlyMatchKind:(uint8_t)matchKind;
 - (BOOL)keyModifiers:(NSUInteger)flags matchRequiredModifiers:(NSUInteger)requiredFlags;
 - (BOOL)isRecordingState;
@@ -331,6 +332,26 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         if (type == kCGEventKeyUp && [monitor removeSuppressedHotkeyKeyCodeIfPresent:keyCodeNumber]) {
             return NULL;
         }
+    } else if (type == kCGEventOtherMouseDown || type == kCGEventOtherMouseUp) {
+        NSInteger buttonNumber = (NSInteger)CGEventGetIntegerValueField(event, kCGMouseEventButtonNumber);
+        if (![monitor isTargetMouseButton:buttonNumber]) {
+            return event;
+        }
+        NSLog(@"[Koe] Mouse event: type=%d button=%ld", type, (long)buttonNumber);
+        BOOL isDown = (type == kCGEventOtherMouseDown);
+        // Same main-thread dedup as the keyDown path above.
+        SPPerformOnMainRunLoop(^{
+            if (isDown == monitor.triggerDown) return;
+            monitor.triggerDown = isDown;
+            if (isDown) {
+                [monitor handleTriggerDown];
+            } else {
+                [monitor handleTriggerUp];
+            }
+        });
+        // Swallow both edges so the button's own action (Back/Forward in
+        // browsers and Finder) does not also fire in the focused app.
+        return monitor.canConsumeGlobalKeyEvents ? NULL : event;
     }
 
     return event;
@@ -365,15 +386,20 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 
     __weak typeof(self) weakSelf = self;
 
+    NSEventMask monitorMask = NSEventMaskFlagsChanged | NSEventMaskKeyDown | NSEventMaskKeyUp;
+    if (self.targetMatchKind == SPHotkeyMatchKindMouseButton) {
+        monitorMask |= NSEventMaskOtherMouseDown | NSEventMaskOtherMouseUp;
+    }
+
     // Use both global + local NSEvent monitors for maximum coverage.
     // Global monitor catches events when other apps are focused.
     // Local monitor catches events when our app (menu bar) is focused.
-    self.globalMonitorRef = [NSEvent addGlobalMonitorForEventsMatchingMask:(NSEventMaskFlagsChanged | NSEventMaskKeyDown | NSEventMaskKeyUp)
+    self.globalMonitorRef = [NSEvent addGlobalMonitorForEventsMatchingMask:monitorMask
                                                                   handler:^(NSEvent *event) {
         [weakSelf handleNSEvent:event];
     }];
 
-    self.localMonitorRef = [NSEvent addLocalMonitorForEventsMatchingMask:(NSEventMaskFlagsChanged | NSEventMaskKeyDown | NSEventMaskKeyUp)
+    self.localMonitorRef = [NSEvent addLocalMonitorForEventsMatchingMask:monitorMask
                                                                 handler:^NSEvent *(NSEvent *event) {
         return [weakSelf handleNSEvent:event] ? nil : event;
     }];
@@ -400,8 +426,9 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
     // with Carbon RegisterEventHotKey instead (see carbonCaptureActive), so
     // the tap stays listen-only for its entire life — created once at start,
     // destroyed once at stop, never upgraded or cycled mid-run.
-    // Non-modifier triggers consume their keyDown/keyUp so the trigger key
-    // does not leak into the focused app.
+    // Non-modifier triggers consume their keyDown/keyUp (or, for mouse
+    // buttons, otherMouseDown/otherMouseUp) so the trigger does not leak into
+    // the focused app.
     return ![self isModifierOnlyMatchKind:self.targetMatchKind];
 }
 
@@ -593,6 +620,12 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
         CGEventMask mask = CGEventMaskBit(kCGEventFlagsChanged)
                          | CGEventMaskBit(kCGEventKeyDown)
                          | CGEventMaskBit(kCGEventKeyUp);
+        // Mouse events are only tapped when a mouse button is the trigger,
+        // so keyboard-triggered setups never sit in the mouse event path.
+        if (self.targetMatchKind == SPHotkeyMatchKindMouseButton) {
+            mask |= CGEventMaskBit(kCGEventOtherMouseDown)
+                  | CGEventMaskBit(kCGEventOtherMouseUp);
+        }
         struct {
             CGEventTapLocation location;
             CGEventTapOptions options;
@@ -725,7 +758,15 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
 }
 
 - (BOOL)isTargetKeyCode:(NSInteger)keyCode {
+    // A mouse trigger's targetKeyCode is a button number, which would
+    // otherwise collide with real key codes (button 3 = kVK_ANSI_F).
+    if (self.targetMatchKind == SPHotkeyMatchKindMouseButton) return NO;
     return keyCode == self.targetKeyCode || (self.altKeyCode != 0 && keyCode == self.altKeyCode);
+}
+
+- (BOOL)isTargetMouseButton:(NSInteger)buttonNumber {
+    return self.targetMatchKind == SPHotkeyMatchKindMouseButton &&
+           buttonNumber == self.targetKeyCode;
 }
 
 - (BOOL)isModifierOnlyMatchKind:(uint8_t)matchKind {
@@ -985,6 +1026,18 @@ static CGEventRef hotkeyEventCallback(CGEventTapProxy proxy,
                 } else {
                     [self handleTriggerUp];
                 }
+            }
+        }
+    } else if (event.type == NSEventTypeOtherMouseDown || event.type == NSEventTypeOtherMouseUp) {
+        if (![self isTargetMouseButton:event.buttonNumber]) return NO;
+        BOOL isDown = (event.type == NSEventTypeOtherMouseDown);
+        NSLog(@"[Koe] NSEvent Mouse%@: button=%ld", isDown ? @"Down" : @"Up", (long)event.buttonNumber);
+        if (isDown != self.triggerDown) {
+            self.triggerDown = isDown;
+            if (isDown) {
+                [self handleTriggerDown];
+            } else {
+                [self handleTriggerUp];
             }
         }
     }

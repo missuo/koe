@@ -869,6 +869,9 @@ pub struct HotkeySection {
     /// Trigger key for voice input.
     /// Options: "fn", "left_option", "right_option", "left_command", "right_command", "left_control", "right_control"
     /// Or a raw keycode number (e.g. 122 for F1) for non-modifier keys.
+    /// Or "mouse_button_N" for a mouse button, numbered from 1 (left) the way
+    /// mouse settings number them: 3 = middle, 4 = back, 5 = forward.
+    /// Left and right click (1 and 2) are not allowed.
     /// Default: "fn"
     #[serde(
         default = "default_trigger_key",
@@ -891,6 +894,9 @@ pub struct HotkeySection {
 pub enum HotkeyMatchKind {
     ModifierOnly = 0,
     KeyDown = 1,
+    /// Matched on otherMouseDown/otherMouseUp. `key_code` is the zero-based
+    /// CGEvent button number.
+    MouseButton = 2,
 }
 
 /// Resolved hotkey parameters for the native side
@@ -923,6 +929,9 @@ impl HotkeySection {
         match value {
             "left_option" | "right_option" | "left_command" | "right_command" | "left_control"
             | "right_control" | "fn" => value.into(),
+            _ if Self::parse_mouse_button(value).is_some() => {
+                format!("mouse_button_{}", Self::parse_mouse_button(value).unwrap())
+            }
             _ if Self::parse_raw_keycode(value).is_some() => {
                 Self::parse_raw_keycode(value).unwrap().to_string()
             }
@@ -945,6 +954,19 @@ impl HotkeySection {
         } else {
             trimmed.parse::<u16>().ok()
         }
+    }
+
+    /// Parse "mouse_button_N" into the one-based button number N. Left and
+    /// right click (1 and 2) are rejected: binding them would make the mouse
+    /// unusable.
+    fn parse_mouse_button(value: &str) -> Option<u16> {
+        let number = value
+            .trim()
+            .to_ascii_lowercase()
+            .strip_prefix("mouse_button_")?
+            .parse::<u16>()
+            .ok()?;
+        (3..=32).contains(&number).then_some(number)
     }
 
     fn parse_hotkey_combo(value: &str) -> Option<ParsedHotkeyCombo> {
@@ -1064,6 +1086,16 @@ impl HotkeySection {
                     alt_key_code: 0,
                     modifier_flag: combo.modifier_mask,
                     match_kind: HotkeyMatchKind::KeyDown,
+                }
+            }
+            // Mouse button (detected via otherMouseDown/otherMouseUp)
+            _ if Self::parse_mouse_button(key).is_some() => {
+                let number = Self::parse_mouse_button(key).unwrap();
+                HotkeyParams {
+                    key_code: number - 1, // CGEvent button numbers are zero-based
+                    alt_key_code: 0,
+                    modifier_flag: 0,
+                    match_kind: HotkeyMatchKind::MouseButton,
                 }
             }
             // Raw keycode (non-modifier key, detected via keyDown/keyUp)
@@ -2367,6 +2399,34 @@ mod tests {
         assert_eq!(resolved.alt_key_code, 0);
         assert_eq!(resolved.modifier_flag, 0x0010_0000 | 0x0002_0000);
         assert_eq!(resolved.match_kind, HotkeyMatchKind::KeyDown);
+    }
+
+    #[test]
+    fn resolve_mouse_button_hotkey_uses_mouse_match_kind() {
+        let h = HotkeySection {
+            trigger_key: "Mouse_Button_4".into(),
+            cancel_key: "".into(),
+            trigger_mode: "hold".into(),
+        };
+        assert_eq!(h.normalized_trigger_key(), "mouse_button_4");
+
+        let resolved = h.resolve();
+        assert_eq!(resolved.key_code, 3);
+        assert_eq!(resolved.alt_key_code, 0);
+        assert_eq!(resolved.modifier_flag, 0);
+        assert_eq!(resolved.match_kind, HotkeyMatchKind::MouseButton);
+    }
+
+    #[test]
+    fn mouse_button_hotkey_rejects_left_and_right_click() {
+        for value in ["mouse_button_0", "mouse_button_1", "mouse_button_2", "mouse_button_33"] {
+            let h = HotkeySection {
+                trigger_key: value.into(),
+                cancel_key: "".into(),
+                trigger_mode: "hold".into(),
+            };
+            assert_eq!(h.normalized_trigger_key(), "fn", "{value}");
+        }
     }
 
     #[test]
