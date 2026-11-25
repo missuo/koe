@@ -81,14 +81,11 @@ security import "$WORKDIR/key.pem" \
 # ── Step 3: Trust the certificate for code signing ─────────────────────────
 # This will trigger a macOS GUI dialog asking for the keychain password.
 # It is required to make the identity show as "valid" for codesigning.
+# Trust is set in the user domain (no -d): the admin domain can return success
+# yet leave the cert untrusted for the current user on recent macOS releases.
 echo "Step 3/4: Trusting certificate for code signing..."
 echo "(A system password dialog will appear — enter your login password)"
-security add-trusted-cert \
-    -d \
-    -r trustRoot \
-    -p codeSign \
-    -k "$KEYCHAIN" \
-    "$WORKDIR/cert.pem" 2>&1 || {
+trust_fallback() {
     echo ""
     echo "WARNING: Could not set trust automatically."
     echo ""
@@ -97,9 +94,22 @@ security add-trusted-cert \
     echo "  2. Double-click → Trust → Code Signing → 'Always Trust'"
     echo "  3. Enter your password when prompted"
     echo ""
-    echo "Then re-run this script (Step 3/4 will be skipped automatically)."
+    echo "Then verify with:  security find-identity -p codesigning -v"
     exit 1
 }
+security add-trusted-cert \
+    -r trustRoot \
+    -p codeSign \
+    -k "$KEYCHAIN" \
+    "$WORKDIR/cert.pem" 2>&1 || trust_fallback
+
+# add-trusted-cert can exit 0 without the identity becoming valid, so check.
+if ! security find-identity -p codesigning -v 2>/dev/null | grep -q "$IDENTITY_NAME"; then
+    echo ""
+    echo "Trust settings were written but '$IDENTITY_NAME' is still not a valid"
+    echo "code signing identity."
+    trust_fallback
+fi
 
 # ── Step 4: Set partition list ─────────────────────────────────────────────
 # Allows codesign to use the private key without a passphrase prompt.

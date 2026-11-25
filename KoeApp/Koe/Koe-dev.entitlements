@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<!-- Used only for local builds signed with the self-signed "Koe Dev"
+	     identity (see scripts/setup-codesign-identity.sh). That identity has
+	     no Team ID, so under Hardened Runtime dyld refuses to load the bundled
+	     Sparkle.framework unless library validation is disabled. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>
