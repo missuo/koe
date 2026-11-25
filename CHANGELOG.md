@@ -2,6 +2,12 @@
 
 All notable user-facing changes to Koe are documented here.
 
+## Unreleased
+
+### Added
+
+- **Optional Oruk Fourier 2B 8-bit MLX ASR model (`mlx/Oruk-Fourier-2B-8bit`).** Adds an opt-in English-only Qwen3-ASR-architecture MLX 8-bit model manifest (~2.5 GB, CC BY-NC 4.0 non-commercial license) for Apple Silicon alongside the existing Qwen3-ASR 4-bit models. The default MLX model (`mlx/Qwen3-ASR-0.6B-4bit`) is unchanged.
+
 ## 1.0.33 - 2026-10-17
 
 ### Added

@@ -583,7 +583,7 @@ You can also build your own dashboard or visualization on top of this database �
 Koe supports three on-device speech recognition providers:
 
 - **Apple Speech** (macOS 26+) — uses Apple's built-in SpeechAnalyzer. Select the provider and language in the Setup Wizard — speech assets are managed by macOS and downloaded automatically on first use (or manually via the Setup Wizard). No API key needed. Dictionary entries are automatically passed as contextual strings for vocabulary bias.
-- **MLX** (Apple Silicon) — runs Qwen3-ASR models via the MLX framework. Requires model download (~680 MB–1.5 GB).
+- **MLX** (Apple Silicon) — runs Qwen3-ASR models via the MLX framework. Requires model download (~680 MB–2.5 GB).
 - **sherpa-onnx** (CPU) — runs streaming zipformer models. Requires model download (~189 MB–735 MB).
 
 MLX and sherpa-onnx models are managed through `.koe-manifest.json` files under `~/.koe/models/`. You can manage them in two ways:
@@ -618,6 +618,7 @@ koe manifest generate mlx-community/Qwen3-ASR-0.6B-4bit \
 **MLX ASR (Apple Silicon)**:
 - `mlx/Qwen3-ASR-0.6B-4bit` — Qwen3 ASR 0.6B 4-bit (~680 MB, fast)
 - `mlx/Qwen3-ASR-1.7B-4bit` — Qwen3 ASR 1.7B 4-bit (~1.5 GB, higher accuracy)
+- `mlx/Oruk-Fourier-2B-8bit` — Oruk Fourier 2B 8-bit (~2.5 GB, English only, CC BY-NC 4.0)
 
 **MLX LLM (Apple Silicon)**:
 - `mlx/Qwen3-0.6B-4bit` — Qwen3 LLM 0.6B 4-bit (~335 MB, fast)
